@@ -110,6 +110,7 @@
           'create-token': () => createToken(),
           'close-token-result-modal': () => closeTokenResultModal(),
           'copy-token-result': () => copyToken(),
+          'copy-edit-token': () => copyEditToken(),
           'close-edit-modal': () => closeEditModal(),
           'update-token': () => updateToken(),
           'show-model-select-modal': () => showModelSelectModal(),
@@ -184,8 +185,12 @@
 
         // 处理复制令牌按钮
         if (target.classList.contains('btn-copy-token')) {
-          const tokenHash = target.dataset.token;
-          if (tokenHash) copyTokenToClipboard(tokenHash);
+          const tokenValue = target.dataset.token;
+          if (tokenValue) {
+            copyTokenToClipboard(tokenValue);
+          } else {
+            window.showNotification(t('tokens.msg.noPlainToken'), 'warning');
+          }
           return;
         }
 
@@ -338,14 +343,15 @@
       const nonStreamCellClass = token.non_stream_count ? '' : 'mobile-empty-cell';
 
       // 使用模板引擎渲染
-      const maskedToken = token.token.length > 8
-        ? token.token.substring(0, 4) + '****' + token.token.slice(-4)
-        : token.token;
+      const displayToken = token.plain_token || '';
+      const maskedToken = displayToken.length > 8
+        ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
+        : displayToken || '****';
 
       return TemplateEngine.render('tpl-token-row', {
         id: token.id,
         description: token.description,
-        token: token.token,
+        token: displayToken,
         maskedToken: maskedToken,
         statusClass: status.class,
         createdAt: createdAt,
@@ -594,9 +600,10 @@
       const streamCellClass = token.stream_count ? '' : ' mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : ' mobile-empty-cell';
 
-      const maskedToken = token.token.length > 8
-        ? token.token.substring(0, 4) + '****' + token.token.slice(-4)
-        : token.token;
+      const displayToken = token.plain_token || '';
+      const maskedToken = displayToken.length > 8
+        ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
+        : displayToken || '****';
 
       return `
         <tr class="mobile-card-row token-card-row" data-token-id="${token.id}">
@@ -616,7 +623,7 @@
           <td class="tokens-col-last-used" data-mobile-label="${t('tokens.table.lastUsed')}">${lastUsed}</td>
           <td class="tokens-col-actions" data-mobile-label="${t('tokens.table.actions')}">
             <div class="token-row-actions">
-              <button class="btn-copy-token btn btn-secondary token-row-action-btn" data-token="${escapeHtml(token.token)}">${t('common.copy')}</button>
+              <button class="btn-copy-token btn btn-secondary token-row-action-btn" data-token="${escapeHtml(displayToken)}">${t('common.copy')}</button>
               <button class="btn btn-secondary btn-edit token-row-action-btn">${t('common.edit')}</button>
               <button class="btn btn-danger btn-delete token-row-action-btn">${t('common.delete')}</button>
             </div>
@@ -707,10 +714,19 @@
       });
     }
 
-    function copyTokenToClipboard(hash) {
-      window.copyToClipboard(hash).then(() => {
+    function copyTokenToClipboard(value) {
+      window.copyToClipboard(value).then(() => {
         window.showNotification(t('tokens.msg.copySuccess'), 'success');
       });
+    }
+
+    function copyEditToken() {
+      const input = document.getElementById('editTokenValue');
+      if (!input || !input.value) {
+        window.showNotification(t('tokens.msg.noPlainToken'), 'warning');
+        return;
+      }
+      copyTokenToClipboard(input.value);
     }
 
     function closeTokenResultModal() {
@@ -722,7 +738,7 @@
       const token = allTokens.find(t => t.id === id);
       if (!token) return;
       document.getElementById('editTokenId').value = id;
-      document.getElementById('editTokenValue').value = token.token || '';
+      document.getElementById('editTokenValue').value = token.plain_token || '';
       document.getElementById('editTokenDescription').value = token.description;
       document.getElementById('editTokenActive').checked = token.is_active;
       if (!token.expires_at) {
@@ -780,6 +796,7 @@
     async function updateToken() {
       
       const id = document.getElementById('editTokenId').value;
+      const plainToken = document.getElementById('editTokenValue').value.trim();
       const description = document.getElementById('editTokenDescription').value.trim();
       const isActive = document.getElementById('editTokenActive').checked;
       const expiryType = document.getElementById('editTokenExpiry').value;
@@ -815,6 +832,7 @@
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            plain_token: plainToken,
             description,
             is_active: isActive,
             expires_at: expiresAt,

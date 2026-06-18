@@ -342,6 +342,13 @@ func ensureAuthTokensAllowedChannelIDs(ctx context.Context, db *sql.DB, dialect 
 		"TEXT NOT NULL DEFAULT ''")
 }
 
+// ensureAuthTokensPlainToken 确保auth_tokens表有明文令牌字段（仅管理后台展示/修改）
+func ensureAuthTokensPlainToken(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_tokens", "plain_token",
+		"VARCHAR(512) NOT NULL DEFAULT ''",
+		"TEXT NOT NULL DEFAULT ''")
+}
+
 // ensureAuthTokensCostLimit 确保auth_tokens表有费用限额字段（2026-01新增）
 func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	if dialect == DialectMySQL {

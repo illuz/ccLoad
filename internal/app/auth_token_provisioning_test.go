@@ -99,6 +99,9 @@ func TestProvisionAuthTokens_CreatesMissingTokensIdempotently(t *testing.T) {
 	if seedOne.Token == "seed-one" {
 		t.Fatal("stored token must be hash, got plaintext")
 	}
+	if seedOne.PlainToken != "seed-one" {
+		t.Fatalf("stored plain token=%q, want seed-one", seedOne.PlainToken)
+	}
 	if seedOne.Description != "production" || !seedOne.IsActive {
 		t.Fatalf("seedOne=%+v, want active production token", seedOne)
 	}

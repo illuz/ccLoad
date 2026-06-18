@@ -172,7 +172,12 @@
 
             <div class="form-group form-row-inline token-edit-field token-edit-field--token">
               <label class="form-label form-row-inline__label" data-i18n="tokens.table.token">令牌</label>
-              <input type="text" id="editTokenValue" class="form-input field-grow token-edit-token-value" readonly spellcheck="false">
+              <div class="form-row-inline__content token-limit-control">
+                <div class="token-limit-input-line">
+                  <input type="text" id="editTokenValue" class="form-input field-grow token-edit-token-value" spellcheck="false" data-i18n-placeholder="tokens.plainTokenPlaceholder" placeholder="历史令牌无明文，可在此重新设置">
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="copy-edit-token" data-i18n="common.copy">复制</button>
+                </div>
+              </div>
             </div>
 
             <div class="form-group form-row-inline token-edit-field token-edit-field--description">

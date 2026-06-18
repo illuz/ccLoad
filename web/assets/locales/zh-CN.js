@@ -452,12 +452,13 @@ window.I18N_LOCALES['zh-CN'] = {
   // 令牌结果对话框
   'tokens.resultModalTitle': '令牌创建成功',
   'tokens.resultWarningTitle': '⚠️ 重要提示:',
-  'tokens.resultWarningDesc': '请立即复制并保存此令牌。关闭此窗口后,您将无法再次查看完整令牌。',
+  'tokens.resultWarningDesc': '请复制并保存此令牌。当前版本会在管理后台保存明文，后续可再次查看和修改。',
   'tokens.resultTokenLabel': 'API令牌(请妥善保管)',
   'tokens.resultSavedBtn': '我已保存',
   // 编辑对话框
   'tokens.editModalTitle': '编辑令牌',
   'tokens.editDescLabel': '描述',
+  'tokens.plainTokenPlaceholder': '历史令牌无明文，可在此重新设置',
   'tokens.channelRestriction': '渠道限制',
   'tokens.channelCountPrefix': '共',
   'tokens.channelCountSuffix': '个渠道（空表示允许所有）',
@@ -506,6 +507,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'tokens.msg.saveSuccess': '令牌保存成功',
   'tokens.msg.deleteSuccess': '令牌删除成功',
   'tokens.msg.copySuccess': '密钥已复制到剪贴板',
+  'tokens.msg.noPlainToken': '当前令牌没有保存明文',
   'tokens.msg.regenerateSuccess': '密钥已重新生成',
   // 新增：表头
   'tokens.table.description': '描述',

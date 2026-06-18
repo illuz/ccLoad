@@ -152,6 +152,27 @@ func TestEnsureAuthTokensAllowedModels_SQLite(t *testing.T) {
 	}
 }
 
+func TestEnsureAuthTokensPlainToken_SQLite(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if err := migrate(ctx, db, DialectSQLite); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := ensureAuthTokensPlainToken(ctx, db, DialectSQLite); err != nil {
+		t.Fatalf("ensureAuthTokensPlainToken: %v", err)
+	}
+
+	cols, err := sqliteExistingColumns(ctx, db, "auth_tokens")
+	if err != nil {
+		t.Fatalf("sqliteExistingColumns: %v", err)
+	}
+	if !cols["plain_token"] {
+		t.Fatal("plain_token column not found in auth_tokens")
+	}
+}
+
 func TestEnsureAuthTokensCostLimit_SQLite(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

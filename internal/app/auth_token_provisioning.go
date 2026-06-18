@@ -109,6 +109,7 @@ func ProvisionAuthTokens(ctx context.Context, store storage.Store, raw string) (
 	for i, token := range tokens {
 		authToken := &model.AuthToken{
 			Token:       model.HashToken(token.PlainToken),
+			PlainToken:  token.PlainToken,
 			Description: token.Description,
 			CreatedAt:   time.Now(),
 			IsActive:    true,

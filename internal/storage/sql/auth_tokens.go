@@ -18,7 +18,7 @@ const mysqlDuplicateEntryCode uint16 = 1062
 
 //nolint:gosec // SQL列清单包含“token”字段名，并非硬编码凭据
 const authTokenSelectColumns = `
-	id, token, description, created_at, expires_at, last_used_at, is_active,
+	id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 	success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
 	cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
@@ -89,6 +89,7 @@ func scanAuthToken(scanner interface {
 	if err := scanner.Scan(
 		&token.ID,
 		&token.Token,
+		&token.PlainToken,
 		&token.Description,
 		&createdAtMs,
 		&expiresAt,
@@ -188,14 +189,15 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 	if s.IsSQLite() {
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO auth_tokens (
-				id, token, description, created_at, expires_at, last_used_at, is_active,
+				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
 				cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
+				plain_token = excluded.plain_token,
 				description = excluded.description,
 				created_at = excluded.created_at,
 				expires_at = excluded.expires_at,
@@ -220,6 +222,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		`,
 			token.ID,
 			token.Token,
+			token.PlainToken,
 			token.Description,
 			token.CreatedAt.UnixMilli(),
 			expiresAt,
@@ -250,14 +253,15 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO auth_tokens (
-			id, token, description, created_at, expires_at, last_used_at, is_active,
+			id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 			success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
 			cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
+			plain_token = VALUES(plain_token),
 			description = VALUES(description),
 			created_at = VALUES(created_at),
 			expires_at = VALUES(expires_at),
@@ -282,6 +286,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 	`,
 		token.ID,
 		token.Token,
+		token.PlainToken,
 		token.Description,
 		token.CreatedAt.UnixMilli(),
 		expiresAt,
@@ -317,12 +322,12 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 // authTokenInsertCommonCols / authTokenInsertCommonValues 描述了 INSERT auth_tokens 时
 // 的公共字段集合（除自增主键 id）。统计/成本字段以零值初始化，由后续 UpdateTokenStats 累计。
 const (
-	authTokenInsertCommonCols = `token, description, created_at, expires_at, last_used_at, is_active,
+	authTokenInsertCommonCols = `token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 		success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 		prompt_tokens_total, completion_tokens_total, total_cost_usd, allowed_models, allowed_channel_ids,
 		cost_used_microusd, cost_limit_microusd, max_concurrency`
 
-	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, ?, ?, 0, ?, ?`
+	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, ?, ?, 0, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -362,7 +367,7 @@ func authTokenInsertCommonArgs(token *model.AuthToken) ([]any, error) {
 	}
 
 	return []any{
-		token.Token, token.Description, token.CreatedAt.UnixMilli(),
+		token.Token, token.PlainToken, token.Description, token.CreatedAt.UnixMilli(),
 		expiresAt, lastUsedAt, boolToInt(token.IsActive),
 		allowedModelsJSON, allowedChannelIDsJSON,
 		token.CostLimitMicroUSD, token.MaxConcurrency,
@@ -600,7 +605,9 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE auth_tokens
-		SET description = ?,
+		SET token = ?,
+		    plain_token = ?,
+		    description = ?,
 		    expires_at = ?,
 		    last_used_at = ?,
 		    is_active = ?,
@@ -609,7 +616,7 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    allowed_channel_ids = ?,
 		    max_concurrency = ?
 		WHERE id = ?
-	`, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), token.CostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, token.MaxConcurrency, token.ID)
+	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), token.CostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, token.MaxConcurrency, token.ID)
 
 	if err != nil {
 		return fmt.Errorf("update auth token: %w", err)

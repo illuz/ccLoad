@@ -21,6 +21,7 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 	token := &model.AuthToken{
 		ID:          123,
 		Token:       model.HashToken("plain"),
+		PlainToken:  "plain",
 		Description: "d",
 		CreatedAt:   time.Now(),
 		ExpiresAt:   &exp,
@@ -46,7 +47,7 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAuthToken failed: %v", err)
 	}
-	if got.Token != token.Token || got.Description != "d" || !got.IsActive {
+	if got.Token != token.Token || got.PlainToken != "plain" || got.Description != "d" || !got.IsActive {
 		t.Fatalf("unexpected token: %+v", got)
 	}
 	if got.CostLimitMicroUSD != 100 || got.CostUsedMicroUSD != 10 {

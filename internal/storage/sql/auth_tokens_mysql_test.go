@@ -94,7 +94,7 @@ type foundRowsRows struct {
 
 func (r *foundRowsRows) Columns() []string {
 	return []string{
-		"id", "token", "description", "created_at", "expires_at", "last_used_at", "is_active",
+		"id", "token", "plain_token", "description", "created_at", "expires_at", "last_used_at", "is_active",
 		"success_count", "failure_count", "stream_avg_ttfb", "non_stream_avg_rt", "stream_count", "non_stream_count",
 		"prompt_tokens_total", "completion_tokens_total", "cache_read_tokens_total", "cache_creation_tokens_total", "total_cost_usd",
 		"cost_used_microusd", "cost_limit_microusd", "allowed_models", "allowed_channel_ids", "max_concurrency",
@@ -118,6 +118,7 @@ func authTokenDriverValues(token *model.AuthToken) []driver.Value {
 	return []driver.Value{
 		token.ID,
 		token.Token,
+		token.PlainToken,
 		token.Description,
 		token.CreatedAt.UnixMilli(),
 		int64(0),
@@ -173,6 +174,7 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 	existing := &model.AuthToken{
 		ID:                77,
 		Token:             tokenHash,
+		PlainToken:        "client-found-rows-token",
 		Description:       "existing restricted token",
 		CreatedAt:         time.Unix(1700000000, 0),
 		IsActive:          true,
@@ -203,6 +205,7 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 	}
 	if token.ID != existing.ID ||
 		token.Description != existing.Description ||
+		token.PlainToken != existing.PlainToken ||
 		token.CostLimitMicroUSD != existing.CostLimitMicroUSD ||
 		token.MaxConcurrency != existing.MaxConcurrency ||
 		len(token.AllowedModels) != 1 || token.AllowedModels[0] != "gpt-4o" ||

@@ -87,6 +87,7 @@ func DefineAuthTokensTable() *TableBuilder {
 	return NewTable("auth_tokens").
 		Column("id INT PRIMARY KEY AUTO_INCREMENT").
 		Column("token VARCHAR(100) NOT NULL UNIQUE").
+		Column("plain_token VARCHAR(512) NOT NULL DEFAULT ''").
 		Column("description VARCHAR(512) NOT NULL").
 		Column("created_at BIGINT NOT NULL").
 		Column("expires_at BIGINT NOT NULL DEFAULT 0").

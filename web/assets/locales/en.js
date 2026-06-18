@@ -453,12 +453,13 @@ window.I18N_LOCALES['en'] = {
   // Token result modal
   'tokens.resultModalTitle': 'Token Created Successfully',
   'tokens.resultWarningTitle': '⚠️ Important:',
-  'tokens.resultWarningDesc': 'Please copy and save this token immediately. You will not be able to view the full token again after closing this window.',
+  'tokens.resultWarningDesc': 'Please copy and save this token. This version stores the plaintext token in the admin console so it can be viewed and edited later.',
   'tokens.resultTokenLabel': 'API Token (keep it safe)',
   'tokens.resultSavedBtn': 'I have saved it',
   // Edit modal
   'tokens.editModalTitle': 'Edit Token',
   'tokens.editDescLabel': 'Description',
+  'tokens.plainTokenPlaceholder': 'Legacy tokens have no plaintext; set it again here',
   'tokens.channelRestriction': 'Channel Restrictions',
   'tokens.channelCountPrefix': '',
   'tokens.channelCountSuffix': 'channels (empty allows all)',
@@ -507,6 +508,7 @@ window.I18N_LOCALES['en'] = {
   'tokens.msg.saveSuccess': 'Token saved successfully',
   'tokens.msg.deleteSuccess': 'Token deleted successfully',
   'tokens.msg.copySuccess': 'Key copied to clipboard',
+  'tokens.msg.noPlainToken': 'No plaintext token is stored for this token',
   'tokens.msg.regenerateSuccess': 'Key regenerated successfully',
   // Table headers
   'tokens.table.description': 'Description',

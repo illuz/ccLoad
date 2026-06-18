@@ -85,6 +85,9 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	if stored.Token != expectedHash {
 		t.Error("Hash mismatch")
 	}
+	if stored.PlainToken != response.Data.Token {
+		t.Fatal("stored plain token should match created token")
+	}
 	if len(stored.AllowedChannelIDs) != 2 || stored.AllowedChannelIDs[0] != 3 || stored.AllowedChannelIDs[1] != 5 {
 		t.Fatalf("stored allowed_channel_ids=%v, want [3 5]", stored.AllowedChannelIDs)
 	}

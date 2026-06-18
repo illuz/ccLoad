@@ -161,6 +161,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := validateAuthTokensAllowedChannelIDsJSON(ctx, db); err != nil {
 				return fmt.Errorf("validate auth_tokens allowed_channel_ids: %w", err)
 			}
+			if err := ensureAuthTokensPlainToken(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_tokens plain_token: %w", err)
+			}
 			if err := ensureAuthTokensCostLimit(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens cost_limit: %w", err)
 			}

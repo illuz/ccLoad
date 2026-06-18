@@ -23,6 +23,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 	expiresAt := time.Now().Add(24 * time.Hour).UnixMilli()
 	token := &model.AuthToken{
 		Token:         model.HashToken("plain-token"),
+		PlainToken:    "plain-token",
 		Description:   "old",
 		ExpiresAt:     nil,
 		IsActive:      true,
@@ -95,6 +96,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		body := map[string]any{
 			"description":         "new-desc",
+			"plain_token":         "new-plain-token",
 			"is_active":           false,
 			"expires_at":          expiresAt,
 			"allowed_models":      []string{"m1", "m2"},
@@ -115,6 +117,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			Description       string  `json:"description"`
 			IsActive          bool    `json:"is_active"`
 			Token             string  `json:"token"`
+			PlainToken        string  `json:"plain_token"`
 			ExpiresAt         *int64  `json:"expires_at,omitempty"`
 			CostLimitUSD      float64 `json:"cost_limit_usd"`
 			AllowedChannelIDs []int64 `json:"allowed_channel_ids"`
@@ -130,8 +133,11 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if resp.Data.IsActive {
 			t.Fatalf("is_active=%v, want false", resp.Data.IsActive)
 		}
-		if resp.Data.Token != model.HashToken("plain-token") {
+		if resp.Data.Token != model.HashToken("new-plain-token") {
 			t.Fatalf("token should be hash value for dual-path auth, got %q", resp.Data.Token)
+		}
+		if resp.Data.PlainToken != "new-plain-token" {
+			t.Fatalf("plain_token=%q, want new-plain-token", resp.Data.PlainToken)
 		}
 		if resp.Data.ExpiresAt == nil || *resp.Data.ExpiresAt != expiresAt {
 			t.Fatalf("expiresAt=%v, want %d", resp.Data.ExpiresAt, expiresAt)
@@ -152,6 +158,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if updated.Description != "new-desc" || updated.IsActive {
 			t.Fatalf("db state mismatch: desc=%q active=%v", updated.Description, updated.IsActive)
+		}
+		if updated.Token != model.HashToken("new-plain-token") || updated.PlainToken != "new-plain-token" {
+			t.Fatalf("db token mismatch: token=%q plain=%q", updated.Token, updated.PlainToken)
 		}
 		if updated.ExpiresAt == nil || *updated.ExpiresAt != expiresAt {
 			t.Fatalf("expiresAt=%v, want %d", updated.ExpiresAt, expiresAt)

@@ -21,6 +21,7 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	// 创建 Auth Token
 	token := &model.AuthToken{
 		Token:             "test-token-hash",
+		PlainToken:        "test-token-plain",
 		Description:       "Test Token",
 		IsActive:          true,
 		CostLimitMicroUSD: 1000000, // $1
@@ -41,6 +42,9 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	if got.Description != "Test Token" {
 		t.Errorf("description: got %q, want %q", got.Description, "Test Token")
 	}
+	if got.PlainToken != "test-token-plain" {
+		t.Errorf("plain_token: got %q, want %q", got.PlainToken, "test-token-plain")
+	}
 	if !got.IsActive {
 		t.Error("expected is_active=true")
 	}
@@ -58,6 +62,9 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	}
 	if gotByValue.ID != got.ID {
 		t.Errorf("id mismatch: by value=%d, by id=%d", gotByValue.ID, got.ID)
+	}
+	if gotByValue.PlainToken != "test-token-plain" {
+		t.Errorf("plain_token by value: got %q, want %q", gotByValue.PlainToken, "test-token-plain")
 	}
 
 	// 获取不存在的 token
@@ -333,6 +340,7 @@ func TestAuthToken_Update(t *testing.T) {
 	lastUsedAt := time.Now().UnixMilli()
 	token := &model.AuthToken{
 		Token:       "update-test-token",
+		PlainToken:  "update-test-plain",
 		Description: "Original Description",
 		IsActive:    true,
 		ExpiresAt:   &expiresAt,
@@ -344,6 +352,8 @@ func TestAuthToken_Update(t *testing.T) {
 	}
 
 	// 更新 token
+	token.Token = "updated-test-token"
+	token.PlainToken = "updated-test-plain"
 	token.Description = "Updated Description"
 	token.IsActive = false
 	token.CostLimitMicroUSD = 5000000 // $5
@@ -361,6 +371,12 @@ func TestAuthToken_Update(t *testing.T) {
 	}
 	if got.Description != "Updated Description" {
 		t.Errorf("description: got %q, want %q", got.Description, "Updated Description")
+	}
+	if got.Token != "updated-test-token" {
+		t.Errorf("token: got %q, want %q", got.Token, "updated-test-token")
+	}
+	if got.PlainToken != "updated-test-plain" {
+		t.Errorf("plain_token: got %q, want %q", got.PlainToken, "updated-test-plain")
 	}
 	if got.IsActive {
 		t.Error("expected is_active=false")

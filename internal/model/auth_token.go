@@ -17,6 +17,7 @@ import (
 type AuthToken struct {
 	ID          int64     `json:"id"`
 	Token       string    `json:"token"`                  // SHA256哈希值(存储时)或明文(创建时返回)
+	PlainToken  string    `json:"plain_token,omitempty"`  // 明文令牌（仅管理后台展示/修改）
 	Description string    `json:"description"`            // 令牌用途描述
 	CreatedAt   time.Time `json:"created_at"`             // 创建时间
 	ExpiresAt   *int64    `json:"expires_at,omitempty"`   // 过期时间(Unix毫秒时间戳)，nil/0 表示永不过期
@@ -183,6 +184,7 @@ func (t *AuthToken) ValidateUsageLimits() error {
 type authTokenJSON struct {
 	ID                       int64     `json:"id"`
 	Token                    string    `json:"token"`
+	PlainToken               string    `json:"plain_token,omitempty"`
 	Description              string    `json:"description"`
 	CreatedAt                time.Time `json:"created_at"`
 	ExpiresAt                *int64    `json:"expires_at,omitempty"`
@@ -215,6 +217,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 	return json.Marshal(authTokenJSON{
 		ID:                       t.ID,
 		Token:                    t.Token,
+		PlainToken:               t.PlainToken,
 		Description:              t.Description,
 		CreatedAt:                t.CreatedAt,
 		ExpiresAt:                t.ExpiresAt,

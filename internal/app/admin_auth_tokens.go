@@ -194,6 +194,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 
 	authToken := &model.AuthToken{
 		Token:             tokenHash,
+		PlainToken:        tokenPlain,
 		Description:       req.Description,
 		ExpiresAt:         req.ExpiresAt,
 		IsActive:          isActive,
@@ -227,7 +228,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 
 	log.Printf("[INFO] 创建API令牌: ID=%d, 描述=%s", authToken.ID, authToken.Description)
 
-	// 返回明文令牌（仅此一次机会）
+	// 返回明文令牌
 	RespondJSON(c, http.StatusOK, gin.H{
 		"id":                  authToken.ID,
 		"token":               tokenPlain, // 明文令牌，仅创建时返回
@@ -251,6 +252,7 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 
 	var req struct {
+		PlainToken        *string           `json:"plain_token"`
 		Description       *string           `json:"description"`
 		IsActive          *bool             `json:"is_active"`
 		ExpiresAt         optionalInt64JSON `json:"expires_at"`
@@ -284,6 +286,13 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 
 	// 更新字段
+	if req.PlainToken != nil {
+		plainToken := strings.TrimSpace(*req.PlainToken)
+		token.PlainToken = plainToken
+		if plainToken != "" {
+			token.Token = model.HashToken(plainToken)
+		}
+	}
 	if req.Description != nil {
 		token.Description = *req.Description
 	}
