@@ -39,10 +39,16 @@
     <main class="main-content">
       <div class="content-area">
         <header class="mt-2 mb-2">
-          <div class="glass-card" style="padding: var(--space-6);">
+          <div class="glass-card channel-page-header-card">
             <div class="channel-page-hero">
-              <p class="page-subtitle" style="margin: 0;" data-i18n="channels.description">
-                配置API渠道、优先级和模型支持（<b>优先请求高优先级渠道，相同优先级按Key数量加权随机</b>）</p>
+              <div class="channel-page-copy">
+                <div class="channel-page-brand" aria-hidden="true">CH</div>
+                <div class="channel-page-copy-body">
+                  <h1 class="channel-page-title" data-i18n="channels.title">渠道管理</h1>
+                  <p class="page-subtitle" style="margin: 0;" data-i18n="channels.description">
+                    配置API渠道、优先级和模型支持（<b>优先请求高优先级渠道，相同优先级按Key数量加权随机</b>）</p>
+                </div>
+              </div>
               <div class="channel-page-actions">
                 <button id="exportCsvBtn" type="button" class="btn btn-secondary channel-page-action-btn"
                   data-i18n-title="channels.exportCsvTitle"

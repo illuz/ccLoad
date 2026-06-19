@@ -21,7 +21,7 @@
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.resolvedTheme = resolvedTheme;
   document.documentElement.style.colorScheme = resolvedTheme;
-  document.documentElement.style.backgroundColor = resolvedTheme === 'dark' ? '#0f172a' : '#fcfbf9';
+  document.documentElement.style.backgroundColor = resolvedTheme === 'dark' ? '#0f172a' : '#f8fafc';
   document.documentElement.style.color = resolvedTheme === 'dark' ? '#e5e7eb' : '#111827';
 
   const meta = document.querySelector('meta[name="theme-color"]');
