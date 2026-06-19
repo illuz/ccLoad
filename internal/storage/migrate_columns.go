@@ -13,6 +13,7 @@ import (
 var sqliteMigratableTables = map[string]bool{
 	"logs":                        true,
 	"auth_tokens":                 true,
+	"auth_token_groups":           true,
 	"channel_models":              true,
 	"channel_protocol_transforms": true,
 	"api_keys":                    true,
@@ -375,6 +376,25 @@ func ensureAuthTokensMaxConcurrency(ctx context.Context, db *sql.DB, dialect Dia
 
 	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
 		{name: "max_concurrency", definition: "INTEGER NOT NULL DEFAULT 0"},
+	})
+}
+
+// ensureAuthTokensGroupFields 确保auth_tokens表有分组与继承字段（2026-06新增）
+func ensureAuthTokensGroupFields(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "auth_tokens", []mysqlColumnDef{
+			{name: "group_id", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "inherit_quota", definition: "TINYINT NOT NULL DEFAULT 0"},
+			{name: "inherit_channels", definition: "TINYINT NOT NULL DEFAULT 0"},
+			{name: "inherit_models", definition: "TINYINT NOT NULL DEFAULT 0"},
+		})
+	}
+
+	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
+		{name: "group_id", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "inherit_quota", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "inherit_channels", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "inherit_models", definition: "INTEGER NOT NULL DEFAULT 0"},
 	})
 }
 

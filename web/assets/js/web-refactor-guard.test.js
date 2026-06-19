@@ -48,6 +48,10 @@ test('英文渠道模型数量后缀不能回退到中文', () => {
   assert.match(enLocaleSource, /'channels\.modelCountSuffix':\s*'models'/);
 });
 
+test('中文渠道模型数量文案已补齐', () => {
+  assert.match(zhLocaleSource, /'channels\.modal\.modelCount':\s*'共 \{count\} 个模型'/);
+});
+
 test('channels 页面脚本复用统一通知入口，不再引用不存在的 showToast', () => {
   assert.doesNotMatch(channelsKeysSource, /\bshowToast\(/);
   assert.match(channelsKeysSource, /window\.showSuccess\(/);

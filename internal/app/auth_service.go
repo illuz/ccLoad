@@ -514,6 +514,16 @@ func (s *AuthService) ReloadAuthTokens() error {
 	if err != nil {
 		return fmt.Errorf("reload auth tokens: %w", err)
 	}
+	groups, err := s.store.ListAuthTokenGroups(ctx)
+	if err != nil {
+		return fmt.Errorf("reload auth token groups: %w", err)
+	}
+	groupByID := make(map[int64]*model.AuthTokenGroup, len(groups))
+	for _, group := range groups {
+		if group != nil {
+			groupByID[group.ID] = group
+		}
+	}
 
 	// 构建新的令牌映射（存储过期时间而非bool）
 	newTokens := make(map[string]int64, len(tokens))
@@ -523,6 +533,8 @@ func (s *AuthService) ReloadAuthTokens() error {
 	newTokenCostLimits := make(map[string]tokenCostLimit, len(tokens))
 	newTokenMaxConns := make(map[string]int, len(tokens))
 	for _, t := range tokens {
+		t.ApplyGroupEffective(groupByID[t.GroupID])
+		t.ApplyEffectiveValuesToRawForRuntime()
 		if err := t.ValidateUsageLimits(); err != nil {
 			return fmt.Errorf("invalid auth token %d: %w", t.ID, err)
 		}

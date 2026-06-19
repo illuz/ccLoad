@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 
 	"ccLoad/internal/version"
 
@@ -124,12 +126,41 @@ func serveHTMLWithVersionFrom(c *gin.Context, fileSystem fs.FS, filePath string)
 	}
 
 	// 替换版本号占位符
-	html := strings.ReplaceAll(string(content), "__VERSION__", version.Version)
+	html := strings.ReplaceAll(string(content), "__VERSION__", htmlAssetVersion())
 
 	// HTML 不缓存，确保用户总能获取最新版本号引用
 	c.Header("Cache-Control", "no-cache, must-revalidate")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, html)
+}
+
+// htmlAssetVersion 返回 HTML 中静态资源的缓存版本号。
+//
+// 规则：
+// - dev 环境：保持 dev，方便本地调试
+// - 正式构建：在版本号后追加 build time，确保每次构建都会刷新浏览器缓存
+func htmlAssetVersion() string {
+	base := strings.TrimSpace(version.Version)
+	if base == "" {
+		base = "dev"
+	}
+	if base == "dev" {
+		return base
+	}
+
+	buildTime := strings.TrimSpace(version.BuildTime)
+	if buildTime == "" || buildTime == "unknown" {
+		return base
+	}
+
+	if ts, err := time.Parse("2006-01-02 15:04:05 -0700", buildTime); err == nil {
+		return base + "-" + strconv.FormatInt(ts.Unix(), 10)
+	}
+	if ts, err := time.Parse(time.RFC3339, buildTime); err == nil {
+		return base + "-" + strconv.FormatInt(ts.Unix(), 10)
+	}
+
+	return base
 }
 
 // serveStaticWithCacheFrom 处理静态资源，设置缓存策略（从指定的文件系统）

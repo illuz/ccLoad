@@ -50,6 +50,7 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		schema.DefineChannelModelsTable,
 		schema.DefineChannelProtocolTransformsTable,
 		schema.DefineChannelURLStatesTable,
+		schema.DefineAuthTokenGroupsTable,
 		schema.DefineAuthTokensTable,
 		schema.DefineSystemSettingsTable,
 		schema.DefineAdminSessionsTable,
@@ -169,6 +170,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := ensureAuthTokensMaxConcurrency(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens max_concurrency: %w", err)
+			}
+			if err := ensureAuthTokensGroupFields(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_tokens group fields: %w", err)
 			}
 			if err := backfillAuthTokensCostLimitMaxConcurrency(ctx, db); err != nil {
 				return fmt.Errorf("backfill auth_tokens max_concurrency: %w", err)

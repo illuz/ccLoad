@@ -98,7 +98,7 @@
               <div class="channel-search-control">
                 <div class="filter-combobox-wrapper filter-control--compact">
                   <input id="searchInput" class="filter-select filter-combobox" type="text" autocomplete="off"
-                    spellcheck="false" />
+                    spellcheck="false" data-i18n-placeholder="channels.searchPlaceholder" placeholder="输入渠道名称..." />
                   <div id="searchInputDropdown" class="filter-dropdown" role="listbox" aria-label="渠道名称"></div>
                 </div>
               </div>
@@ -173,9 +173,10 @@
                 <span data-i18n="channels.pageSize">每页</span>
                 <select id="channels_page_size" class="logs-jump-input">
                   <option value="10">10</option>
-                  <option value="20" selected>20</option>
+                  <option value="20">20</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
+                  <option value="200" selected>200</option>
                 </select>
                 <span data-i18n="channels.pageSizeUnit">条</span>
               </span>

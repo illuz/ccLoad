@@ -1,7 +1,7 @@
 const t = window.t;
 
 let currentLogsPage = 1;
-let logsPageSize = 15;
+let logsPageSize = 200;
 let totalLogsPages = 1;
 let totalLogs = 0;
 let currentChannelType = 'all'; // 当前选中的渠道类型

@@ -681,6 +681,50 @@ func (h *HybridStore) DeleteAuthToken(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (h *HybridStore) CreateAuthTokenGroup(ctx context.Context, group *model.AuthTokenGroup) error {
+	if err := h.mysql.CreateAuthTokenGroup(ctx, group); err != nil {
+		return err
+	}
+
+	h.syncToSQLite("CreateAuthTokenGroup", func() error {
+		return h.sqlite.CreateAuthTokenGroup(ctx, group)
+	})
+
+	return nil
+}
+
+func (h *HybridStore) GetAuthTokenGroup(ctx context.Context, id int64) (*model.AuthTokenGroup, error) {
+	return h.sqlite.GetAuthTokenGroup(ctx, id)
+}
+
+func (h *HybridStore) ListAuthTokenGroups(ctx context.Context) ([]*model.AuthTokenGroup, error) {
+	return h.sqlite.ListAuthTokenGroups(ctx)
+}
+
+func (h *HybridStore) UpdateAuthTokenGroup(ctx context.Context, group *model.AuthTokenGroup) error {
+	if err := h.mysql.UpdateAuthTokenGroup(ctx, group); err != nil {
+		return err
+	}
+
+	h.syncToSQLite("UpdateAuthTokenGroup", func() error {
+		return h.sqlite.UpdateAuthTokenGroup(ctx, group)
+	})
+
+	return nil
+}
+
+func (h *HybridStore) DeleteAuthTokenGroup(ctx context.Context, id int64) error {
+	if err := h.mysql.DeleteAuthTokenGroup(ctx, id); err != nil {
+		return err
+	}
+
+	h.syncToSQLite("DeleteAuthTokenGroup", func() error {
+		return h.sqlite.DeleteAuthTokenGroup(ctx, id)
+	})
+
+	return nil
+}
+
 func (h *HybridStore) UpdateTokenLastUsed(ctx context.Context, tokenHash string, now time.Time) error {
 	if err := h.mysql.UpdateTokenLastUsed(ctx, tokenHash, now); err != nil {
 		return err

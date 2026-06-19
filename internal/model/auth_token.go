@@ -59,6 +59,35 @@ type AuthToken struct {
 
 	// 并发限制（2026-04新增）
 	MaxConcurrency int `json:"max_concurrency"` // 最大并发请求数，0表示无限制
+
+	// 分组与继承（2026-06新增）
+	GroupID                    int64    `json:"group_id"`             // 所属分组ID，0表示未分组
+	GroupName                  string   `json:"group_name,omitempty"` // 所属分组名称（仅响应展示）
+	InheritQuota               bool     `json:"inherit_quota"`        // 是否继承分组配额（费用上限+并发上限）
+	InheritChannels            bool     `json:"inherit_channels"`     // 是否继承分组渠道限制
+	InheritModels              bool     `json:"inherit_models"`       // 是否继承分组模型限制
+	EffectiveSet               bool     `json:"-"`                    // 是否已计算有效限制（仅响应/运行时）
+	EffectiveCostLimitMicroUSD int64    `json:"-"`                    // 有效费用上限（微美元）
+	EffectiveAllowedModels     []string `json:"-"`                    // 有效模型限制
+	EffectiveAllowedChannelIDs []int64  `json:"-"`                    // 有效渠道限制
+	EffectiveMaxConcurrency    int      `json:"-"`                    // 有效并发上限
+}
+
+// AuthTokenGroup 表示 API 访问令牌分组。
+//
+// 分组限制是“每个令牌的模板”，不是共享额度池：令牌选择继承后，会把这里的
+// 配额/渠道/模型限制作为该令牌的有效限制；令牌自身的用量统计仍然独立累计。
+type AuthTokenGroup struct {
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	CostLimitMicroUSD int64     `json:"-"`
+	MaxConcurrency    int       `json:"max_concurrency"`
+	AllowedModels     []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
+	TokenCount        int       `json:"token_count,omitempty"`
 }
 
 // AuthTokenRangeStats 某个时间范围内的token统计（从logs表聚合，2025-12新增）
@@ -166,6 +195,75 @@ func (t *AuthToken) SetCostLimitUSD(usd float64) {
 	t.CostLimitMicroUSD = util.USDToMicroUSD(usd)
 }
 
+// EffectiveCostLimitUSD 返回已计算的有效费用上限（美元）。
+func (t *AuthToken) EffectiveCostLimitUSDValue() float64 {
+	if !t.EffectiveSet {
+		return t.CostLimitUSD()
+	}
+	return util.MicroUSDToUSD(t.EffectiveCostLimitMicroUSD)
+}
+
+// ApplyGroupEffective 根据分组与继承开关计算令牌的有效限制。
+// 只写入 Effective* 展示/运行时字段，不覆盖令牌自身配置，避免用户取消继承时丢失自定义值。
+func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
+	if t == nil {
+		return
+	}
+
+	t.GroupName = ""
+	t.EffectiveSet = true
+	t.EffectiveCostLimitMicroUSD = t.CostLimitMicroUSD
+	t.EffectiveMaxConcurrency = t.MaxConcurrency
+	t.EffectiveAllowedModels = cloneStringSlice(t.AllowedModels)
+	t.EffectiveAllowedChannelIDs = cloneInt64Slice(t.AllowedChannelIDs)
+
+	if group == nil || t.GroupID == 0 || t.GroupID != group.ID {
+		return
+	}
+
+	t.GroupName = group.Name
+	if t.InheritQuota {
+		t.EffectiveCostLimitMicroUSD = group.CostLimitMicroUSD
+		t.EffectiveMaxConcurrency = group.MaxConcurrency
+	}
+	if t.InheritChannels {
+		t.EffectiveAllowedChannelIDs = cloneInt64Slice(group.AllowedChannelIDs)
+	}
+	if t.InheritModels {
+		t.EffectiveAllowedModels = cloneStringSlice(group.AllowedModels)
+	}
+}
+
+// ApplyEffectiveValuesToRawForRuntime 将已计算的有效限制写回运行时使用的字段。
+// AuthService 只读取原有限制字段，因此热更新时使用该方法使继承配置立即生效。
+func (t *AuthToken) ApplyEffectiveValuesToRawForRuntime() {
+	if t == nil || !t.EffectiveSet {
+		return
+	}
+	t.CostLimitMicroUSD = t.EffectiveCostLimitMicroUSD
+	t.MaxConcurrency = t.EffectiveMaxConcurrency
+	t.AllowedModels = cloneStringSlice(t.EffectiveAllowedModels)
+	t.AllowedChannelIDs = cloneInt64Slice(t.EffectiveAllowedChannelIDs)
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	copy(out, values)
+	return out
+}
+
+func cloneInt64Slice(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int64, len(values))
+	copy(out, values)
+	return out
+}
+
 // ValidateUsageLimits enforces invariants that keep limit checks bounded.
 func (t *AuthToken) ValidateUsageLimits() error {
 	if t.CostLimitMicroUSD < 0 {
@@ -174,74 +272,182 @@ func (t *AuthToken) ValidateUsageLimits() error {
 	if t.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
 	}
-	if t.CostLimitMicroUSD > 0 && t.MaxConcurrency <= 0 {
+	if t.CostLimitMicroUSD > 0 && t.MaxConcurrency <= 0 && !(t.GroupID > 0 && t.InheritQuota) {
 		return errors.New("cost-limited auth token requires max_concurrency > 0")
+	}
+	return nil
+}
+
+// CostLimitUSD 返回分组费用上限（美元）。
+func (g *AuthTokenGroup) CostLimitUSD() float64 {
+	if g == nil {
+		return 0
+	}
+	return util.MicroUSDToUSD(g.CostLimitMicroUSD)
+}
+
+// SetCostLimitUSD 设置分组费用上限（从美元转换为微美元）。
+func (g *AuthTokenGroup) SetCostLimitUSD(usd float64) {
+	if g == nil {
+		return
+	}
+	if usd <= 0 {
+		g.CostLimitMicroUSD = 0
+		return
+	}
+	g.CostLimitMicroUSD = util.USDToMicroUSD(usd)
+}
+
+// ValidateUsageLimits enforces invariants for group-level limit templates.
+func (g *AuthTokenGroup) ValidateUsageLimits() error {
+	if g == nil {
+		return errors.New("group cannot be nil")
+	}
+	if strings.TrimSpace(g.Name) == "" {
+		return errors.New("name is required")
+	}
+	if g.CostLimitMicroUSD < 0 {
+		return errors.New("cost_limit_usd must be >= 0")
+	}
+	if g.MaxConcurrency < 0 {
+		return errors.New("max_concurrency must be >= 0")
+	}
+	if g.CostLimitMicroUSD > 0 && g.MaxConcurrency <= 0 {
+		return errors.New("cost-limited auth token group requires max_concurrency > 0")
 	}
 	return nil
 }
 
 // authTokenJSON 是用于JSON序列化的内部结构
 type authTokenJSON struct {
-	ID                       int64     `json:"id"`
-	Token                    string    `json:"token"`
-	PlainToken               string    `json:"plain_token,omitempty"`
-	Description              string    `json:"description"`
-	CreatedAt                time.Time `json:"created_at"`
-	ExpiresAt                *int64    `json:"expires_at,omitempty"`
-	LastUsedAt               *int64    `json:"last_used_at,omitempty"`
-	IsActive                 bool      `json:"is_active"`
-	SuccessCount             int64     `json:"success_count"`
-	FailureCount             int64     `json:"failure_count"`
-	StreamAvgTTFB            float64   `json:"stream_avg_ttfb"`
-	NonStreamAvgRT           float64   `json:"non_stream_avg_rt"`
-	StreamCount              int64     `json:"stream_count"`
-	NonStreamCount           int64     `json:"non_stream_count"`
-	PromptTokensTotal        int64     `json:"prompt_tokens_total"`
-	CompletionTokensTotal    int64     `json:"completion_tokens_total"`
-	CacheReadTokensTotal     int64     `json:"cache_read_tokens_total"`
-	CacheCreationTokensTotal int64     `json:"cache_creation_tokens_total"`
-	TotalCostUSD             float64   `json:"total_cost_usd"`
-	EffectiveCostUSD         float64   `json:"effective_cost_usd"`
-	CostUsedUSD              float64   `json:"cost_used_usd"`
-	CostLimitUSD             float64   `json:"cost_limit_usd"`
-	PeakRPM                  float64   `json:"peak_rpm,omitempty"`
-	AvgRPM                   float64   `json:"avg_rpm,omitempty"`
-	RecentRPM                float64   `json:"recent_rpm,omitempty"`
-	AllowedModels            []string  `json:"allowed_models,omitempty"`
-	AllowedChannelIDs        []int64   `json:"allowed_channel_ids,omitempty"`
-	MaxConcurrency           int       `json:"max_concurrency"`
+	ID                         int64     `json:"id"`
+	Token                      string    `json:"token"`
+	PlainToken                 string    `json:"plain_token,omitempty"`
+	Description                string    `json:"description"`
+	CreatedAt                  time.Time `json:"created_at"`
+	ExpiresAt                  *int64    `json:"expires_at,omitempty"`
+	LastUsedAt                 *int64    `json:"last_used_at,omitempty"`
+	IsActive                   bool      `json:"is_active"`
+	SuccessCount               int64     `json:"success_count"`
+	FailureCount               int64     `json:"failure_count"`
+	StreamAvgTTFB              float64   `json:"stream_avg_ttfb"`
+	NonStreamAvgRT             float64   `json:"non_stream_avg_rt"`
+	StreamCount                int64     `json:"stream_count"`
+	NonStreamCount             int64     `json:"non_stream_count"`
+	PromptTokensTotal          int64     `json:"prompt_tokens_total"`
+	CompletionTokensTotal      int64     `json:"completion_tokens_total"`
+	CacheReadTokensTotal       int64     `json:"cache_read_tokens_total"`
+	CacheCreationTokensTotal   int64     `json:"cache_creation_tokens_total"`
+	TotalCostUSD               float64   `json:"total_cost_usd"`
+	EffectiveCostUSD           float64   `json:"effective_cost_usd"`
+	CostUsedUSD                float64   `json:"cost_used_usd"`
+	CostLimitUSD               float64   `json:"cost_limit_usd"`
+	PeakRPM                    float64   `json:"peak_rpm,omitempty"`
+	AvgRPM                     float64   `json:"avg_rpm,omitempty"`
+	RecentRPM                  float64   `json:"recent_rpm,omitempty"`
+	AllowedModels              []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs          []int64   `json:"allowed_channel_ids,omitempty"`
+	MaxConcurrency             int       `json:"max_concurrency"`
+	GroupID                    int64     `json:"group_id"`
+	GroupName                  string    `json:"group_name,omitempty"`
+	InheritQuota               bool      `json:"inherit_quota"`
+	InheritChannels            bool      `json:"inherit_channels"`
+	InheritModels              bool      `json:"inherit_models"`
+	EffectiveCostLimitUSD      float64   `json:"effective_cost_limit_usd"`
+	EffectiveAllowedModels     []string  `json:"effective_allowed_models,omitempty"`
+	EffectiveAllowedChannelIDs []int64   `json:"effective_allowed_channel_ids,omitempty"`
+	EffectiveMaxConcurrency    int       `json:"effective_max_concurrency"`
 }
 
 // MarshalJSON 自定义JSON序列化，将MicroUSD转换为USD浮点数
 func (t AuthToken) MarshalJSON() ([]byte, error) {
 	return json.Marshal(authTokenJSON{
-		ID:                       t.ID,
-		Token:                    t.Token,
-		PlainToken:               t.PlainToken,
-		Description:              t.Description,
-		CreatedAt:                t.CreatedAt,
-		ExpiresAt:                t.ExpiresAt,
-		LastUsedAt:               t.LastUsedAt,
-		IsActive:                 t.IsActive,
-		SuccessCount:             t.SuccessCount,
-		FailureCount:             t.FailureCount,
-		StreamAvgTTFB:            t.StreamAvgTTFB,
-		NonStreamAvgRT:           t.NonStreamAvgRT,
-		StreamCount:              t.StreamCount,
-		NonStreamCount:           t.NonStreamCount,
-		PromptTokensTotal:        t.PromptTokensTotal,
-		CompletionTokensTotal:    t.CompletionTokensTotal,
-		CacheReadTokensTotal:     t.CacheReadTokensTotal,
-		CacheCreationTokensTotal: t.CacheCreationTokensTotal,
-		TotalCostUSD:             t.TotalCostUSD,
-		EffectiveCostUSD:         t.EffectiveCostUSD,
-		CostUsedUSD:              t.CostUsedUSD(),
-		CostLimitUSD:             t.CostLimitUSD(),
-		PeakRPM:                  t.PeakRPM,
-		AvgRPM:                   t.AvgRPM,
-		RecentRPM:                t.RecentRPM,
-		AllowedModels:            t.AllowedModels,
-		AllowedChannelIDs:        t.AllowedChannelIDs,
-		MaxConcurrency:           t.MaxConcurrency,
+		ID:                         t.ID,
+		Token:                      t.Token,
+		PlainToken:                 t.PlainToken,
+		Description:                t.Description,
+		CreatedAt:                  t.CreatedAt,
+		ExpiresAt:                  t.ExpiresAt,
+		LastUsedAt:                 t.LastUsedAt,
+		IsActive:                   t.IsActive,
+		SuccessCount:               t.SuccessCount,
+		FailureCount:               t.FailureCount,
+		StreamAvgTTFB:              t.StreamAvgTTFB,
+		NonStreamAvgRT:             t.NonStreamAvgRT,
+		StreamCount:                t.StreamCount,
+		NonStreamCount:             t.NonStreamCount,
+		PromptTokensTotal:          t.PromptTokensTotal,
+		CompletionTokensTotal:      t.CompletionTokensTotal,
+		CacheReadTokensTotal:       t.CacheReadTokensTotal,
+		CacheCreationTokensTotal:   t.CacheCreationTokensTotal,
+		TotalCostUSD:               t.TotalCostUSD,
+		EffectiveCostUSD:           t.EffectiveCostUSD,
+		CostUsedUSD:                t.CostUsedUSD(),
+		CostLimitUSD:               t.CostLimitUSD(),
+		PeakRPM:                    t.PeakRPM,
+		AvgRPM:                     t.AvgRPM,
+		RecentRPM:                  t.RecentRPM,
+		AllowedModels:              t.AllowedModels,
+		AllowedChannelIDs:          t.AllowedChannelIDs,
+		MaxConcurrency:             t.MaxConcurrency,
+		GroupID:                    t.GroupID,
+		GroupName:                  t.GroupName,
+		InheritQuota:               t.InheritQuota,
+		InheritChannels:            t.InheritChannels,
+		InheritModels:              t.InheritModels,
+		EffectiveCostLimitUSD:      t.EffectiveCostLimitUSDValue(),
+		EffectiveAllowedModels:     effectiveStringSlice(t.EffectiveSet, t.EffectiveAllowedModels, t.AllowedModels),
+		EffectiveAllowedChannelIDs: effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
+		EffectiveMaxConcurrency:    effectiveInt(t.EffectiveSet, t.EffectiveMaxConcurrency, t.MaxConcurrency),
+	})
+}
+
+func effectiveStringSlice(effectiveSet bool, effectiveValues, rawValues []string) []string {
+	if effectiveSet {
+		return effectiveValues
+	}
+	return rawValues
+}
+
+func effectiveInt64Slice(effectiveSet bool, effectiveValues, rawValues []int64) []int64 {
+	if effectiveSet {
+		return effectiveValues
+	}
+	return rawValues
+}
+
+func effectiveInt(effectiveSet bool, effectiveValue, rawValue int) int {
+	if effectiveSet {
+		return effectiveValue
+	}
+	return rawValue
+}
+
+type authTokenGroupJSON struct {
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	CostLimitUSD      float64   `json:"cost_limit_usd"`
+	MaxConcurrency    int       `json:"max_concurrency"`
+	AllowedModels     []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
+	TokenCount        int       `json:"token_count,omitempty"`
+}
+
+// MarshalJSON 自定义分组JSON序列化，将MicroUSD转换为USD浮点数。
+func (g AuthTokenGroup) MarshalJSON() ([]byte, error) {
+	return json.Marshal(authTokenGroupJSON{
+		ID:                g.ID,
+		Name:              g.Name,
+		Description:       g.Description,
+		CreatedAt:         g.CreatedAt,
+		UpdatedAt:         g.UpdatedAt,
+		CostLimitUSD:      g.CostLimitUSD(),
+		MaxConcurrency:    g.MaxConcurrency,
+		AllowedModels:     g.AllowedModels,
+		AllowedChannelIDs: g.AllowedChannelIDs,
+		TokenCount:        g.TokenCount,
 	})
 }

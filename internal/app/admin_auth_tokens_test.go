@@ -155,6 +155,9 @@ func TestAdminAPI_ListAuthTokens_ResponseShape(t *testing.T) {
 // authTokenListResponse 用于反序列化 HandleListAuthTokens 响应
 type authTokenListResponse struct {
 	Tokens          []*model.AuthToken `json:"tokens"`
+	TotalCount      int                `json:"total_count"`
+	Limit           int                `json:"limit"`
+	Offset          int                `json:"offset"`
 	DurationSeconds float64            `json:"duration_seconds"`
 	RPMStats        *model.RPMStats    `json:"rpm_stats"`
 	IsToday         bool               `json:"is_today"`
@@ -213,6 +216,83 @@ func TestHandleListAuthTokens_WithTokens(t *testing.T) {
 	resp := mustParseAPIResponse[authTokenListResponse](t, w.Body.Bytes())
 	if len(resp.Data.Tokens) != 2 {
 		t.Errorf("Expected 2 tokens, got %d", len(resp.Data.Tokens))
+	}
+	if resp.Data.TotalCount != 2 {
+		t.Errorf("Expected total_count=2, got %d", resp.Data.TotalCount)
+	}
+	if resp.Data.Limit != 200 {
+		t.Errorf("Expected default limit=200, got %d", resp.Data.Limit)
+	}
+}
+
+func TestHandleListAuthTokens_SearchAndPagination(t *testing.T) {
+	server := newInMemoryServer(t)
+	createTestToken(t, server, "alpha token")
+	createTestToken(t, server, "beta token")
+	createTestToken(t, server, "alpha backup")
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/admin/auth-tokens?search=alpha&limit=1&offset=1", nil))
+	server.HandleListAuthTokens(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	resp := mustParseAPIResponse[authTokenListResponse](t, w.Body.Bytes())
+	if len(resp.Data.Tokens) != 1 {
+		t.Fatalf("Expected 1 paginated token, got %d", len(resp.Data.Tokens))
+	}
+	if resp.Data.TotalCount != 2 {
+		t.Fatalf("Expected total_count=2 after search, got %d", resp.Data.TotalCount)
+	}
+	if resp.Data.Limit != 1 || resp.Data.Offset != 1 {
+		t.Fatalf("limit/offset=%d/%d, want 1/1", resp.Data.Limit, resp.Data.Offset)
+	}
+}
+
+func TestHandleListAuthTokens_SearchMatchesGroupName(t *testing.T) {
+	server := newInMemoryServer(t)
+	ctx := context.Background()
+
+	group := &model.AuthTokenGroup{
+		Name:           "Premium Group",
+		MaxConcurrency: 2,
+	}
+	group.SetCostLimitUSD(1.0)
+	if err := server.store.CreateAuthTokenGroup(ctx, group); err != nil {
+		t.Fatalf("CreateAuthTokenGroup failed: %v", err)
+	}
+
+	token := &model.AuthToken{
+		Token:       model.HashToken("group-token"),
+		PlainToken:  "group-token",
+		Description: "alpha token",
+		IsActive:    true,
+		GroupID:     group.ID,
+	}
+	if err := server.store.CreateAuthToken(ctx, token); err != nil {
+		t.Fatalf("CreateAuthToken failed: %v", err)
+	}
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/admin/auth-tokens?search=premium&limit=200&offset=0", nil))
+	server.HandleListAuthTokens(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	resp := mustParseAPIResponse[authTokenListResponse](t, w.Body.Bytes())
+	if !resp.Success {
+		t.Fatalf("success=false, error=%q", resp.Error)
+	}
+	if resp.Data.TotalCount != 1 {
+		t.Fatalf("Expected total_count=1 after group search, got %d", resp.Data.TotalCount)
+	}
+	if len(resp.Data.Tokens) != 1 {
+		t.Fatalf("Expected 1 token, got %d", len(resp.Data.Tokens))
+	}
+	if resp.Data.Tokens[0].GroupName != group.Name {
+		t.Fatalf("group name=%q, want %q", resp.Data.Tokens[0].GroupName, group.Name)
 	}
 }
 

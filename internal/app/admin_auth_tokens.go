@@ -39,8 +39,8 @@ func (v *optionalInt64JSON) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// HandleListAuthTokens 列出所有API访问令牌（支持时间范围统计，2025-12扩展）
-// GET /admin/auth-tokens?range=today
+// HandleListAuthTokens 列出 API 访问令牌（支持名称搜索、分页、时间范围统计）
+// GET /admin/auth-tokens?range=today&search=foo&limit=200&offset=0
 func (s *Server) HandleListAuthTokens(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
@@ -55,23 +55,41 @@ func (s *Server) HandleListAuthTokens(c *gin.Context) {
 	if tokens == nil {
 		tokens = make([]*model.AuthToken, 0)
 	}
+	groups, groupByID, err := s.loadAuthTokenGroupsForAdmin(ctx)
+	if err != nil {
+		log.Printf("[WARN]  查询令牌分组失败: %v", err)
+		groups = []*model.AuthTokenGroup{}
+		groupByID = map[int64]*model.AuthTokenGroup{}
+	}
+	applyAuthTokenGroupEffective(tokens, groupByID)
+	tokens = filterAuthTokenList(tokens, c)
+
+	params := ParsePaginationParams(c)
+	totalCount := len(tokens)
 
 	type AuthTokenListResponse struct {
-		Tokens          []*model.AuthToken `json:"tokens"`
-		DurationSeconds float64            `json:"duration_seconds,omitempty"`
-		RPMStats        *model.RPMStats    `json:"rpm_stats,omitempty"`
-		IsToday         bool               `json:"is_today"`
+		Tokens          []*model.AuthToken      `json:"tokens"`
+		Groups          []*model.AuthTokenGroup `json:"groups"`
+		TotalCount      int                     `json:"total_count"`
+		Limit           int                     `json:"limit"`
+		Offset          int                     `json:"offset"`
+		DurationSeconds float64                 `json:"duration_seconds,omitempty"`
+		RPMStats        *model.RPMStats         `json:"rpm_stats,omitempty"`
+		IsToday         bool                    `json:"is_today"`
 	}
 
 	resp := AuthTokenListResponse{
-		Tokens:  tokens,
-		IsToday: false,
+		Tokens:     tokens,
+		Groups:     groups,
+		TotalCount: totalCount,
+		Limit:      params.Limit,
+		Offset:     params.Offset,
+		IsToday:    false,
 	}
 
 	// 如果请求中包含range参数，则叠加时间范围统计（用于tokens.html页面）
 	timeRange := strings.TrimSpace(c.Query("range"))
 	if timeRange != "" && timeRange != "all" {
-		params := ParsePaginationParams(c)
 		startTime, endTime := params.GetTimeRange()
 
 		// 计算时间跨度（秒），用于前端计算RPM和QPS
@@ -146,7 +164,94 @@ func (s *Server) HandleListAuthTokens(c *gin.Context) {
 
 	}
 
+	resp.Tokens = paginateAuthTokens(tokens, params)
+
 	RespondJSON(c, http.StatusOK, resp)
+}
+
+func filterAuthTokenList(tokens []*model.AuthToken, c *gin.Context) []*model.AuthToken {
+	exactName := strings.TrimSpace(c.Query("token_name"))
+	if exactName == "" {
+		exactName = strings.TrimSpace(c.Query("description"))
+	}
+	search := strings.TrimSpace(c.Query("search"))
+	searchLower := strings.ToLower(search)
+
+	if exactName == "" && search == "" {
+		return tokens
+	}
+
+	filtered := make([]*model.AuthToken, 0, len(tokens))
+	if exactName != "" {
+		for _, token := range tokens {
+			if token == nil {
+				continue
+			}
+			if strings.TrimSpace(token.Description) == exactName ||
+				strings.TrimSpace(token.GroupName) == exactName {
+				filtered = append(filtered, token)
+			}
+		}
+		return filtered
+	}
+
+	for _, token := range tokens {
+		if token == nil {
+			continue
+		}
+		if strings.Contains(strings.ToLower(strings.TrimSpace(token.Description)), searchLower) ||
+			strings.Contains(strings.ToLower(strings.TrimSpace(token.GroupName)), searchLower) ||
+			strings.Contains(strings.ToLower(strings.TrimSpace(token.PlainToken)), searchLower) {
+			filtered = append(filtered, token)
+		}
+	}
+	return filtered
+}
+
+func paginateAuthTokens(tokens []*model.AuthToken, params *PaginationParams) []*model.AuthToken {
+	if params == nil {
+		params = &PaginationParams{}
+		params.SetDefaults()
+	}
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(tokens) {
+		return []*model.AuthToken{}
+	}
+	end := min(offset+limit, len(tokens))
+	return tokens[offset:end]
+}
+
+func (s *Server) loadAuthTokenGroupsForAdmin(ctx context.Context) ([]*model.AuthTokenGroup, map[int64]*model.AuthTokenGroup, error) {
+	groups, err := s.store.ListAuthTokenGroups(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	groupByID := make(map[int64]*model.AuthTokenGroup, len(groups))
+	for _, group := range groups {
+		if group != nil {
+			groupByID[group.ID] = group
+		}
+	}
+	return groups, groupByID, nil
+}
+
+func applyAuthTokenGroupEffective(tokens []*model.AuthToken, groupByID map[int64]*model.AuthTokenGroup) {
+	for _, token := range tokens {
+		if token == nil {
+			continue
+		}
+		token.ApplyGroupEffective(groupByID[token.GroupID])
+	}
 }
 
 // HandleCreateAuthToken 创建新的API访问令牌
@@ -160,6 +265,10 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		AllowedChannelIDs []int64  `json:"allowed_channel_ids"` // 允许的渠道ID列表，空表示无限制
 		CostLimitUSD      *float64 `json:"cost_limit_usd"`      // 费用上限（0=无限制）
 		MaxConcurrency    *int     `json:"max_concurrency"`     // 最大并发请求数（0=无限制）
+		GroupID           *int64   `json:"group_id"`            // 分组ID，0/空表示未分组
+		InheritQuota      *bool    `json:"inherit_quota"`
+		InheritChannels   *bool    `json:"inherit_channels"`
+		InheritModels     *bool    `json:"inherit_models"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -172,6 +281,10 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "max_concurrency must be >= 0")
+		return
+	}
+	if req.GroupID != nil && *req.GroupID < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
 		return
 	}
 
@@ -201,6 +314,23 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		AllowedModels:     req.AllowedModels,
 		AllowedChannelIDs: req.AllowedChannelIDs,
 	}
+	if req.GroupID != nil {
+		authToken.GroupID = *req.GroupID
+	}
+	if req.InheritQuota != nil {
+		authToken.InheritQuota = *req.InheritQuota
+	}
+	if req.InheritChannels != nil {
+		authToken.InheritChannels = *req.InheritChannels
+	}
+	if req.InheritModels != nil {
+		authToken.InheritModels = *req.InheritModels
+	}
+	if authToken.GroupID == 0 {
+		authToken.InheritQuota = false
+		authToken.InheritChannels = false
+		authToken.InheritModels = false
+	}
 	if req.CostLimitUSD != nil {
 		authToken.SetCostLimitUSD(*req.CostLimitUSD)
 	}
@@ -214,6 +344,13 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
+
+	if authToken.GroupID > 0 {
+		if _, err := s.store.GetAuthTokenGroup(ctx, authToken.GroupID); err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, "auth token group not found")
+			return
+		}
+	}
 
 	if err := s.store.CreateAuthToken(ctx, authToken); err != nil {
 		log.Print("[ERROR] 创建令牌失败: " + err.Error())
@@ -239,6 +376,10 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"allowed_models":      authToken.AllowedModels,
 		"allowed_channel_ids": authToken.AllowedChannelIDs,
 		"max_concurrency":     authToken.MaxConcurrency,
+		"group_id":            authToken.GroupID,
+		"inherit_quota":       authToken.InheritQuota,
+		"inherit_channels":    authToken.InheritChannels,
+		"inherit_models":      authToken.InheritModels,
 	})
 }
 
@@ -260,6 +401,10 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		AllowedChannelIDs *[]int64          `json:"allowed_channel_ids"` // nil=不更新，空数组=清除限制
 		CostLimitUSD      *float64          `json:"cost_limit_usd"`      // 费用上限（0=无限制）
 		MaxConcurrency    *int              `json:"max_concurrency"`     // 最大并发请求数（0=无限制）
+		GroupID           *int64            `json:"group_id"`            // 分组ID，0表示未分组
+		InheritQuota      *bool             `json:"inherit_quota"`
+		InheritChannels   *bool             `json:"inherit_channels"`
+		InheritModels     *bool             `json:"inherit_models"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -272,6 +417,10 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "max_concurrency must be >= 0")
+		return
+	}
+	if req.GroupID != nil && *req.GroupID < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
 		return
 	}
 
@@ -308,6 +457,23 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	if req.AllowedChannelIDs != nil {
 		token.AllowedChannelIDs = *req.AllowedChannelIDs
 	}
+	if req.GroupID != nil {
+		token.GroupID = *req.GroupID
+	}
+	if req.InheritQuota != nil {
+		token.InheritQuota = *req.InheritQuota
+	}
+	if req.InheritChannels != nil {
+		token.InheritChannels = *req.InheritChannels
+	}
+	if req.InheritModels != nil {
+		token.InheritModels = *req.InheritModels
+	}
+	if token.GroupID == 0 {
+		token.InheritQuota = false
+		token.InheritChannels = false
+		token.InheritModels = false
+	}
 	// cost_limit_usd 只有传入时才更新
 	if req.CostLimitUSD != nil {
 		token.SetCostLimitUSD(*req.CostLimitUSD)
@@ -319,6 +485,12 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if token.GroupID > 0 {
+		if _, err := s.store.GetAuthTokenGroup(ctx, token.GroupID); err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, "auth token group not found")
+			return
+		}
+	}
 
 	if err := s.store.UpdateAuthToken(ctx, token); err != nil {
 		log.Print("[ERROR] 更新令牌失败: " + err.Error())
@@ -329,6 +501,14 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	// 触发热更新
 	if err := s.authService.ReloadAuthTokens(); err != nil {
 		log.Print("[WARN]  热更新失败: " + err.Error())
+	}
+
+	if token.GroupID > 0 {
+		if group, err := s.store.GetAuthTokenGroup(ctx, token.GroupID); err == nil {
+			token.ApplyGroupEffective(group)
+		}
+	} else {
+		token.ApplyGroupEffective(nil)
 	}
 
 	RespondJSON(c, http.StatusOK, token)

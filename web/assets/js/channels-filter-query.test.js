@@ -12,7 +12,7 @@ function loadChannelsDataHarness(filters) {
     console,
     URLSearchParams,
     filters,
-    channelsPageSize: 20,
+    channelsPageSize: 200,
     channelsCurrentPage: 1
   };
   vm.createContext(sandbox);
@@ -52,6 +52,21 @@ test('channels 列表参数对非完整选项使用模糊渠道名和模型键',
   assert.equal(params.has('channel_name'), false);
   assert.equal(params.get('model_like'), 'gpt-5');
   assert.equal(params.has('model'), false);
+});
+
+test('channels 列表默认请求单页 200 条', () => {
+  const { buildChannelsListParams } = loadChannelsDataHarness({
+    search: '',
+    searchExact: false,
+    status: 'all',
+    model: 'all',
+    modelExact: false
+  });
+
+  const params = buildChannelsListParams('all');
+
+  assert.equal(params.get('limit'), '200');
+  assert.equal(params.get('offset'), '0');
 });
 
 test('channels 筛选下拉记录渠道名和模型是否精确命中选项', () => {

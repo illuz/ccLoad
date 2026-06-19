@@ -142,10 +142,15 @@ func TestAuthService_CostLimit(t *testing.T) {
 type reloadStubStore struct {
 	storage.Store
 	tokens []*model.AuthToken
+	groups []*model.AuthTokenGroup
 }
 
 func (s *reloadStubStore) ListActiveAuthTokens(_ context.Context) ([]*model.AuthToken, error) {
 	return s.tokens, nil
+}
+
+func (s *reloadStubStore) ListAuthTokenGroups(_ context.Context) ([]*model.AuthTokenGroup, error) {
+	return s.groups, nil
 }
 
 // TestReloadAuthTokens_DoesNotRegressUsage 复现 P0-1：

@@ -15,9 +15,11 @@ import (
 func TestStaticFileServing(t *testing.T) {
 	origFS := embedFS
 	origVersion := version.Version
+	origBuildTime := version.BuildTime
 	defer func() {
 		embedFS = origFS
 		version.Version = origVersion
+		version.BuildTime = origBuildTime
 	}()
 
 	root := fstest.MapFS{
@@ -39,6 +41,7 @@ func TestStaticFileServing(t *testing.T) {
 
 	t.Run("html_replaces_version_no_cache", func(t *testing.T) {
 		version.Version = "1.2.3"
+		version.BuildTime = "unknown"
 		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/index.html", nil))
 
 		if w.Code != http.StatusOK {
@@ -49,6 +52,19 @@ func TestStaticFileServing(t *testing.T) {
 		}
 		if w.Body.String() != "v=1.2.3" {
 			t.Fatalf("body=%q, want %q", w.Body.String(), "v=1.2.3")
+		}
+	})
+
+	t.Run("html_replaces_version_with_build_time", func(t *testing.T) {
+		version.Version = "1.2.3"
+		version.BuildTime = "2026-06-19 15:41:14 +0800"
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/index.html", nil))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+		}
+		if !strings.Contains(w.Body.String(), "v=1.2.3-") {
+			t.Fatalf("body=%q, want build-time version suffix", w.Body.String())
 		}
 	})
 
@@ -96,6 +112,7 @@ func TestStaticFileServing(t *testing.T) {
 
 	t.Run("dir_serves_index_html", func(t *testing.T) {
 		version.Version = "9.9.9"
+		version.BuildTime = "unknown"
 		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/dir", nil))
 
 		if w.Code != http.StatusOK {

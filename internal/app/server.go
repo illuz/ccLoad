@@ -744,6 +744,10 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/auth-tokens", s.HandleCreateAuthToken)
 		admin.PUT("/auth-tokens/:id", s.HandleUpdateAuthToken)
 		admin.DELETE("/auth-tokens/:id", s.HandleDeleteAuthToken)
+		admin.GET("/auth-token-groups", s.HandleListAuthTokenGroups)
+		admin.POST("/auth-token-groups", s.HandleCreateAuthTokenGroup)
+		admin.PUT("/auth-token-groups/:id", s.HandleUpdateAuthTokenGroup)
+		admin.DELETE("/auth-token-groups/:id", s.HandleDeleteAuthTokenGroup)
 
 		// 系统配置管理
 		admin.GET("/settings", s.AdminListSettings)

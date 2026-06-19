@@ -21,7 +21,8 @@ const authTokenSelectColumns = `
 	id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 	success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
-	cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
+	cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency,
+	group_id, inherit_quota, inherit_channels, inherit_models
 `
 
 func marshalJSONList[T any](field string, values []T) (string, error) {
@@ -85,6 +86,9 @@ func scanAuthToken(scanner interface {
 	var allowedChannelIDsJSON string
 	var costUsedMicroUSD int64
 	var costLimitMicroUSD int64
+	var inheritQuota int
+	var inheritChannels int
+	var inheritModels int
 
 	if err := scanner.Scan(
 		&token.ID,
@@ -111,6 +115,10 @@ func scanAuthToken(scanner interface {
 		&allowedModelsJSON,
 		&allowedChannelIDsJSON,
 		&token.MaxConcurrency,
+		&token.GroupID,
+		&inheritQuota,
+		&inheritChannels,
+		&inheritModels,
 	); err != nil {
 		return nil, err
 	}
@@ -133,6 +141,9 @@ func scanAuthToken(scanner interface {
 	token.IsActive = isActive != 0
 	token.CostUsedMicroUSD = costUsedMicroUSD
 	token.CostLimitMicroUSD = costLimitMicroUSD
+	token.InheritQuota = inheritQuota != 0
+	token.InheritChannels = inheritChannels != 0
+	token.InheritModels = inheritModels != 0
 
 	// 解析 allowed_models JSON
 	if allowedModelsJSON != "" {
@@ -192,9 +203,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
-				cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
+				cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
 				plain_token = excluded.plain_token,
@@ -218,7 +229,11 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				cost_limit_microusd = excluded.cost_limit_microusd,
 				allowed_models = excluded.allowed_models,
 				allowed_channel_ids = excluded.allowed_channel_ids,
-				max_concurrency = excluded.max_concurrency
+				max_concurrency = excluded.max_concurrency,
+				group_id = excluded.group_id,
+				inherit_quota = excluded.inherit_quota,
+				inherit_channels = excluded.inherit_channels,
+				inherit_models = excluded.inherit_models
 		`,
 			token.ID,
 			token.Token,
@@ -244,6 +259,10 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			allowedModelsJSON,
 			allowedChannelIDsJSON,
 			token.MaxConcurrency,
+			token.GroupID,
+			boolToInt(token.InheritQuota),
+			boolToInt(token.InheritChannels),
+			boolToInt(token.InheritModels),
 		)
 		if err != nil {
 			return fmt.Errorf("upsert auth token all fields: %w", err)
@@ -256,9 +275,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 			success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
-			cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency
+			cost_used_microusd, cost_limit_microusd, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
 			plain_token = VALUES(plain_token),
@@ -282,7 +301,11 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			cost_limit_microusd = VALUES(cost_limit_microusd),
 			allowed_models = VALUES(allowed_models),
 			allowed_channel_ids = VALUES(allowed_channel_ids),
-			max_concurrency = VALUES(max_concurrency)
+			max_concurrency = VALUES(max_concurrency),
+			group_id = VALUES(group_id),
+			inherit_quota = VALUES(inherit_quota),
+			inherit_channels = VALUES(inherit_channels),
+			inherit_models = VALUES(inherit_models)
 	`,
 		token.ID,
 		token.Token,
@@ -308,6 +331,10 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		allowedModelsJSON,
 		allowedChannelIDsJSON,
 		token.MaxConcurrency,
+		token.GroupID,
+		boolToInt(token.InheritQuota),
+		boolToInt(token.InheritChannels),
+		boolToInt(token.InheritModels),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert auth token all fields: %w", err)
@@ -325,9 +352,9 @@ const (
 	authTokenInsertCommonCols = `token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 		success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 		prompt_tokens_total, completion_tokens_total, total_cost_usd, allowed_models, allowed_channel_ids,
-		cost_used_microusd, cost_limit_microusd, max_concurrency`
+		cost_used_microusd, cost_limit_microusd, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models`
 
-	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, ?, ?, 0, ?, ?`
+	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, ?, ?, 0, ?, ?, ?, ?, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -371,6 +398,7 @@ func authTokenInsertCommonArgs(token *model.AuthToken) ([]any, error) {
 		expiresAt, lastUsedAt, boolToInt(token.IsActive),
 		allowedModelsJSON, allowedChannelIDsJSON,
 		token.CostLimitMicroUSD, token.MaxConcurrency,
+		token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels),
 	}, nil
 }
 
@@ -614,9 +642,13 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    cost_limit_microusd = ?,
 		    allowed_models = ?,
 		    allowed_channel_ids = ?,
-		    max_concurrency = ?
+		    max_concurrency = ?,
+		    group_id = ?,
+		    inherit_quota = ?,
+		    inherit_channels = ?,
+		    inherit_models = ?
 		WHERE id = ?
-	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), token.CostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, token.MaxConcurrency, token.ID)
+	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), token.CostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
 
 	if err != nil {
 		return fmt.Errorf("update auth token: %w", err)

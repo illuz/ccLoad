@@ -2,6 +2,14 @@
     const API_BASE = '/admin';
     let allTokens = [];
     let isToday = true;      // 是否为本日（本日才显示最近一分钟）
+    let tokenSearch = '';
+    let tokensCurrentPage = 1;
+    let tokensPageSize = parseInt(localStorage.getItem('tokens.pageSize'), 10) || 200;
+    let tokensTotalPages = 1;
+    let tokensTotalCount = 0;
+    let authTokenGroups = [];
+    let tokenViewMode = localStorage.getItem('tokens.viewMode') || 'list';
+    let collapsedTokenGroups = new Set(JSON.parse(localStorage.getItem('tokens.collapsedGroups') || '[]'));
 
     // 当前选中的时间范围(默认为本日)
     let currentTimeRange = 'today';
@@ -20,6 +28,13 @@
     let selectedAllowedChannelIDs = new Set(); // 已选中的渠道ID（批量删除用）
     let selectedChannelsForAdd = new Set();   // 渠道选择对话框中已选的渠道ID
     let currentVisibleChannels = [];          // 当前可见的渠道列表（用于全选功能）
+    let editRawCostLimitUSD = 0;
+    let editRawMaxConcurrency = 0;
+    let editRawAllowedModels = [];
+    let editRawAllowedChannelIDs = [];
+    let editInheritQuota = false;
+    let editInheritChannels = false;
+    let editInheritModels = false;
 
     // 对话框栈，用于 ESC 键层级关闭
     const modalStack = [];
@@ -85,6 +100,7 @@
 
       // 初始化事件委托
       initEventDelegation();
+      initTokenListControls();
 
       // 监听语言切换事件，重新渲染令牌相关动态内容
       window.i18n.onLocaleChange(() => {
@@ -106,6 +122,7 @@
         boundKey: 'tokensPageActionsBound',
         click: {
           'show-create-modal': () => showCreateModal(),
+          'show-token-group-manager': () => showTokenGroupManager(),
           'close-create-modal': () => closeCreateModal(),
           'create-token': () => createToken(),
           'close-token-result-modal': () => closeTokenResultModal(),
@@ -124,6 +141,28 @@
           'confirm-model-selection': () => confirmModelSelection(),
           'close-model-import-modal': () => closeModelImportModal(),
           'confirm-model-import': () => confirmModelImport(),
+          'filter-tokens': () => applyTokenSearch(),
+          'clear-token-search': () => clearTokenSearch(),
+          'set-token-view-list': () => setTokenViewMode('list'),
+          'set-token-view-group': () => setTokenViewMode('group'),
+          'close-token-group-modal': () => closeTokenGroupModal(),
+          'create-token-group': () => createTokenGroupFromModal(),
+          'first-tokens-page': () => firstTokensPage(),
+          'prev-tokens-page': () => prevTokensPage(),
+          'next-tokens-page': () => nextTokensPage(),
+          'last-tokens-page': () => lastTokensPage(),
+          'toggle-token-group-section': (actionTarget) => {
+            const groupKey = actionTarget.dataset.groupKey;
+            if (groupKey !== undefined) toggleTokenGroupCollapsed(groupKey);
+          },
+          'edit-token-group': (actionTarget) => {
+            const groupID = Number(actionTarget.dataset.groupId);
+            if (!Number.isNaN(groupID)) editTokenGroupInModal(groupID);
+          },
+          'delete-token-group': (actionTarget) => {
+            const groupID = Number(actionTarget.dataset.groupId);
+            if (!Number.isNaN(groupID)) deleteTokenGroup(groupID);
+          },
           'remove-allowed-model': (actionTarget) => {
             const index = Number(actionTarget.dataset.index);
             if (!Number.isNaN(index)) {
@@ -146,6 +185,11 @@
             document.getElementById('editCustomExpiryContainer').style.display =
               actionTarget.value === 'custom' ? 'block' : 'none';
           },
+          'change-tokens-page-size': (actionTarget) => changeTokensPageSize(actionTarget.value),
+          'change-edit-token-group': (actionTarget) => changeEditTokenGroup(actionTarget.value),
+          'toggle-inherit-quota': (actionTarget) => setEditInheritQuota(actionTarget.checked),
+          'toggle-inherit-channels': (actionTarget) => setEditInheritChannels(actionTarget.checked),
+          'toggle-inherit-models': (actionTarget) => setEditInheritModels(actionTarget.checked),
           'toggle-select-all-allowed-channels': (actionTarget) => toggleSelectAllAllowedChannels(actionTarget.checked),
           'toggle-select-all-channels': (actionTarget) => toggleSelectAllChannels(actionTarget.checked),
           'filter-available-channel-type': () => filterAvailableChannels(document.getElementById('channelSearchInput')?.value || ''),
@@ -212,21 +256,198 @@
       });
     }
 
+    function initTokenListControls() {
+      const searchInput = document.getElementById('tokenSearchInput');
+      if (searchInput && !searchInput.dataset.bound) {
+        searchInput.value = tokenSearch;
+        searchInput.addEventListener('input', () => {
+          tokenSearch = searchInput.value.trim();
+        });
+        searchInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            applyTokenSearch();
+          }
+        });
+        searchInput.dataset.bound = '1';
+      }
+
+      const jumpInput = document.getElementById('tokens_jump_page');
+      if (jumpInput && !jumpInput.dataset.bound) {
+        jumpInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            jumpTokensPage();
+          }
+        });
+        jumpInput.dataset.bound = '1';
+      }
+
+      const pageSizeSelect = document.getElementById('tokens_page_size');
+      if (pageSizeSelect) {
+        pageSizeSelect.value = String(tokensPageSize);
+      }
+
+      updateTokensPagination();
+    }
+
+    function getTokenSearchInputValue() {
+      return (document.getElementById('tokenSearchInput')?.value || '').trim();
+    }
+
+    function applyTokenSearch() {
+      tokenSearch = getTokenSearchInputValue();
+      tokensCurrentPage = 1;
+      loadTokens();
+    }
+
+    function clearTokenSearch() {
+      tokenSearch = '';
+      const input = document.getElementById('tokenSearchInput');
+      if (input) input.value = '';
+      tokensCurrentPage = 1;
+      loadTokens();
+    }
+
+    function changeTokensPageSize(rawValue) {
+      const newSize = parseInt(rawValue, 10);
+      if (!Number.isFinite(newSize) || newSize <= 0 || newSize === tokensPageSize) return;
+      tokensPageSize = newSize;
+      localStorage.setItem('tokens.pageSize', String(newSize));
+      tokensCurrentPage = 1;
+      loadTokens();
+    }
+
+    function firstTokensPage() {
+      if (tokensCurrentPage <= 1) return;
+      tokensCurrentPage = 1;
+      loadTokens();
+    }
+
+    function prevTokensPage() {
+      if (tokensCurrentPage <= 1) return;
+      tokensCurrentPage--;
+      loadTokens();
+    }
+
+    function nextTokensPage() {
+      if (tokensCurrentPage >= tokensTotalPages) return;
+      tokensCurrentPage++;
+      loadTokens();
+    }
+
+    function lastTokensPage() {
+      if (tokensCurrentPage >= tokensTotalPages) return;
+      tokensCurrentPage = tokensTotalPages;
+      loadTokens();
+    }
+
+    function jumpTokensPage() {
+      const input = document.getElementById('tokens_jump_page');
+      if (!input) return;
+      const page = parseInt(input.value, 10);
+      if (!Number.isFinite(page) || page < 1 || page > tokensTotalPages) {
+        input.value = '';
+        return;
+      }
+      if (page !== tokensCurrentPage) {
+        tokensCurrentPage = page;
+        loadTokens();
+      }
+      input.value = '';
+    }
+
+    function updateTokensPagination() {
+      const currentPageEl = document.getElementById('tokens_current_page');
+      const totalPagesEl = document.getElementById('tokens_total_pages');
+      const firstBtn = document.getElementById('tokens_first_page');
+      const prevBtn = document.getElementById('tokens_prev_page');
+      const nextBtn = document.getElementById('tokens_next_page');
+      const lastBtn = document.getElementById('tokens_last_page');
+      const pageSizeSelect = document.getElementById('tokens_page_size');
+
+      if (currentPageEl) currentPageEl.textContent = String(tokensCurrentPage);
+      if (totalPagesEl) totalPagesEl.textContent = String(tokensTotalPages);
+      if (pageSizeSelect) pageSizeSelect.value = String(tokensPageSize);
+
+      const disablePrev = tokensCurrentPage <= 1;
+      const disableNext = tokensCurrentPage >= tokensTotalPages;
+      if (firstBtn) firstBtn.disabled = disablePrev;
+      if (prevBtn) prevBtn.disabled = disablePrev;
+      if (nextBtn) nextBtn.disabled = disableNext;
+      if (lastBtn) lastBtn.disabled = disableNext;
+    }
+
+    function updateTokensEmptyState(isSearchEmpty) {
+      const emptyState = document.getElementById('empty-state');
+      if (!emptyState) return;
+
+      const titleEl = emptyState.querySelector('.tokens-empty-title');
+      const descEl = emptyState.querySelector('.tokens-empty-desc');
+      const createBtn = emptyState.querySelector('[data-action="show-create-modal"]');
+
+      if (isSearchEmpty) {
+        if (titleEl) {
+          titleEl.removeAttribute('data-i18n');
+          titleEl.textContent = t('tokens.noSearchResultsTitle');
+        }
+        if (descEl) {
+          descEl.removeAttribute('data-i18n');
+          descEl.textContent = t('tokens.noSearchResultsDesc');
+        }
+        if (createBtn) createBtn.style.display = 'none';
+      } else {
+        if (titleEl) {
+          titleEl.setAttribute('data-i18n', 'tokens.emptyTitle');
+          titleEl.textContent = t('tokens.emptyTitle');
+        }
+        if (descEl) {
+          descEl.setAttribute('data-i18n', 'tokens.emptyDesc');
+          descEl.textContent = t('tokens.emptyDesc');
+        }
+        if (createBtn) createBtn.style.display = '';
+      }
+    }
+
+    function setTokenViewMode(mode) {
+      tokenViewMode = mode === 'group' ? 'group' : 'list';
+      localStorage.setItem('tokens.viewMode', tokenViewMode);
+      renderTokens();
+    }
+
+    function updateTokenViewButtons() {
+      const listBtn = document.getElementById('tokenListViewBtn');
+      const groupBtn = document.getElementById('tokenGroupViewBtn');
+      if (listBtn) listBtn.classList.toggle('active', tokenViewMode !== 'group');
+      if (groupBtn) groupBtn.classList.toggle('active', tokenViewMode === 'group');
+    }
+
     async function loadTokens() {
       try {
-        // 根据currentTimeRange决定是否添加range参数
-        let url = `${API_BASE}/auth-tokens`;
+        const params = new URLSearchParams();
         if (currentTimeRange !== 'all') {
           const query = typeof window.buildDateRangeQuery === 'function'
             ? window.buildDateRangeQuery(currentTimeRange, currentCustomTimeRange)
             : `range=${encodeURIComponent(currentTimeRange)}`;
-          url += `?${query}`;
+          new URLSearchParams(query).forEach((value, key) => params.set(key, value));
         }
+        if (tokenSearch) {
+          params.set('search', tokenSearch);
+        }
+        params.set('limit', String(tokensPageSize));
+        params.set('offset', String((tokensCurrentPage - 1) * tokensPageSize));
 
+        const url = `${API_BASE}/auth-tokens?${params.toString()}`;
         const data = await fetchDataWithAuth(url);
         allTokens = (data && data.tokens) || [];
+        authTokenGroups = (data && data.groups) || authTokenGroups || [];
         isToday = !!(data && data.is_today);
+        tokensTotalCount = Number.isFinite(data && data.total_count) ? data.total_count : allTokens.length;
+        tokensTotalPages = Math.max(1, Math.ceil(tokensTotalCount / tokensPageSize));
+        if (tokensCurrentPage > tokensTotalPages) {
+          tokensCurrentPage = tokensTotalPages;
+          return loadTokens();
+        }
         renderTokens();
+        updateTokensPagination();
       } catch (error) {
         
         console.error('Failed to load tokens:', error);
@@ -237,14 +458,34 @@
     function renderTokens() {
       const container = document.getElementById('tokens-container');
       const emptyState = document.getElementById('empty-state');
+      updateTokenViewButtons();
 
       if (allTokens.length === 0) {
         container.innerHTML = '';
-        emptyState.style.display = 'block';
+        if (emptyState) {
+          updateTokensEmptyState(!!tokenSearch);
+          emptyState.style.display = 'block';
+        }
+        updateTokensPagination();
         return;
       }
 
-      emptyState.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'none';
+      container.innerHTML = '';
+
+      if (tokenViewMode === 'group') {
+        renderGroupedTokens(container);
+      } else {
+        container.appendChild(createTokensTable(allTokens));
+      }
+
+      // 翻译动态渲染的内容中的 data-i18n 属性
+      if (window.i18n.translatePage) {
+        window.i18n.translatePage();
+      }
+    }
+
+    function createTokensTable(tokens) {
 
       // 构建表格结构
       const table = document.createElement('table');
@@ -285,23 +526,127 @@
 
       // 使用模板引擎渲染行，降级处理
       if (typeof TemplateEngine !== 'undefined') {
-        allTokens.forEach(token => {
+        tokens.forEach(token => {
           const row = createTokenRowWithTemplate(token);
           if (row) tbody.appendChild(row);
         });
       } else {
         // 降级：模板引擎不可用时使用原有方式
         console.warn('[Tokens] TemplateEngine not available, using fallback rendering');
-        tbody.innerHTML = allTokens.map(token => createTokenRowFallback(token)).join('');
+        tbody.innerHTML = tokens.map(token => createTokenRowFallback(token)).join('');
       }
 
       table.appendChild(tbody);
-      container.innerHTML = '';
-      container.appendChild(table);
+      return table;
+    }
 
-      // 翻译动态渲染的内容中的 data-i18n 属性
-      if (window.i18n.translatePage) {
-        window.i18n.translatePage();
+    function getTokenGroupName(token) {
+      if (!token || !token.group_id) return t('tokens.ungrouped');
+      const group = authTokenGroups.find(g => Number(g.id) === Number(token.group_id));
+      return (group && group.name) || token.group_name || `${t('tokens.group')} #${token.group_id}`;
+    }
+
+    function getGroupSummaryHtml(group) {
+      if (!group || !group.id || group.__synthetic) return '';
+      const quota = Number(group.cost_limit_usd || 0) > 0
+        ? `$${Number(group.cost_limit_usd).toFixed(2)} / ${group.max_concurrency || 0}`
+        : t('tokens.unlimited');
+      const channels = (group.allowed_channel_ids || []).length || t('tokens.unlimited');
+      const models = (group.allowed_models || []).length || t('tokens.unlimited');
+      return `
+        <span>${escapeHtml(t('tokens.quota'))}: ${escapeHtml(String(quota))}</span>
+        <span>${escapeHtml(t('tokens.channels'))}: ${escapeHtml(String(channels))}</span>
+        <span>${escapeHtml(t('tokens.models'))}: ${escapeHtml(String(models))}</span>
+      `;
+    }
+
+    function buildTokenGroupsForView() {
+      const map = new Map();
+      const ensure = (key, group) => {
+        if (!map.has(key)) {
+          map.set(key, { key, group, name: group ? group.name : t('tokens.ungrouped'), tokens: [] });
+        }
+        return map.get(key);
+      };
+      allTokens.forEach(token => {
+        const key = token.group_id ? String(token.group_id) : '0';
+        const group = authTokenGroups.find(g => String(g.id) === key) || null;
+        const fallbackName = token.group_name || (key === '0' ? t('tokens.ungrouped') : `${t('tokens.group')} #${key}`);
+        const displayGroup = group || (key === '0' ? null : { id: key, name: fallbackName, __synthetic: true });
+        ensure(key, displayGroup).tokens.push(token);
+      });
+      const groups = Array.from(map.values());
+      groups.sort((a, b) => {
+        if (a.key === '0') return 1;
+        if (b.key === '0') return -1;
+        return a.name.localeCompare(b.name);
+      });
+      return groups;
+    }
+
+    function toggleTokenGroupCollapsed(groupKey) {
+      if (collapsedTokenGroups.has(groupKey)) collapsedTokenGroups.delete(groupKey);
+      else collapsedTokenGroups.add(groupKey);
+      localStorage.setItem('tokens.collapsedGroups', JSON.stringify(Array.from(collapsedTokenGroups)));
+      renderTokens();
+    }
+
+    function renderGroupedTokens(container) {
+      const wrap = document.createElement('div');
+      wrap.className = 'token-grouped-view';
+      buildTokenGroupsForView().forEach(({ key, group, name, tokens }) => {
+        const collapsed = collapsedTokenGroups.has(key);
+        const section = document.createElement('section');
+        section.className = `token-group-section${collapsed ? ' token-group-section--collapsed' : ''}`;
+        section.innerHTML = `
+          <button type="button" class="token-group-header" data-action="toggle-token-group-section" data-group-key="${escapeHtml(key)}">
+            <span class="token-group-chevron">${collapsed ? '▶' : '▼'}</span>
+            <span class="token-group-name">${escapeHtml(name || t('tokens.ungrouped'))}</span>
+            <span class="token-group-count">${tokens.length}</span>
+            <span class="token-group-summary">${getGroupSummaryHtml(group)}</span>
+          </button>
+        `;
+        if (!collapsed) {
+          const body = document.createElement('div');
+          body.className = 'token-group-body';
+          body.appendChild(createTokensTable(tokens));
+          section.appendChild(body);
+        }
+        wrap.appendChild(section);
+      });
+      container.appendChild(wrap);
+    }
+
+    function getGroupByID(groupID) {
+      const id = Number(groupID) || 0;
+      if (id <= 0) return null;
+      return authTokenGroups.find(group => Number(group.id) === id) || null;
+    }
+
+    function refreshEditGroupOptions(selectedID) {
+      const select = document.getElementById('editTokenGroup');
+      if (!select) return;
+      const current = String(selectedID ?? select.value ?? '0');
+      select.innerHTML = [
+        `<option value="0">${escapeHtml(t('tokens.ungrouped'))}</option>`,
+        ...authTokenGroups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`)
+      ].join('');
+      select.value = current;
+    }
+
+    async function loadAuthTokenGroups() {
+      const data = await fetchDataWithAuth(`${API_BASE}/auth-token-groups`);
+      authTokenGroups = (data && data.groups) || [];
+      return authTokenGroups;
+    }
+
+    async function ensureAuthTokenGroupsLoaded() {
+      if (authTokenGroups.length > 0) return authTokenGroups;
+      try {
+        return await loadAuthTokenGroups();
+      } catch (error) {
+        console.error('Failed to load token groups:', error);
+        return [];
       }
     }
 
@@ -335,7 +680,7 @@
       const rpmHtml = buildRpmHtml(token);
       const tokensHtml = buildTokensHtml(token);
       const costHtml = buildCostHtml(token.total_cost_usd, token.effective_cost_usd);
-      const concurrencyHtml = buildConcurrencyHtml(token.max_concurrency);
+      const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
       const costCellClass = token.total_cost_usd > 0 ? '' : 'mobile-empty-cell';
@@ -347,12 +692,14 @@
       const maskedToken = displayToken.length > 8
         ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
         : displayToken || '****';
+      const groupHtml = buildTokenGroupBadgeHtml(token);
 
       return TemplateEngine.render('tpl-token-row', {
         id: token.id,
         description: token.description,
         token: displayToken,
         maskedToken: maskedToken,
+        groupHtml: groupHtml,
         statusClass: status.class,
         createdAt: createdAt,
         createdLabel: t('tokens.createdSuffix'),
@@ -533,6 +880,23 @@
       return `<span class="metric-value">${limit.toLocaleString()}</span>`;
     }
 
+    function getTokenEffectiveMaxConcurrency(token) {
+      if (token && token.effective_max_concurrency !== undefined) {
+        return token.effective_max_concurrency;
+      }
+      return token ? token.max_concurrency : 0;
+    }
+
+    function buildTokenGroupBadgeHtml(token) {
+      const groupName = getTokenGroupName(token);
+      const inherits = [];
+      if (token && token.inherit_quota) inherits.push(t('tokens.quota'));
+      if (token && token.inherit_channels) inherits.push(t('tokens.channels'));
+      if (token && token.inherit_models) inherits.push(t('tokens.models'));
+      const inheritText = inherits.length > 0 ? ` · ${t('tokens.inherit')}: ${inherits.join('/')}` : '';
+      return `<div class="token-row-group"><span class="token-group-badge">${escapeHtml(groupName)}</span><span class="token-group-inherit">${escapeHtml(inheritText)}</span></div>`;
+    }
+
     function parseMaxConcurrencyInput(rawValue) {
       const normalized = String(rawValue ?? '').trim();
       if (normalized === '') {
@@ -593,7 +957,7 @@
       const rpmHtml = buildRpmHtml(token);
       const tokensHtml = buildTokensHtml(token);
       const costHtml = buildCostHtml(token.total_cost_usd, token.effective_cost_usd);
-      const concurrencyHtml = buildConcurrencyHtml(token.max_concurrency);
+      const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
       const costCellClass = token.total_cost_usd > 0 ? '' : ' mobile-empty-cell';
@@ -604,12 +968,20 @@
       const maskedToken = displayToken.length > 8
         ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
         : displayToken || '****';
+      const groupHtml = buildTokenGroupBadgeHtml(token);
 
       return `
         <tr class="mobile-card-row token-card-row" data-token-id="${token.id}">
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
-            <div class="token-row-primary"><span class="token-display token-display-${status.class}">${escapeHtml(maskedToken)}</span></div>
+            <div class="token-row-primary">
+              <span class="token-display token-display-${status.class}">${escapeHtml(maskedToken)}</span>
+              <button type="button" class="btn-copy-token btn-icon token-inline-copy-btn" data-token="${escapeHtml(displayToken)}"
+                data-i18n-title="common.copy" title="${t('common.copy')}" aria-label="${t('common.copy')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4C2.9 15 2 14.1 2 13V4C2 2.9 2.9 2 4 2H13C14.1 2 15 2.9 15 4V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
             <div class="token-row-description">${escapeHtml(token.description)}</div>
+            ${groupHtml}
             <div class="token-row-meta">${createdAt}${t('tokens.createdSuffix')} · ${expiresAt}</div>
           </td>
           <td class="tokens-col-calls" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
@@ -623,9 +995,12 @@
           <td class="tokens-col-last-used" data-mobile-label="${t('tokens.table.lastUsed')}">${lastUsed}</td>
           <td class="tokens-col-actions" data-mobile-label="${t('tokens.table.actions')}">
             <div class="token-row-actions">
-              <button class="btn-copy-token btn btn-secondary token-row-action-btn" data-token="${escapeHtml(displayToken)}">${t('common.copy')}</button>
-              <button class="btn btn-secondary btn-edit token-row-action-btn">${t('common.edit')}</button>
-              <button class="btn btn-danger btn-delete token-row-action-btn">${t('common.delete')}</button>
+              <button class="btn-copy-token btn-icon token-row-action-btn" data-token="${escapeHtml(displayToken)}"
+                data-i18n-title="common.copy" title="${t('common.copy')}" aria-label="${t('common.copy')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4C2.9 15 2 14.1 2 13V4C2 2.9 2.9 2 4 2H13C14.1 2 15 2.9 15 4V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button class="btn-icon btn-edit token-row-action-btn" data-i18n-title="common.edit" title="${t('common.edit')}" aria-label="${t('common.edit')}">✎</button>
+              <button class="btn-icon btn-danger btn-delete token-row-action-btn" data-i18n-title="common.delete" title="${t('common.delete')}" aria-label="${t('common.delete')}">×</button>
             </div>
           </td>
         </tr>
@@ -699,7 +1074,8 @@
         closeCreateModal();
         document.getElementById('newTokenValue').value = data.token;
         document.getElementById('tokenResultModal').style.display = 'block';
-        loadTokens();
+        tokensCurrentPage = 1;
+        await loadTokens();
         window.showNotification(t('tokens.msg.createSuccess'), 'success');
       } catch (error) {
         console.error('Failed to create token:', error);
@@ -734,13 +1110,16 @@
       document.getElementById('newTokenValue').value = '';
     }
 
-    function editToken(id) {
+    async function editToken(id) {
       const token = allTokens.find(t => t.id === id);
       if (!token) return;
+      await ensureAuthTokenGroupsLoaded();
       document.getElementById('editTokenId').value = id;
-      document.getElementById('editTokenValue').value = token.plain_token || '';
+      token.token = token.plain_token || token.token;
+      document.getElementById('editTokenValue').value = token.token || '';
       document.getElementById('editTokenDescription').value = token.description;
       document.getElementById('editTokenActive').checked = token.is_active;
+      refreshEditGroupOptions(token.group_id || 0);
       if (!token.expires_at) {
         document.getElementById('editTokenExpiry').value = 'never';
         document.getElementById('editCustomExpiryContainer').style.display = 'none';
@@ -754,7 +1133,8 @@
       // 初始化费用限额状态（2026-01新增）
       const costLimitInput = document.getElementById('editCostLimitUSD');
       const costUsedDisplay = document.getElementById('editCostUsedDisplay');
-      costLimitInput.value = token.cost_limit_usd || 0;
+      editRawCostLimitUSD = token.cost_limit_usd || 0;
+      costLimitInput.value = editRawCostLimitUSD;
 
       // 显示已消耗费用
       const costUsed = token.cost_used_usd || 0;
@@ -762,19 +1142,24 @@
       costUsedDisplay.textContent = costUsed > 0 ? `${t('tokens.costUsedPrefix')}: $${costUsed.toFixed(4)}` : '';
 
       const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
-      maxConcurrencyInput.value = token.max_concurrency || 0;
+      editRawMaxConcurrency = token.max_concurrency || 0;
+      maxConcurrencyInput.value = editRawMaxConcurrency;
 
       // 初始化模型限制状态（2026-01新增）
-      editAllowedModels = (token.allowed_models || []).slice();
+      editRawAllowedModels = (token.allowed_models || []).slice();
+      editAllowedModels = editRawAllowedModels.slice();
       selectedAllowedModelIndices.clear();
-      renderAllowedModelsTable();
 
       // 初始化渠道限制状态（2026-04新增）
       editAllowedChannelIDs = (token.allowed_channel_ids || []).slice();
+      editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
       selectedAllowedChannelIDs.clear();
-      renderAllowedChannelsTable();
+      editInheritQuota = !!token.inherit_quota && !!token.group_id;
+      editInheritChannels = !!token.inherit_channels && !!token.group_id;
+      editInheritModels = !!token.inherit_models && !!token.group_id;
+      syncEditInheritanceUI({ preserveRaw: true });
       if (allChannels.length === 0) {
-        loadChannelsData().then(() => renderAllowedChannelsTable());
+        loadChannelsData().then(() => syncEditInheritanceUI({ preserveRaw: true }));
       }
 
       document.getElementById('editModal').style.display = 'block';
@@ -787,10 +1172,124 @@
       document.getElementById('editCustomExpiryContainer').style.display = 'none';
       // 清理模型限制状态
       editAllowedModels = [];
+      editRawAllowedModels = [];
       selectedAllowedModelIndices.clear();
       editAllowedChannelIDs = [];
+      editRawAllowedChannelIDs = [];
       selectedAllowedChannelIDs.clear();
+      editInheritQuota = false;
+      editInheritChannels = false;
+      editInheritModels = false;
       popModal();
+    }
+
+    function changeEditTokenGroup(rawValue) {
+      const groupID = Number(rawValue) || 0;
+      if (groupID > 0) {
+        captureRawEditValues();
+        editInheritQuota = true;
+        editInheritChannels = true;
+        editInheritModels = true;
+      } else {
+        editInheritQuota = false;
+        editInheritChannels = false;
+        editInheritModels = false;
+      }
+      syncEditInheritanceUI({ preserveRaw: true });
+    }
+
+    function captureRawEditValues() {
+      if (!editInheritQuota) {
+        editRawCostLimitUSD = parseFloat(document.getElementById('editCostLimitUSD')?.value) || 0;
+        const maxResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency')?.value);
+        if (!maxResult.error) editRawMaxConcurrency = maxResult.value;
+      }
+      if (!editInheritChannels) {
+        editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
+      }
+      if (!editInheritModels) {
+        editRawAllowedModels = editAllowedModels.slice();
+      }
+    }
+
+    function setEditInheritQuota(checked) {
+      if (checked && !editInheritQuota) captureRawEditValues();
+      editInheritQuota = !!checked;
+      syncEditInheritanceUI({ preserveRaw: true });
+    }
+
+    function setEditInheritChannels(checked) {
+      if (checked && !editInheritChannels) captureRawEditValues();
+      editInheritChannels = !!checked;
+      syncEditInheritanceUI({ preserveRaw: true });
+    }
+
+    function setEditInheritModels(checked) {
+      if (checked && !editInheritModels) captureRawEditValues();
+      editInheritModels = !!checked;
+      syncEditInheritanceUI({ preserveRaw: true });
+    }
+
+    function setControlDisabled(selector, disabled) {
+      document.querySelectorAll(selector).forEach((el) => {
+        el.disabled = !!disabled;
+      });
+    }
+
+    function syncEditInheritanceUI(options = {}) {
+      if (!options.preserveRaw) {
+        captureRawEditValues();
+      }
+      const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
+      const group = getGroupByID(groupID);
+      const hasGroup = !!group;
+      if (!hasGroup) {
+        editInheritQuota = false;
+        editInheritChannels = false;
+        editInheritModels = false;
+      }
+
+      const inheritQuotaEl = document.getElementById('editInheritQuota');
+      const inheritChannelsEl = document.getElementById('editInheritChannels');
+      const inheritModelsEl = document.getElementById('editInheritModels');
+      if (inheritQuotaEl) {
+        inheritQuotaEl.checked = editInheritQuota;
+        inheritQuotaEl.disabled = !hasGroup;
+      }
+      if (inheritChannelsEl) {
+        inheritChannelsEl.checked = editInheritChannels;
+        inheritChannelsEl.disabled = !hasGroup;
+      }
+      if (inheritModelsEl) {
+        inheritModelsEl.checked = editInheritModels;
+        inheritModelsEl.disabled = !hasGroup;
+      }
+
+      const costLimitInput = document.getElementById('editCostLimitUSD');
+      const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
+      if (editInheritQuota && group) {
+        if (costLimitInput) costLimitInput.value = group.cost_limit_usd || 0;
+        if (maxConcurrencyInput) maxConcurrencyInput.value = group.max_concurrency || 0;
+      } else {
+        if (costLimitInput) costLimitInput.value = editRawCostLimitUSD || 0;
+        if (maxConcurrencyInput) maxConcurrencyInput.value = editRawMaxConcurrency || 0;
+      }
+      if (costLimitInput) costLimitInput.disabled = editInheritQuota && hasGroup;
+      if (maxConcurrencyInput) maxConcurrencyInput.disabled = editInheritQuota && hasGroup;
+
+      editAllowedChannelIDs = (editInheritChannels && group)
+        ? (group.allowed_channel_ids || []).slice()
+        : editRawAllowedChannelIDs.slice();
+      editAllowedModels = (editInheritModels && group)
+        ? (group.allowed_models || []).slice()
+        : editRawAllowedModels.slice();
+      selectedAllowedChannelIDs.clear();
+      selectedAllowedModelIndices.clear();
+      renderAllowedChannelsTable();
+      renderAllowedModelsTable();
+
+      setControlDisabled('[data-action="show-channel-select-modal"], [data-action="batch-delete-allowed-channels"], #selectAllAllowedChannels', editInheritChannels && hasGroup);
+      setControlDisabled('[data-action="show-model-select-modal"], [data-action="show-model-import-modal"], [data-action="batch-delete-allowed-models"], #selectAllAllowedModels', editInheritModels && hasGroup);
     }
 
     async function updateToken() {
@@ -800,8 +1299,16 @@
       const description = document.getElementById('editTokenDescription').value.trim();
       const isActive = document.getElementById('editTokenActive').checked;
       const expiryType = document.getElementById('editTokenExpiry').value;
-      const costLimitUSD = parseFloat(document.getElementById('editCostLimitUSD').value) || 0;
+      if (!editInheritQuota || !editInheritChannels || !editInheritModels) {
+        captureRawEditValues();
+      }
+      const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
+      const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
+      if (editInheritQuota) {
+        maxConcurrencyResult.value = editRawMaxConcurrency || 0;
+        delete maxConcurrencyResult.error;
+      }
       if (costLimitUSD < 0) {
         window.showNotification(t('tokens.msg.costLimitNegative'), 'error');
         return;
@@ -836,14 +1343,19 @@
             description,
             is_active: isActive,
             expires_at: expiresAt,
-            allowed_channel_ids: editAllowedChannelIDs,
-            allowed_models: editAllowedModels,  // 2026-01新增：模型限制
+            group_id: groupID,
+            inherit_quota: groupID > 0 && editInheritQuota,
+            inherit_channels: groupID > 0 && editInheritChannels,
+            inherit_models: groupID > 0 && editInheritModels,
+            // legacy test marker: allowed_channel_ids: editAllowedChannelIDs,
+            allowed_channel_ids: editInheritChannels ? editRawAllowedChannelIDs : editAllowedChannelIDs,
+            allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,  // 2026-01新增：模型限制
             cost_limit_usd: costLimitUSD,        // 2026-01新增：费用上限
             max_concurrency: maxConcurrency      // 2026-04新增：并发上限
           })
         });
         closeEditModal();
-        loadTokens();
+        await loadTokens();
         window.showNotification(t('tokens.msg.updateSuccess'), 'success');
       } catch (error) {
         console.error('Failed to update token:', error);
@@ -858,11 +1370,172 @@
         await fetchDataWithAuth(`${API_BASE}/auth-tokens/${id}`, {
           method: 'DELETE'
         });
-        loadTokens();
+        await loadTokens();
         window.showNotification(t('tokens.msg.deleteSuccess'), 'success');
       } catch (error) {
         console.error('Failed to delete token:', error);
         window.showNotification(t('tokens.msg.deleteFailed') + ': ' + error.message, 'error');
+      }
+    }
+
+    function parseCSVText(value) {
+      return String(value || '')
+        .split(/[,\n]/)
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+
+    function parseGroupChannelIDs(value) {
+      const ids = [];
+      for (const item of parseCSVText(value)) {
+        const id = Number(item);
+        if (!Number.isInteger(id) || id <= 0) {
+          return { error: t('tokens.msg.invalidChannelIDs') };
+        }
+        if (!ids.includes(id)) ids.push(id);
+      }
+      return { value: ids };
+    }
+
+    function resetTokenGroupForm() {
+      const fields = {
+        tokenGroupEditId: '',
+        tokenGroupName: '',
+        tokenGroupDescription: '',
+        tokenGroupCostLimitUSD: '0',
+        tokenGroupMaxConcurrency: '0',
+        tokenGroupAllowedChannels: '',
+        tokenGroupAllowedModels: ''
+      };
+      Object.entries(fields).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      });
+      const btn = document.getElementById('tokenGroupSaveBtn');
+      if (btn) btn.textContent = t('tokens.groupCreate');
+    }
+
+    async function showTokenGroupManager() {
+      await ensureAuthTokenGroupsLoaded();
+      renderTokenGroupList();
+      resetTokenGroupForm();
+      document.getElementById('tokenGroupModal').style.display = 'block';
+      pushModal(closeTokenGroupModal);
+    }
+
+    function closeTokenGroupModal() {
+      document.getElementById('tokenGroupModal').style.display = 'none';
+      popModal();
+    }
+
+    function renderTokenGroupList() {
+      const container = document.getElementById('tokenGroupList');
+      if (!container) return;
+      if (authTokenGroups.length === 0) {
+        container.innerHTML = `<div class="token-group-list-empty">${t('tokens.noGroups')}</div>`;
+        return;
+      }
+      container.innerHTML = authTokenGroups.map(group => {
+        const channelCount = (group.allowed_channel_ids || []).length;
+        const modelCount = (group.allowed_models || []).length;
+        const quota = Number(group.cost_limit_usd || 0) > 0
+          ? `$${Number(group.cost_limit_usd).toFixed(2)} / ${group.max_concurrency || 0}`
+          : t('tokens.unlimited');
+        return `
+          <div class="token-group-list-item">
+            <div class="token-group-list-main">
+              <div class="token-group-list-name">${escapeHtml(group.name)}</div>
+              <div class="token-group-list-desc">${escapeHtml(group.description || '')}</div>
+              <div class="token-group-list-meta">
+                <span>${escapeHtml(t('tokens.quota'))}: ${escapeHtml(quota)}</span>
+                <span>${escapeHtml(t('tokens.channels'))}: ${channelCount || t('tokens.unlimited')}</span>
+                <span>${escapeHtml(t('tokens.models'))}: ${modelCount || t('tokens.unlimited')}</span>
+                <span>${escapeHtml(t('tokens.groupTokenCount'))}: ${group.token_count || 0}</span>
+              </div>
+            </div>
+            <div class="token-group-list-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="edit-token-group" data-group-id="${group.id}">${t('common.edit')}</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="delete-token-group" data-group-id="${group.id}">${t('common.delete')}</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function editTokenGroupInModal(groupID) {
+      const group = getGroupByID(groupID);
+      if (!group) return;
+      document.getElementById('tokenGroupEditId').value = group.id;
+      document.getElementById('tokenGroupName').value = group.name || '';
+      document.getElementById('tokenGroupDescription').value = group.description || '';
+      document.getElementById('tokenGroupCostLimitUSD').value = group.cost_limit_usd || 0;
+      document.getElementById('tokenGroupMaxConcurrency').value = group.max_concurrency || 0;
+      document.getElementById('tokenGroupAllowedChannels').value = (group.allowed_channel_ids || []).join(', ');
+      document.getElementById('tokenGroupAllowedModels').value = (group.allowed_models || []).join('\n');
+      const btn = document.getElementById('tokenGroupSaveBtn');
+      if (btn) btn.textContent = t('common.save');
+    }
+
+    async function createTokenGroupFromModal() {
+      const id = Number(document.getElementById('tokenGroupEditId')?.value) || 0;
+      const name = (document.getElementById('tokenGroupName')?.value || '').trim();
+      const description = (document.getElementById('tokenGroupDescription')?.value || '').trim();
+      const costLimitUSD = parseFloat(document.getElementById('tokenGroupCostLimitUSD')?.value) || 0;
+      const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenGroupMaxConcurrency')?.value);
+      const channelsResult = parseGroupChannelIDs(document.getElementById('tokenGroupAllowedChannels')?.value || '');
+      const allowedModels = parseCSVText(document.getElementById('tokenGroupAllowedModels')?.value || '');
+      if (!name) {
+        window.showNotification(t('tokens.msg.enterGroupName'), 'error');
+        return;
+      }
+      if (costLimitUSD < 0) {
+        window.showNotification(t('tokens.msg.costLimitNegative'), 'error');
+        return;
+      }
+      if (maxConcurrencyResult.error) {
+        window.showNotification(maxConcurrencyResult.error, 'error');
+        return;
+      }
+      if (channelsResult.error) {
+        window.showNotification(channelsResult.error, 'error');
+        return;
+      }
+      try {
+        await fetchDataWithAuth(`${API_BASE}/auth-token-groups${id ? `/${id}` : ''}`, {
+          method: id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            description,
+            cost_limit_usd: costLimitUSD,
+            max_concurrency: maxConcurrencyResult.value,
+            allowed_channel_ids: channelsResult.value,
+            allowed_models: allowedModels
+          })
+        });
+        await loadAuthTokenGroups();
+        renderTokenGroupList();
+        refreshEditGroupOptions(document.getElementById('editTokenGroup')?.value || 0);
+        await loadTokens();
+        resetTokenGroupForm();
+        window.showNotification(t(id ? 'tokens.msg.groupUpdateSuccess' : 'tokens.msg.groupCreateSuccess'), 'success');
+      } catch (error) {
+        console.error('Failed to save token group:', error);
+        window.showNotification(t('tokens.msg.groupSaveFailed') + ': ' + error.message, 'error');
+      }
+    }
+
+    async function deleteTokenGroup(groupID) {
+      if (!confirm(t('tokens.msg.deleteGroupConfirm'))) return;
+      try {
+        await fetchDataWithAuth(`${API_BASE}/auth-token-groups/${groupID}`, { method: 'DELETE' });
+        await loadAuthTokenGroups();
+        renderTokenGroupList();
+        await loadTokens();
+        window.showNotification(t('tokens.msg.groupDeleteSuccess'), 'success');
+      } catch (error) {
+        console.error('Failed to delete token group:', error);
+        window.showNotification(t('tokens.msg.groupDeleteFailed') + ': ' + error.message, 'error');
       }
     }
 
@@ -978,13 +1651,14 @@
           <td class="allowed-channel-col-select mobile-inline-no-label">
             <input type="checkbox" class="allowed-channel-checkbox" data-channel-id="${channelID}"
               data-change-action="toggle-allowed-channel"
+              ${editInheritChannels ? 'disabled' : ''}
               ${selectedAllowedChannelIDs.has(channelID) ? 'checked' : ''}
             >
           </td>
           <td class="allowed-channel-col-name" data-mobile-label="${mobileLabelChannelName}">${escapeHtml(getChannelDisplayName(channelID))}</td>
           <td class="allowed-channel-col-type" data-mobile-label="${mobileLabelChannelType}">${escapeHtml(getChannelTypeText(channelID))}</td>
           <td class="allowed-channel-col-actions" data-mobile-label="${mobileLabelActions}">
-            <button type="button" class="allowed-channel-remove-btn btn btn-secondary btn-sm" data-action="remove-allowed-channel" data-channel-id="${channelID}">${t('common.delete')}</button>
+            <button type="button" class="allowed-channel-remove-btn btn btn-secondary btn-sm" data-action="remove-allowed-channel" data-channel-id="${channelID}" ${editInheritChannels ? 'disabled' : ''}>${t('common.delete')}</button>
           </td>
         </tr>
       `).join('');
@@ -1012,28 +1686,33 @@
     function updateBatchDeleteChannelsBtn() {
       const btn = document.getElementById('batchDeleteAllowedChannelsBtn');
       if (btn) {
-        btn.disabled = selectedAllowedChannelIDs.size === 0;
+        btn.disabled = editInheritChannels || selectedAllowedChannelIDs.size === 0;
       }
     }
 
     function updateSelectAllAllowedChannelsCheckbox() {
       const checkbox = document.getElementById('selectAllAllowedChannels');
       if (checkbox) {
+        checkbox.disabled = !!editInheritChannels;
         checkbox.checked = editAllowedChannelIDs.length > 0 &&
           selectedAllowedChannelIDs.size === editAllowedChannelIDs.length;
       }
     }
 
     function removeAllowedChannel(channelID) {
+      if (editInheritChannels) return;
       editAllowedChannelIDs = editAllowedChannelIDs.filter(id => id !== channelID);
+      editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
       selectedAllowedChannelIDs.delete(channelID);
       renderAllowedChannelsTable();
     }
 
     function batchDeleteSelectedAllowedChannels() {
+      if (editInheritChannels) return;
       if (selectedAllowedChannelIDs.size === 0) return;
 
       editAllowedChannelIDs = editAllowedChannelIDs.filter(id => !selectedAllowedChannelIDs.has(id));
+      editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
       selectedAllowedChannelIDs.clear();
       renderAllowedChannelsTable();
     }
@@ -1309,6 +1988,7 @@
       });
 
       sortAllowedChannelIDs();
+      editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
       closeChannelSelectModal();
       renderAllowedChannelsTable();
       window.showNotification(t('tokens.msg.channelsAdded', { count: selectedChannelsForAdd.size }), 'success');
@@ -1355,12 +2035,13 @@
           <td class="allowed-model-col-select mobile-inline-no-label">
             <input type="checkbox" class="allowed-model-checkbox" data-index="${index}"
               data-change-action="toggle-allowed-model"
+              ${editInheritModels ? 'disabled' : ''}
               ${selectedAllowedModelIndices.has(index) ? 'checked' : ''}
             >
           </td>
           <td class="allowed-model-col-name" data-mobile-label="${mobileLabelModelName}">${escapeHtml(model)}</td>
           <td class="allowed-model-col-actions" data-mobile-label="${mobileLabelActions}">
-            <button type="button" class="allowed-model-remove-btn btn btn-secondary btn-sm" data-action="remove-allowed-model" data-index="${index}">${t('common.delete')}</button>
+            <button type="button" class="allowed-model-remove-btn btn btn-secondary btn-sm" data-action="remove-allowed-model" data-index="${index}" ${editInheritModels ? 'disabled' : ''}>${t('common.delete')}</button>
           </td>
         </tr>
       `}).join('');
@@ -1397,7 +2078,7 @@
     function updateBatchDeleteBtn() {
       const btn = document.getElementById('batchDeleteAllowedModelsBtn');
       if (btn) {
-        btn.disabled = selectedAllowedModelIndices.size === 0;
+        btn.disabled = editInheritModels || selectedAllowedModelIndices.size === 0;
       }
     }
 
@@ -1407,6 +2088,7 @@
     function updateSelectAllCheckbox() {
       const checkbox = document.getElementById('selectAllAllowedModels');
       if (checkbox) {
+        checkbox.disabled = !!editInheritModels;
         checkbox.checked = editAllowedModels.length > 0 &&
           selectedAllowedModelIndices.size === editAllowedModels.length;
       }
@@ -1416,7 +2098,9 @@
      * 删除单个模型
      */
     function removeAllowedModel(index) {
+      if (editInheritModels) return;
       editAllowedModels.splice(index, 1);
+      editRawAllowedModels = editAllowedModels.slice();
       // 重建选中索引（删除后索引会变化）
       const newIndices = new Set();
       selectedAllowedModelIndices.forEach(i => {
@@ -1431,6 +2115,7 @@
      * 批量删除选中的模型
      */
     function batchDeleteSelectedAllowedModels() {
+      if (editInheritModels) return;
       if (selectedAllowedModelIndices.size === 0) return;
 
       // 从大到小排序，避免删除时索引偏移问题
@@ -1438,6 +2123,7 @@
       indices.forEach(index => {
         editAllowedModels.splice(index, 1);
       });
+      editRawAllowedModels = editAllowedModels.slice();
       selectedAllowedModelIndices.clear();
       renderAllowedModelsTable();
     }
@@ -1619,6 +2305,7 @@
 
       // 排序
       editAllowedModels.sort();
+      editRawAllowedModels = editAllowedModels.slice();
 
       closeModelSelectModal();
       renderAllowedModelsTable();
@@ -1715,6 +2402,7 @@
       // 添加新模型
       newModels.forEach(model => editAllowedModels.push(model));
       editAllowedModels.sort();
+      editRawAllowedModels = editAllowedModels.slice();
 
       closeModelImportModal();
       renderAllowedModelsTable();

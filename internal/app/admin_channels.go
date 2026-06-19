@@ -251,11 +251,11 @@ func (s *Server) sortChannelsByEffectivePriority(cfgs []*model.Config, healthEna
 }
 
 // paginateChannels 按 query 中的 limit/offset 截取 cfgs。
-// limit: [1, 1000]，默认 20；offset: [0, +∞)，默认 0。offset 越界返回空切片。
+// limit: [1, 1000]，默认 200；offset: [0, +∞)，默认 0。offset 越界返回空切片。
 func paginateChannels(cfgs []*model.Config, c *gin.Context) []*model.Config {
-	limit := 20
+	limit := 200
 	offset := 0
-	if v, err := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("limit", "20"))); err == nil && v > 0 {
+	if v, err := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("limit", "200"))); err == nil && v > 0 {
 		limit = min(v, 1000)
 	}
 	if v, err := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("offset", "0"))); err == nil && v >= 0 {

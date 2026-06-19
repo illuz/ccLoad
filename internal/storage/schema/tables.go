@@ -109,8 +109,28 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("max_concurrency INT NOT NULL DEFAULT 0").
+		Column("group_id BIGINT NOT NULL DEFAULT 0").
+		Column("inherit_quota TINYINT NOT NULL DEFAULT 0").
+		Column("inherit_channels TINYINT NOT NULL DEFAULT 0").
+		Column("inherit_models TINYINT NOT NULL DEFAULT 0").
 		Index("idx_auth_tokens_active", "is_active").
-		Index("idx_auth_tokens_expires", "expires_at")
+		Index("idx_auth_tokens_expires", "expires_at").
+		Index("idx_auth_tokens_group_id", "group_id")
+}
+
+// DefineAuthTokenGroupsTable 定义auth_token_groups表结构
+func DefineAuthTokenGroupsTable() *TableBuilder {
+	return NewTable("auth_token_groups").
+		Column("id INT PRIMARY KEY AUTO_INCREMENT").
+		Column("name VARCHAR(191) NOT NULL UNIQUE").
+		Column("description VARCHAR(512) NOT NULL DEFAULT ''").
+		Column("created_at BIGINT NOT NULL").
+		Column("updated_at BIGINT NOT NULL").
+		Column("cost_limit_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
+		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
+		Column("max_concurrency INT NOT NULL DEFAULT 0").
+		Index("idx_auth_token_groups_name", "name")
 }
 
 // DefineSystemSettingsTable 定义system_settings表结构
