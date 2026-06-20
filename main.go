@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -98,7 +99,22 @@ func main() {
 	}
 
 	// 初始化嵌入的静态资源文件系统
-	app.SetEmbedFS(WebFS, "web")
+	// 开发模式下默认直接读取源码目录中的 web/，修改后刷新即可看到新版本；
+	// 生产构建仍然使用 embed 资源。
+	webFS := fs.FS(WebFS)
+	webSubDir := "web"
+	if webDir := strings.TrimSpace(os.Getenv("CCLOAD_WEB_DIR")); webDir != "" {
+		webFS = os.DirFS(webDir)
+		webSubDir = "."
+		app.SetStaticCacheDisabled(true)
+		log.Printf("[INFO] 使用本地前端目录: %s", webDir)
+	} else if version.Version == "dev" {
+		webFS = os.DirFS(".")
+		webSubDir = "web"
+		log.Print("[INFO] 开发模式：直接从源码目录读取 web/ 静态资源，刷新即可看到修改")
+		app.SetStaticCacheDisabled(true)
+	}
+	app.SetEmbedFS(webFS, webSubDir)
 
 	// 使用工厂函数创建存储实例（自动识别MySQL/SQLite）
 	store, err := storage.NewStore()

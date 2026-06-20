@@ -218,7 +218,7 @@ clean:
 # 开发模式运行（不作为服务）
 dev:
 	@echo "开发模式运行..."
-	@go run -tags "$(GOTAGS)" .
+	@go run . dev
 
 # 查看完整服务信息
 info:

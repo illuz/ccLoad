@@ -19,6 +19,10 @@ import (
 // 通过 SetEmbedFS 在 main 包中初始化
 var embedFS fs.FS
 
+// staticCacheDisabled 控制静态资源是否禁用缓存。
+// 开发模式或本地前端目录时开启，确保刷新即可看到修改。
+var staticCacheDisabled bool
+
 // SetEmbedFS 设置嵌入的静态资源文件系统
 // embedRoot: 嵌入的 embed.FS
 // subDir: 子目录名称（如 "web"），因为 //go:embed web 会保留 web/ 前缀
@@ -28,6 +32,11 @@ func SetEmbedFS(embedRoot fs.FS, subDir string) {
 		log.Fatalf("[FATAL] 无法访问嵌入的 %s 目录: %v", subDir, err)
 	}
 	embedFS = subFS
+}
+
+// SetStaticCacheDisabled 设置静态资源是否禁用缓存。
+func SetStaticCacheDisabled(disabled bool) {
+	staticCacheDisabled = disabled
 }
 
 // setupStaticFiles 配置静态文件服务
@@ -166,12 +175,12 @@ func htmlAssetVersion() string {
 // serveStaticWithCacheFrom 处理静态资源，设置缓存策略（从指定的文件系统）
 func serveStaticWithCacheFrom(c *gin.Context, fileSystem fs.FS, filePath, ext string) {
 	// 缓存策略：
-	// - dev 版本：不缓存，方便开发调试
+	// - 开发模式/本地前端目录：不缓存，方便修改后直接刷新
 	// - manifest.json/favicon：短缓存（无版本号控制）
 	// - 其他静态资源：长缓存（通过 URL 版本号刷新）
 	fileName := path.Base(filePath)
 
-	if version.Version == "dev" {
+	if staticCacheDisabled || version.Version == "dev" {
 		// 开发环境：不缓存，避免前端修改看不到
 		c.Header("Cache-Control", "no-cache, must-revalidate")
 	} else if fileName == "manifest.json" || ext == ".ico" {
