@@ -173,7 +173,7 @@
   /* 布局 */
   --topbar-height: 64px;
   --topbar-offset: var(--topbar-height);
-  --container-max-width: 100%;
+  --container-max-width: 1380px;
 
   /* Topbar 前景色（提高对比度） */
   --topbar-fg: var(--neutral-900);
@@ -1912,11 +1912,12 @@ body {
     flex: 0 0 100%;
     width: 100%;
     justify-content: flex-start;
-    flex-wrap: wrap;
-    overflow-x: visible;
-    white-space: normal;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
     gap: 6px 4px;
-    padding-bottom: 0;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .topnav::-webkit-scrollbar {
@@ -1924,6 +1925,7 @@ body {
   }
 
   .topnav-link {
+    flex: 0 0 auto;
     gap: 4px;
     padding: 6px 8px;
     font-size: 13px;
@@ -2315,13 +2317,13 @@ body {
 
 /* ===== 现代化 UI 覆盖：Overview ===== */
 .hero-header {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
+  border: 1px solid var(--surface-border-strong);
   border-left: 5px solid var(--primary-500);
   border-radius: 1.5rem;
   padding: 1.5rem 1.75rem;
   gap: 1.25rem;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
 }
 
 .hero-header > div:last-child {
@@ -2348,17 +2350,17 @@ body {
 
 .hero-subtitle {
   margin-top: .15rem;
-  color: var(--neutral-500);
+  color: var(--neutral-600);
   font-size: var(--text-base);
   font-weight: var(--font-medium);
 }
 
 .time-range-selector {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(15, 23, 42, 0.82);
   border: 1px solid var(--surface-border);
   border-radius: 999px;
   padding: 6px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .time-range-btn {
@@ -2370,17 +2372,17 @@ body {
 }
 
 .time-range-btn.active {
-  background: var(--surface-bg-strong);
-  color: var(--primary-600);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+  background: rgba(59, 130, 246, 0.16);
+  color: var(--neutral-900);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22);
 }
 
 .channel-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.96));
-  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
+  border: 1px solid var(--surface-border-strong);
   border-radius: 1.25rem;
   padding: 1.25rem;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
 .channel-card-header {
@@ -2400,7 +2402,7 @@ body {
 }
 
 .cost-value {
-  color: var(--primary-600);
+  color: var(--primary-300);
 }
 
 .channel-metrics {
@@ -2413,7 +2415,7 @@ body {
 }
 
 .metric-label {
-  color: var(--neutral-500);
+  color: var(--neutral-600);
 }
 
 .token-stats {
@@ -2422,11 +2424,11 @@ body {
 }
 
 .summary-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.96));
-  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
+  border: 1px solid var(--surface-border-strong);
   border-radius: 1.25rem;
   padding: 1.25rem;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
 .summary-card::before {
@@ -2434,14 +2436,14 @@ body {
 }
 
 .summary-card:hover {
-  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.09);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
 }
 
 .summary-icon {
   width: 50px;
   height: 50px;
   border-radius: 16px;
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(59, 130, 246, 0.16);
 }
 
 .summary-value {
@@ -2506,7 +2508,7 @@ body {
 }
 
 .index-api-tip-body {
-  color: var(--neutral-700);
+  color: var(--neutral-600);
   line-height: 1.55;
 }
 

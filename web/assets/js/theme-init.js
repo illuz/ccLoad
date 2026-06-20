@@ -1,31 +1,20 @@
 (function () {
-  const storageKey = 'ccload_theme';
-  const modes = ['system', 'light', 'dark'];
-
-  function getStoredTheme() {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return modes.includes(saved) ? saved : 'system';
-    } catch (_) {
-      return 'system';
-    }
-  }
-
-  function resolveTheme(mode) {
-    if (mode !== 'system') return mode;
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-
-  const theme = getStoredTheme();
-  const resolvedTheme = resolveTheme(theme);
+  const theme = 'dark';
+  const resolvedTheme = 'dark';
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.resolvedTheme = resolvedTheme;
   document.documentElement.style.colorScheme = resolvedTheme;
-  document.documentElement.style.backgroundColor = resolvedTheme === 'dark' ? '#0f172a' : '#f8fafc';
-  document.documentElement.style.color = resolvedTheme === 'dark' ? '#e5e7eb' : '#111827';
+  document.documentElement.style.backgroundColor = '#0f172a';
+  document.documentElement.style.color = '#e5e7eb';
+
+  try {
+    localStorage.setItem('ccload_theme', theme);
+  } catch (_) {
+    /* 忽略存储失败 */
+  }
 
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolvedTheme === 'dark' ? '#0f172a' : '#3b82f6');
+  if (meta) meta.setAttribute('content', '#0f172a');
 
   function clearInitialPaintStyle() {
     document.documentElement.style.removeProperty('background-color');

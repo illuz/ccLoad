@@ -35,40 +35,28 @@ function getRuleBody(source, selector) {
   return match[1];
 }
 
-test('主题模块支持跟随系统、亮色和暗色三种模式', () => {
-  assert.match(uiSource, /THEME_STORAGE_KEY\s*=\s*'ccload_theme'/);
-  assert.match(uiSource, /THEME_MODES\s*=\s*\[[^\]]*'system'[^\]]*'light'[^\]]*'dark'[^\]]*\]/s);
-  assert.match(uiSource, /document\.documentElement\.dataset\.theme\s*=/);
-  assert.match(uiSource, /matchMedia\('\(prefers-color-scheme: dark\)'\)/);
-  assert.match(uiSource, /addEventListener\('change',\s*applyStoredTheme\)/);
-  assert.match(uiSource, /localStorage\.setItem\(THEME_STORAGE_KEY,\s*mode\)/);
+test('主题模块固定为暗色模式', () => {
+  assert.match(uiSource, /FIXED_THEME_MODE\s*=\s*'dark'/);
+  assert.match(uiSource, /document\.documentElement\.dataset\.theme\s*=\s*FIXED_THEME_MODE/);
+  assert.match(themeInitSource, /const theme = 'dark'/);
+  assert.doesNotMatch(uiSource, /THEME_MODES/);
+  assert.doesNotMatch(uiSource, /matchMedia\('\(prefers-color-scheme: dark\)'\)/);
 });
 
-test('顶部导航渲染主题下拉菜单并标记当前主题', () => {
-  assert.match(uiSource, /function\s+buildThemeSwitcher\(\)/);
-  assert.match(uiSource, /class:\s*'theme-switcher'/);
-  assert.match(uiSource, /classList\.add\('open'\)/);
-  assert.match(uiSource, /classList\.remove\('open'\)/);
-  assert.match(uiSource, /data-theme-mode/);
-  assert.match(uiSource, /aria-pressed/);
-  assert.match(uiSource, /aria-expanded/);
-  assert.match(uiSource, /theme\.system/);
-  assert.match(uiSource, /theme\.light/);
-  assert.match(uiSource, /theme\.dark/);
-  assert.match(uiSource, /buildThemeSwitcher\(\)/);
+test('顶部导航不再渲染主题切换菜单', () => {
+  assert.doesNotMatch(uiSource, /buildThemeSwitcher\(/);
+  assert.doesNotMatch(uiSource, /theme-switcher/);
+  assert.doesNotMatch(uiSource, /data-theme-mode/);
   assert.doesNotMatch(uiSource, /theme-current-label/);
 });
 
-test('共享样式提供显式亮色和暗色主题变量与菜单样式', () => {
+test('共享样式保留暗色变量，并移除新版亮色卡片背景', () => {
   assert.match(sharedCss, /html\[data-theme="dark"\]/);
   assert.match(sharedCss, /html\[data-theme="light"\]/);
   assert.match(sharedCss, /@media\s*\(prefers-color-scheme:\s*dark\)[\s\S]*html\[data-theme="system"\]/);
-  assert.match(sharedCss, /\.theme-switcher/);
-  assert.match(sharedCss, /\.theme-menu/);
-  assert.match(sharedCss, /\.theme-switcher\.open\s+\.theme-menu/);
-  assert.doesNotMatch(sharedCss, /\.theme-switcher:hover\s+\.theme-menu/);
-  assert.doesNotMatch(sharedCss, /\.theme-switcher:focus-within\s+\.theme-menu/);
-  assert.match(sharedCss, /\.theme-option\[aria-pressed="true"\]/);
+  assert.doesNotMatch(sharedCss, /--container-max-width:\s*100%\s*;/);
+  assert.doesNotMatch(sharedCss, /linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.98\),\s*rgba\(248,\s*250,\s*252,\s*0\.96\)\)/);
+  assert.doesNotMatch(channelsCss, /linear-gradient\(180deg,\s*rgba\(255,\s*255,\s*255,\s*0\.99\),\s*rgba\(248,\s*250,\s*252,\s*0\.96\)\)/);
 });
 
 test('主题菜单文案覆盖中英文', () => {
@@ -220,6 +208,6 @@ test('所有页面在样式表加载前同步初始化主题，避免暗色模�
     assert.ok(firstStylesheetIndex >= 0, `${file} 缺少 stylesheet`);
     assert.ok(themeInitIndex < firstStylesheetIndex, `${file} 必须在 CSS 前初始化主题`);
   }
-  assert.match(themeInitSource, /style\.backgroundColor\s*=\s*resolvedTheme\s*===\s*'dark'\s*\?\s*'#0f172a'\s*:\s*'#f8fafc'/);
+  assert.match(themeInitSource, /style\.backgroundColor\s*=\s*'#0f172a'/);
   assert.match(themeInitSource, /removeProperty\('background-color'\)/);
 });
