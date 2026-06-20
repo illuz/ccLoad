@@ -138,6 +138,8 @@
     }
 
     .content-area > header .glass-card.channel-page-header-card {
+      max-width: 1040px;
+      margin: 0 auto;
       padding: clamp(1rem, 1.5vw, 1.5rem) clamp(1rem, 1.8vw, 1.75rem);
       background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
       border: 1px solid var(--surface-border-strong);
@@ -178,9 +180,6 @@
     }
 
     .channel-page-copy-body {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
       min-width: 0;
     }
 
@@ -190,11 +189,6 @@
       font-size: clamp(1.35rem, 2.4vw, 2rem);
       line-height: 1.08;
       letter-spacing: -0.04em;
-    }
-
-    .channel-page-copy .page-subtitle {
-      margin: 0;
-      max-width: 70ch;
     }
 
     .channel-page-actions {
@@ -223,6 +217,8 @@
     }
 
     .filter-bar {
+      max-width: 1040px;
+      margin: 0 auto 12px;
       padding: 1rem;
       border-radius: 1.5rem;
       box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
@@ -300,17 +296,6 @@
       background: var(--glass-bg);
       border-color: var(--glass-border);
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-    }
-
-    .page-subtitle {
-      color: var(--neutral-700);
-      line-height: 1.6;
-      font-weight: 500;
-    }
-
-    .page-subtitle b {
-      color: var(--neutral-900);
-      font-weight: 700;
     }
 
     .channel-filter-action-btn {

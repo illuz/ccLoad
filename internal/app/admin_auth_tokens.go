@@ -66,6 +66,7 @@ func (s *Server) HandleListAuthTokens(c *gin.Context) {
 
 	params := ParsePaginationParams(c)
 	totalCount := len(tokens)
+	hasPagination := c.Query("limit") != "" || c.Query("offset") != ""
 
 	type AuthTokenListResponse struct {
 		Tokens          []*model.AuthToken      `json:"tokens"`
@@ -164,7 +165,13 @@ func (s *Server) HandleListAuthTokens(c *gin.Context) {
 
 	}
 
-	resp.Tokens = paginateAuthTokens(tokens, params)
+	if hasPagination {
+		resp.Tokens = paginateAuthTokens(tokens, params)
+	} else {
+		resp.Tokens = tokens
+		resp.Limit = totalCount
+		resp.Offset = 0
+	}
 
 	RespondJSON(c, http.StatusOK, resp)
 }

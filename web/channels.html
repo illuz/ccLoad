@@ -45,8 +45,6 @@
                 <div class="channel-page-brand" aria-hidden="true">CH</div>
                 <div class="channel-page-copy-body">
                   <h1 class="channel-page-title" data-i18n="channels.title">渠道管理</h1>
-                  <p class="page-subtitle" style="margin: 0;" data-i18n="channels.description">
-                    配置API渠道、优先级和模型支持（<b>优先请求高优先级渠道，相同优先级按Key数量加权随机</b>）</p>
                 </div>
               </div>
               <div class="channel-page-actions">
@@ -131,64 +129,6 @@
         <section>
           <div id="channels-container" class="grid grid-cols-1 gap-6"></div>
         </section>
-
-        <div class="glass-card logs-pagination-card">
-          <div class="pagination-container">
-            <div class="pagination-controls logs-pagination-controls">
-              <button id="channels_first_page" class="btn btn-secondary btn-sm" type="button" data-action="first-channels-page">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 17l-5-5 5-5"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18V6"/>
-                </svg>
-                <span data-i18n="common.firstPage">首页</span>
-              </button>
-              <button id="channels_prev_page" class="btn btn-secondary btn-sm" type="button" data-action="prev-channels-page">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 18l-6-6 6-6"/>
-                </svg>
-                <span data-i18n="common.prevPage">上一页</span>
-              </button>
-              <span class="pagination-info logs-pagination-info">
-                <span data-i18n="logs.pagePrefix">第</span> <span id="channels_current_page">1</span> <span data-i18n="logs.pageMid">页，共</span> <span id="channels_total_pages">1</span> <span data-i18n="logs.pageSuffix">页</span>
-                <span class="logs-pagination-separator">|</span>
-                <span data-i18n="logs.jumpTo">跳转到</span>
-                <input
-                  id="channels_jump_page"
-                  class="logs-jump-input"
-                  type="number"
-                  min="1"
-                  data-i18n-placeholder="logs.pagePlaceholder"
-                  placeholder="页码">
-                <span data-i18n="logs.pageUnit">页</span>
-              </span>
-              <button id="channels_next_page" class="btn btn-secondary btn-sm" type="button" data-action="next-channels-page">
-                <span data-i18n="common.nextPage">下一页</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 6l6 6-6 6"/>
-                </svg>
-              </button>
-              <button id="channels_last_page" class="btn btn-secondary btn-sm" type="button" data-action="last-channels-page">
-                <span data-i18n="common.lastPage">尾页</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 7l5 5-5 5"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 6v12"/>
-                </svg>
-              </button>
-              <span class="logs-pagination-separator">|</span>
-              <span class="pagination-page-size-control">
-                <span data-i18n="channels.pageSize">每页</span>
-                <select id="channels_page_size" class="logs-jump-input">
-                  <option value="10">10</option>
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                  <option value="200" selected>200</option>
-                </select>
-                <span data-i18n="channels.pageSizeUnit">条</span>
-              </span>
-            </div>
-          </div>
-        </div>
 
         <div id="batchFloatingMenu" class="channel-batch-float" aria-hidden="true">
           <div class="channel-batch-float__content">

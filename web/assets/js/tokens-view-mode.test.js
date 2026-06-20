@@ -55,9 +55,7 @@ function loadHarness() {
     }),
     'tokenListViewBtn': makeElement('button'),
     'tokenGroupViewBtn': makeElement('button'),
-    'tokenSearchInput': { value: '', dataset: {}, addEventListener() {} },
-    'tokens_jump_page': { value: '', dataset: {}, addEventListener() {} },
-    'tokens_page_size': { value: '200', dataset: {}, addEventListener() {} }
+    'tokenSearchInput': { value: '', dataset: {}, addEventListener() {} }
   };
 
   const document = {

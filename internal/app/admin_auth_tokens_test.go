@@ -220,8 +220,11 @@ func TestHandleListAuthTokens_WithTokens(t *testing.T) {
 	if resp.Data.TotalCount != 2 {
 		t.Errorf("Expected total_count=2, got %d", resp.Data.TotalCount)
 	}
-	if resp.Data.Limit != 200 {
-		t.Errorf("Expected default limit=200, got %d", resp.Data.Limit)
+	if resp.Data.Limit != 2 {
+		t.Errorf("Expected full result limit=2 when no pagination, got %d", resp.Data.Limit)
+	}
+	if resp.Data.Offset != 0 {
+		t.Errorf("Expected default offset=0, got %d", resp.Data.Offset)
 	}
 }
 

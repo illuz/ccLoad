@@ -878,8 +878,6 @@ function setLocalChannelEnabled(id, enabled) {
   const seenState = new Set();
   const removedEntries = [];
   const shouldRemoveFromCurrentList = !channelEnabledMatchesCurrentStatus(enabled);
-  const previousTotalCount = typeof channelsTotalCount !== 'undefined' ? channelsTotalCount : null;
-  let removedFromChannels = false;
 
   const updateList = (list) => {
     if (!Array.isArray(list)) return;
@@ -893,9 +891,6 @@ function setLocalChannelEnabled(id, enabled) {
       channel.enabled = enabled;
       if (shouldRemoveFromCurrentList) {
         removedEntries.push({ list, index, channel });
-        if (typeof channels !== 'undefined' && list === channels) {
-          removedFromChannels = true;
-        }
         list.splice(index, 1);
       }
     }
@@ -903,7 +898,6 @@ function setLocalChannelEnabled(id, enabled) {
 
   if (typeof channels !== 'undefined') updateList(channels);
   if (typeof filteredChannels !== 'undefined') updateList(filteredChannels);
-  syncLocalChannelPaginationAfterEnabledChange(removedFromChannels ? -1 : 0);
 
   return () => {
     previous.forEach((entry) => {
@@ -913,12 +907,6 @@ function setLocalChannelEnabled(id, enabled) {
       if (entry.list.includes(entry.channel)) return;
       entry.list.splice(Math.min(entry.index, entry.list.length), 0, entry.channel);
     });
-    if (previousTotalCount !== null) {
-      channelsTotalCount = previousTotalCount;
-      if (typeof channelsPageSize !== 'undefined') {
-        channelsTotalPages = Math.max(1, Math.ceil(channelsTotalCount / channelsPageSize));
-      }
-    }
   };
 }
 
@@ -931,25 +919,11 @@ function channelEnabledMatchesCurrentStatus(enabled) {
   return true;
 }
 
-function syncLocalChannelPaginationAfterEnabledChange(delta) {
-  if (!delta || typeof channelsTotalCount === 'undefined') return;
-  channelsTotalCount = Math.max(0, channelsTotalCount + delta);
-  if (typeof channelsPageSize !== 'undefined') {
-    channelsTotalPages = Math.max(1, Math.ceil(channelsTotalCount / channelsPageSize));
-    if (typeof channelsCurrentPage !== 'undefined' && channelsCurrentPage > channelsTotalPages) {
-      channelsCurrentPage = channelsTotalPages;
-    }
-  }
-}
-
 function renderLocalChannelsAfterEnabledChange() {
   if (typeof filterChannels === 'function') {
     filterChannels();
   } else if (typeof renderChannels === 'function') {
     renderChannels();
-  }
-  if (typeof updateChannelsPagination === 'function') {
-    updateChannelsPagination();
   }
 }
 

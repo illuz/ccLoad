@@ -37,8 +37,7 @@ function saveChannelsFilters() {
       model: filters.model,
       modelExact: filters.modelExact,
       search: filters.search,
-      searchExact: filters.searchExact,
-      page: channelsCurrentPage
+      searchExact: filters.searchExact
     }));
   } catch (_) {}
 }
@@ -54,7 +53,6 @@ function loadChannelsFilters() {
 function resetChannelSearchFilter() {
   filters.search = '';
   filters.searchExact = false;
-  channelsCurrentPage = 1;
   if (typeof channelNameCombobox !== 'undefined' && channelNameCombobox) {
     channelNameCombobox.setValue('', getChannelNameAllLabel());
   } else {
@@ -64,69 +62,6 @@ function resetChannelSearchFilter() {
       searchInputEl.value = allLabel;
     }
   }
-}
-
-function updateChannelsPagination() {
-  const currentPageEl = document.getElementById('channels_current_page');
-  const totalPagesEl = document.getElementById('channels_total_pages');
-  const firstBtn = document.getElementById('channels_first_page');
-  const prevBtn = document.getElementById('channels_prev_page');
-  const nextBtn = document.getElementById('channels_next_page');
-  const lastBtn = document.getElementById('channels_last_page');
-
-  if (currentPageEl) currentPageEl.textContent = String(channelsCurrentPage);
-  if (totalPagesEl) totalPagesEl.textContent = String(channelsTotalPages);
-
-  const disablePrev = channelsCurrentPage <= 1;
-  const disableNext = channelsCurrentPage >= channelsTotalPages;
-  if (firstBtn) firstBtn.disabled = disablePrev;
-  if (prevBtn) prevBtn.disabled = disablePrev;
-  if (nextBtn) nextBtn.disabled = disableNext;
-  if (lastBtn) lastBtn.disabled = disableNext;
-}
-
-function firstChannelsPage() {
-  if (channelsCurrentPage <= 1) return;
-  channelsCurrentPage = 1;
-  saveChannelsFilters();
-  loadChannels(filters.channelType);
-}
-
-function prevChannelsPage() {
-  if (channelsCurrentPage <= 1) return;
-  channelsCurrentPage--;
-  saveChannelsFilters();
-  loadChannels(filters.channelType);
-}
-
-function nextChannelsPage() {
-  if (channelsCurrentPage >= channelsTotalPages) return;
-  channelsCurrentPage++;
-  saveChannelsFilters();
-  loadChannels(filters.channelType);
-}
-
-function lastChannelsPage() {
-  if (channelsCurrentPage >= channelsTotalPages) return;
-  channelsCurrentPage = channelsTotalPages;
-  saveChannelsFilters();
-  loadChannels(filters.channelType);
-}
-
-function jumpChannelsPage() {
-  const input = document.getElementById('channels_jump_page');
-  if (!input) return;
-  const page = parseInt(input.value, 10);
-  if (!Number.isFinite(page) || page < 1 || page > channelsTotalPages) {
-    input.value = '';
-    return;
-  }
-  if (page !== channelsCurrentPage) {
-    channelsCurrentPage = page;
-    saveChannelsFilters();
-    loadChannels(filters.channelType);
-  }
-  input.value = '';
 }
 
 function initChannelsPageActions() {
@@ -139,10 +74,6 @@ function initChannelsPageActions() {
       boundKey: 'channelsPageActionsBound',
       click: {
         'show-add-modal': () => showAddModal(),
-        'first-channels-page': () => firstChannelsPage(),
-        'prev-channels-page': () => prevChannelsPage(),
-        'next-channels-page': () => nextChannelsPage(),
-        'last-channels-page': () => lastChannelsPage(),
         'batch-enable-channels': () => batchEnableSelectedChannels(),
         'batch-disable-channels': () => batchDisableSelectedChannels(),
         'batch-delete-channels': () => batchDeleteSelectedChannels(),
@@ -168,33 +99,6 @@ function initChannelsPageActions() {
       }
     });
   }
-
-  const jumpPageInput = document.getElementById('channels_jump_page');
-  if (jumpPageInput && !jumpPageInput.dataset.bound) {
-    jumpPageInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        jumpChannelsPage();
-      }
-    });
-    jumpPageInput.dataset.bound = '1';
-  }
-
-  // 每页显示数量选择器
-  const pageSizeSelect = document.getElementById('channels_page_size');
-  if (pageSizeSelect && !pageSizeSelect.dataset.bound) {
-    pageSizeSelect.value = String(channelsPageSize);
-    pageSizeSelect.addEventListener('change', (event) => {
-      const newSize = parseInt(event.target.value, 10);
-      if (newSize > 0) {
-        channelsPageSize = newSize;
-        localStorage.setItem('channels.pageSize', String(newSize));
-        channelsCurrentPage = 1;
-        saveChannelsFilters();
-        loadChannels(filters.channelType);
-      }
-    });
-    pageSizeSelect.dataset.bound = '1';
-  }
 }
 
 window.initPageBootstrap({
@@ -215,7 +119,6 @@ window.initPageBootstrap({
     await window.ChannelTypeManager.renderChannelTypeRadios('channelTypeRadios');
 
     const savedFilters = loadChannelsFilters();
-    channelsCurrentPage = Math.max(1, parseInt(savedFilters?.page, 10) || 1);
     const targetChannel = await getTargetChannel();
     const targetChannelType = targetChannel?.channel_type || null;
     const initialType = targetChannelType || (savedFilters?.channelType) || 'all';
@@ -228,7 +131,6 @@ window.initPageBootstrap({
       filters.modelExact = false;
       filters.search = targetChannel?.name || '';
       filters.searchExact = Boolean(filters.search);
-      channelsCurrentPage = 1;
       document.getElementById('statusFilter').value = 'all';
       if (typeof modelFilterCombobox !== 'undefined' && modelFilterCombobox) {
         modelFilterCombobox.setValue('all', modelFilterInputValueFromFilterValue('all'));
@@ -275,7 +177,6 @@ window.initPageBootstrap({
       filters.modelExact = false;
       filters.search = '';
       filters.searchExact = false;
-      channelsCurrentPage = 1;
       if (typeof modelFilterCombobox !== 'undefined' && modelFilterCombobox) {
         modelFilterCombobox.setValue('all', modelFilterInputValueFromFilterValue('all'));
       } else {
@@ -286,7 +187,6 @@ window.initPageBootstrap({
         channelNameCombobox.setValue('', getChannelNameAllLabel());
       }
       saveChannelsFilters();
-      loadChannelsFilterOptions(type, filters.status);
       loadChannels(type);
     });
 
@@ -304,7 +204,6 @@ window.initPageBootstrap({
     window.i18n.onLocaleChange(() => {
       renderChannels();
       updateModelOptions();
-      updateChannelsPagination();
     });
 
     // 自动刷新（system_settings.auto_refresh_interval_seconds，0=禁用）

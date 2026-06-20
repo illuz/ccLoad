@@ -3,17 +3,6 @@ function buildChannelsListParams(type = 'all') {
   if (type && type !== 'all') {
     params.set('type', type);
   }
-  if (filters.search) {
-    params.set(filters.searchExact ? 'channel_name' : 'search', filters.search);
-  }
-  if (filters.status && filters.status !== 'all') {
-    params.set('status', filters.status);
-  }
-  if (filters.model && filters.model !== 'all') {
-    params.set(filters.modelExact ? 'model' : 'model_like', filters.model);
-  }
-  params.set('limit', String(channelsPageSize));
-  params.set('offset', String((channelsCurrentPage - 1) * channelsPageSize));
   return params;
 }
 
@@ -27,22 +16,13 @@ async function loadChannels(type = 'all') {
     }
 
     channels = Array.isArray(resp.data) ? resp.data : [];
-    channelsTotalCount = Number.isFinite(resp.count) ? resp.count : channels.length;
-    channelsTotalPages = Math.max(1, Math.ceil(channelsTotalCount / channelsPageSize));
-
-    if (channelsCurrentPage > channelsTotalPages) {
-      channelsCurrentPage = channelsTotalPages;
-      return loadChannels(type);
-    }
+    channelsTotalCount = channels.length;
 
     if (typeof syncSelectedChannelsWithLoadedChannels === 'function') {
       syncSelectedChannelsWithLoadedChannels();
     }
 
     filterChannels();
-    if (typeof updateChannelsPagination === 'function') {
-      updateChannelsPagination();
-    }
   } catch (e) {
     console.error('Failed to load channels', e);
     if (window.showError) window.showError(window.t('channels.loadChannelsFailed'));

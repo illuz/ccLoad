@@ -38,7 +38,36 @@ function isExactChannelNameFilter(value) {
 }
 
 function filterChannels() {
-  const filtered = channels.slice();
+  const filtered = channels.filter((channel) => {
+    const channelName = String(channel?.name || '').trim().toLowerCase();
+    const searchValue = String(filters.search || '').trim().toLowerCase();
+    if (searchValue) {
+      if (filters.searchExact) {
+        if (channelName !== searchValue) return false;
+      } else if (!channelName.includes(searchValue)) {
+        return false;
+      }
+    }
+
+    if (filters.status && filters.status !== 'all') {
+      const isCooldown = Number(channel?.cooldown_remaining_ms || 0) > 0;
+      if (filters.status === 'enabled' && channel?.enabled !== true) return false;
+      if (filters.status === 'disabled' && channel?.enabled !== false) return false;
+      if (filters.status === 'cooldown' && !isCooldown) return false;
+    }
+
+    const modelValue = String(filters.model || '').trim().toLowerCase();
+    if (modelValue && modelValue !== 'all') {
+      const channelModels = Array.isArray(channel?.models) ? channel.models : [];
+      const matched = channelModels.some((entry) => {
+        const modelName = String(entry?.model || entry || '').trim().toLowerCase();
+        return filters.modelExact ? modelName === modelValue : modelName.includes(modelValue);
+      });
+      if (!matched) return false;
+    }
+
+    return true;
+  });
 
   // 排序：优先使用 effective_priority（健康度模式），否则使用 priority
   filtered.sort((a, b) => {
@@ -88,12 +117,8 @@ function updateChannelNameOptions() {
 function setupFilterListeners() {
   document.getElementById('statusFilter').addEventListener('change', (e) => {
     filters.status = e.target.value;
-    channelsCurrentPage = 1;
     if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
-    if (typeof loadChannelsFilterOptions === 'function') {
-      loadChannelsFilterOptions(filters.channelType, filters.status);
-    }
-    loadChannels(filters.channelType);
+    filterChannels();
   });
 
   // 模型筛选 combobox
@@ -118,9 +143,8 @@ function setupFilterListeners() {
         const raw = String(value || '').trim();
         filters.model = raw || 'all';
         filters.modelExact = isExactChannelModelFilter(value);
-        channelsCurrentPage = 1;
         if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
-        loadChannels(filters.channelType);
+        filterChannels();
       }
     });
   }
@@ -158,18 +182,16 @@ function setupFilterListeners() {
         if (isAllToken && channelNameCombobox) {
           channelNameCombobox.setValue('', getChannelNameAllLabel());
         }
-        channelsCurrentPage = 1;
         if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
-        loadChannels(filters.channelType);
+        filterChannels();
       }
     });
   }
 
   // 筛选按钮：手动触发筛选
   document.getElementById('btn_filter').addEventListener('click', () => {
-    channelsCurrentPage = 1;
     if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
-    loadChannels(filters.channelType);
+    filterChannels();
   });
 
   const clearSearchBtn = document.getElementById('clearSearchBtn');
@@ -182,7 +204,6 @@ function setupFilterListeners() {
       filters.model = 'all';
       filters.modelExact = false;
       filters.channelType = 'all';
-      channelsCurrentPage = 1;
 
       // 重置渠道名称 combobox
       if (channelNameCombobox) {
@@ -209,7 +230,7 @@ function setupFilterListeners() {
       if (channelTypeFilterEl) channelTypeFilterEl.value = 'all';
 
       if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
-      loadChannels(filters.channelType);
+      filterChannels();
     });
   }
 }

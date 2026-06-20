@@ -2317,11 +2317,13 @@ body {
 
 /* ===== 现代化 UI 覆盖：Overview ===== */
 .hero-header {
+  max-width: 1040px;
+  margin: 0 auto;
   background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
   border: 1px solid var(--surface-border-strong);
   border-left: 5px solid var(--primary-500);
   border-radius: 1.5rem;
-  padding: 1.5rem 1.75rem;
+  padding: 1.1rem 1.4rem;
   gap: 1.25rem;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
 }
@@ -2346,13 +2348,6 @@ body {
   font-size: clamp(1.6rem, 2.8vw, 2.35rem);
   line-height: 1.08;
   letter-spacing: -0.035em;
-}
-
-.hero-subtitle {
-  margin-top: .15rem;
-  color: var(--neutral-600);
-  font-size: var(--text-base);
-  font-weight: var(--font-medium);
 }
 
 .time-range-selector {

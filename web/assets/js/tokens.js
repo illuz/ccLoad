@@ -3,10 +3,6 @@
     let allTokens = [];
     let isToday = true;      // 是否为本日（本日才显示最近一分钟）
     let tokenSearch = '';
-    let tokensCurrentPage = 1;
-    let tokensPageSize = parseInt(localStorage.getItem('tokens.pageSize'), 10) || 200;
-    let tokensTotalPages = 1;
-    let tokensTotalCount = 0;
     let authTokenGroups = [];
     let tokenViewMode = localStorage.getItem('tokens.viewMode') || 'list';
     let collapsedTokenGroups = new Set(JSON.parse(localStorage.getItem('tokens.collapsedGroups') || '[]'));
@@ -147,10 +143,6 @@
           'set-token-view-group': () => setTokenViewMode('group'),
           'close-token-group-modal': () => closeTokenGroupModal(),
           'create-token-group': () => createTokenGroupFromModal(),
-          'first-tokens-page': () => firstTokensPage(),
-          'prev-tokens-page': () => prevTokensPage(),
-          'next-tokens-page': () => nextTokensPage(),
-          'last-tokens-page': () => lastTokensPage(),
           'toggle-token-group-section': (actionTarget) => {
             const groupKey = actionTarget.dataset.groupKey;
             if (groupKey !== undefined) toggleTokenGroupCollapsed(groupKey);
@@ -185,7 +177,6 @@
             document.getElementById('editCustomExpiryContainer').style.display =
               actionTarget.value === 'custom' ? 'block' : 'none';
           },
-          'change-tokens-page-size': (actionTarget) => changeTokensPageSize(actionTarget.value),
           'change-edit-token-group': (actionTarget) => changeEditTokenGroup(actionTarget.value),
           'toggle-inherit-quota': (actionTarget) => setEditInheritQuota(actionTarget.checked),
           'toggle-inherit-channels': (actionTarget) => setEditInheritChannels(actionTarget.checked),
@@ -260,9 +251,6 @@
       const searchInput = document.getElementById('tokenSearchInput');
       if (searchInput && !searchInput.dataset.bound) {
         searchInput.value = tokenSearch;
-        searchInput.addEventListener('input', () => {
-          tokenSearch = searchInput.value.trim();
-        });
         searchInput.addEventListener('keydown', (event) => {
           if (event.key === 'Enter') {
             applyTokenSearch();
@@ -270,23 +258,6 @@
         });
         searchInput.dataset.bound = '1';
       }
-
-      const jumpInput = document.getElementById('tokens_jump_page');
-      if (jumpInput && !jumpInput.dataset.bound) {
-        jumpInput.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') {
-            jumpTokensPage();
-          }
-        });
-        jumpInput.dataset.bound = '1';
-      }
-
-      const pageSizeSelect = document.getElementById('tokens_page_size');
-      if (pageSizeSelect) {
-        pageSizeSelect.value = String(tokensPageSize);
-      }
-
-      updateTokensPagination();
     }
 
     function getTokenSearchInputValue() {
@@ -295,85 +266,30 @@
 
     function applyTokenSearch() {
       tokenSearch = getTokenSearchInputValue();
-      tokensCurrentPage = 1;
-      loadTokens();
+      renderTokens();
     }
 
     function clearTokenSearch() {
       tokenSearch = '';
       const input = document.getElementById('tokenSearchInput');
       if (input) input.value = '';
-      tokensCurrentPage = 1;
-      loadTokens();
+      renderTokens();
     }
 
-    function changeTokensPageSize(rawValue) {
-      const newSize = parseInt(rawValue, 10);
-      if (!Number.isFinite(newSize) || newSize <= 0 || newSize === tokensPageSize) return;
-      tokensPageSize = newSize;
-      localStorage.setItem('tokens.pageSize', String(newSize));
-      tokensCurrentPage = 1;
-      loadTokens();
-    }
+    function getVisibleTokens() {
+      if (!tokenSearch) return allTokens;
 
-    function firstTokensPage() {
-      if (tokensCurrentPage <= 1) return;
-      tokensCurrentPage = 1;
-      loadTokens();
-    }
-
-    function prevTokensPage() {
-      if (tokensCurrentPage <= 1) return;
-      tokensCurrentPage--;
-      loadTokens();
-    }
-
-    function nextTokensPage() {
-      if (tokensCurrentPage >= tokensTotalPages) return;
-      tokensCurrentPage++;
-      loadTokens();
-    }
-
-    function lastTokensPage() {
-      if (tokensCurrentPage >= tokensTotalPages) return;
-      tokensCurrentPage = tokensTotalPages;
-      loadTokens();
-    }
-
-    function jumpTokensPage() {
-      const input = document.getElementById('tokens_jump_page');
-      if (!input) return;
-      const page = parseInt(input.value, 10);
-      if (!Number.isFinite(page) || page < 1 || page > tokensTotalPages) {
-        input.value = '';
-        return;
-      }
-      if (page !== tokensCurrentPage) {
-        tokensCurrentPage = page;
-        loadTokens();
-      }
-      input.value = '';
-    }
-
-    function updateTokensPagination() {
-      const currentPageEl = document.getElementById('tokens_current_page');
-      const totalPagesEl = document.getElementById('tokens_total_pages');
-      const firstBtn = document.getElementById('tokens_first_page');
-      const prevBtn = document.getElementById('tokens_prev_page');
-      const nextBtn = document.getElementById('tokens_next_page');
-      const lastBtn = document.getElementById('tokens_last_page');
-      const pageSizeSelect = document.getElementById('tokens_page_size');
-
-      if (currentPageEl) currentPageEl.textContent = String(tokensCurrentPage);
-      if (totalPagesEl) totalPagesEl.textContent = String(tokensTotalPages);
-      if (pageSizeSelect) pageSizeSelect.value = String(tokensPageSize);
-
-      const disablePrev = tokensCurrentPage <= 1;
-      const disableNext = tokensCurrentPage >= tokensTotalPages;
-      if (firstBtn) firstBtn.disabled = disablePrev;
-      if (prevBtn) prevBtn.disabled = disablePrev;
-      if (nextBtn) nextBtn.disabled = disableNext;
-      if (lastBtn) lastBtn.disabled = disableNext;
+      const keyword = tokenSearch.toLowerCase();
+      return allTokens.filter((token) => {
+        const fields = [
+          token.description,
+          token.group_name,
+          token.plain_token,
+          token.token,
+          getTokenGroupName(token)
+        ];
+        return fields.some((value) => String(value || '').toLowerCase().includes(keyword));
+      });
     }
 
     function updateTokensEmptyState(isSearchEmpty) {
@@ -429,25 +345,13 @@
             : `range=${encodeURIComponent(currentTimeRange)}`;
           new URLSearchParams(query).forEach((value, key) => params.set(key, value));
         }
-        if (tokenSearch) {
-          params.set('search', tokenSearch);
-        }
-        params.set('limit', String(tokensPageSize));
-        params.set('offset', String((tokensCurrentPage - 1) * tokensPageSize));
-
-        const url = `${API_BASE}/auth-tokens?${params.toString()}`;
+        const queryString = params.toString();
+        const url = queryString ? `${API_BASE}/auth-tokens?${queryString}` : `${API_BASE}/auth-tokens`;
         const data = await fetchDataWithAuth(url);
         allTokens = (data && data.tokens) || [];
         authTokenGroups = (data && data.groups) || authTokenGroups || [];
         isToday = !!(data && data.is_today);
-        tokensTotalCount = Number.isFinite(data && data.total_count) ? data.total_count : allTokens.length;
-        tokensTotalPages = Math.max(1, Math.ceil(tokensTotalCount / tokensPageSize));
-        if (tokensCurrentPage > tokensTotalPages) {
-          tokensCurrentPage = tokensTotalPages;
-          return loadTokens();
-        }
         renderTokens();
-        updateTokensPagination();
       } catch (error) {
         
         console.error('Failed to load tokens:', error);
@@ -458,15 +362,15 @@
     function renderTokens() {
       const container = document.getElementById('tokens-container');
       const emptyState = document.getElementById('empty-state');
+      const visibleTokens = getVisibleTokens();
       updateTokenViewButtons();
 
-      if (allTokens.length === 0) {
+      if (visibleTokens.length === 0) {
         container.innerHTML = '';
         if (emptyState) {
           updateTokensEmptyState(!!tokenSearch);
           emptyState.style.display = 'block';
         }
-        updateTokensPagination();
         return;
       }
 
@@ -474,9 +378,9 @@
       container.innerHTML = '';
 
       if (tokenViewMode === 'group') {
-        renderGroupedTokens(container);
+        renderGroupedTokens(container, visibleTokens);
       } else {
-        container.appendChild(createTokensTable(allTokens));
+        container.appendChild(createTokensTable(visibleTokens));
       }
 
       // 翻译动态渲染的内容中的 data-i18n 属性
@@ -560,7 +464,7 @@
       `;
     }
 
-    function buildTokenGroupsForView() {
+    function buildTokenGroupsForView(tokens = allTokens) {
       const map = new Map();
       const ensure = (key, group) => {
         if (!map.has(key)) {
@@ -568,7 +472,7 @@
         }
         return map.get(key);
       };
-      allTokens.forEach(token => {
+      tokens.forEach(token => {
         const key = token.group_id ? String(token.group_id) : '0';
         const group = authTokenGroups.find(g => String(g.id) === key) || null;
         const fallbackName = token.group_name || (key === '0' ? t('tokens.ungrouped') : `${t('tokens.group')} #${key}`);
@@ -591,10 +495,10 @@
       renderTokens();
     }
 
-    function renderGroupedTokens(container) {
+    function renderGroupedTokens(container, tokens = allTokens) {
       const wrap = document.createElement('div');
       wrap.className = 'token-grouped-view';
-      buildTokenGroupsForView().forEach(({ key, group, name, tokens }) => {
+      buildTokenGroupsForView(tokens).forEach(({ key, group, name, tokens }) => {
         const collapsed = collapsedTokenGroups.has(key);
         const section = document.createElement('section');
         section.className = `token-group-section${collapsed ? ' token-group-section--collapsed' : ''}`;
@@ -1074,7 +978,6 @@
         closeCreateModal();
         document.getElementById('newTokenValue').value = data.token;
         document.getElementById('tokenResultModal').style.display = 'block';
-        tokensCurrentPage = 1;
         await loadTokens();
         window.showNotification(t('tokens.msg.createSuccess'), 'success');
       } catch (error) {

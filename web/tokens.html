@@ -28,8 +28,7 @@
           <div class="glass-card tokens-hero-card">
             <div class="tokens-hero-bar">
               <div>
-                <h1 class="page-title mb-2" data-i18n="tokens.pageTitle">API访问令牌</h1>
-                <p class="page-subtitle tokens-page-subtitle" data-i18n="tokens.pageSubtitle">管理用于 API (/v1/*) 访问的令牌</p>
+                <h1 class="page-title" data-i18n="tokens.pageTitle">API访问令牌</h1>
               </div>
               <button type="button" data-action="show-create-modal" class="btn btn-primary tokens-create-btn" data-i18n="tokens.createToken">
                 + 创建令牌
@@ -90,49 +89,6 @@
             <button type="button" data-action="show-create-modal" class="btn btn-primary" data-i18n="tokens.createTokenBtn">创建令牌</button>
           </div>
         </section>
-
-        <div class="glass-card tokens-pagination-card">
-          <div class="pagination-container">
-            <div class="pagination-controls tokens-pagination-controls">
-              <button id="tokens_first_page" class="btn btn-secondary btn-sm" type="button" data-action="first-tokens-page">
-                <span data-i18n="common.firstPage">首页</span>
-              </button>
-              <button id="tokens_prev_page" class="btn btn-secondary btn-sm" type="button" data-action="prev-tokens-page">
-                <span data-i18n="common.prevPage">上一页</span>
-              </button>
-              <span class="pagination-info tokens-pagination-info">
-                <span data-i18n="logs.pagePrefix">第</span> <span id="tokens_current_page">1</span> <span data-i18n="logs.pageMid">页，共</span> <span id="tokens_total_pages">1</span> <span data-i18n="logs.pageSuffix">页</span>
-                <span class="tokens-pagination-separator">|</span>
-                <span data-i18n="logs.jumpTo">跳转到</span>
-                <input
-                  id="tokens_jump_page"
-                  class="logs-jump-input tokens-jump-input"
-                  type="number"
-                  min="1"
-                  data-i18n-placeholder="logs.pagePlaceholder"
-                  placeholder="页码">
-                <span data-i18n="logs.pageUnit">页</span>
-              </span>
-              <button id="tokens_next_page" class="btn btn-secondary btn-sm" type="button" data-action="next-tokens-page">
-                <span data-i18n="common.nextPage">下一页</span>
-              </button>
-              <button id="tokens_last_page" class="btn btn-secondary btn-sm" type="button" data-action="last-tokens-page">
-                <span data-i18n="common.lastPage">尾页</span>
-              </button>
-              <span class="tokens-pagination-separator">|</span>
-              <span class="tokens-page-size-control">
-                <span data-i18n="channels.pageSize">每页</span>
-                <select id="tokens_page_size" class="logs-jump-input tokens-page-size-select" data-change-action="change-tokens-page-size">
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                  <option value="200" selected>200</option>
-                  <option value="500">500</option>
-                </select>
-                <span data-i18n="channels.pageSizeUnit">条</span>
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </main>
   </div>
