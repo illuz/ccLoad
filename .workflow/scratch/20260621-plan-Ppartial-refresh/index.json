@@ -1,0 +1,31 @@
+{
+  "id": "20260621-plan-Ppartial-refresh",
+  "status": "verified",
+  "scope": "standalone",
+  "phase": "partial-refresh",
+  "plan": {
+    "task_ids": [
+      "TASK-001",
+      "TASK-002",
+      "TASK-003"
+    ],
+    "task_count": 3,
+    "complexity": "medium",
+    "waves": 3
+  },
+  "updated_at": "2026-06-21T21:37:43+08:00",
+  "execution": {
+    "status": "completed",
+    "session": "20260621-execute-scratch",
+    "completed_at": "2026-06-21T21:32:51+08:00",
+    "task_count": 3
+  },
+  "verification": {
+    "status": "passed",
+    "session": "20260621-verify-partial-refresh",
+    "completed_at": "2026-06-21T21:37:43+08:00",
+    "gaps": [],
+    "antipatterns": [],
+    "validation": "passed"
+  }
+}

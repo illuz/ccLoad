@@ -1,0 +1,227 @@
+{
+  "id": "VER-001",
+  "session": "20260621-verify-partial-refresh",
+  "phase_dir": ".workflow/scratch/20260621-plan-Ppartial-refresh",
+  "status": "passed",
+  "completed_at": "2026-06-21T21:37:43+08:00",
+  "must_haves": [
+    {
+      "id": "MH-001",
+      "description": "点击后台 tab 不整页刷新，fetch 现有 HTML 并只替换 main.main-content。",
+      "status": "verified",
+      "evidence": [
+        "web/assets/js/ui.js:fetchPageDocument",
+        "web/assets/js/ui.js:replaceMain",
+        "web/assets/js/ui-partial-router.test.js"
+      ]
+    },
+    {
+      "id": "MH-002",
+      "description": "使用 history.pushState 保持 URL，并支持 back/forward。",
+      "status": "verified",
+      "evidence": [
+        "web/assets/js/ui.js:navigate",
+        "web/assets/js/ui.js:popstate",
+        "web/assets/js/ui-partial-router.test.js"
+      ]
+    },
+    {
+      "id": "MH-003",
+      "description": "只更新应用壳 active 状态，不重复生成 topbar。",
+      "status": "verified",
+      "evidence": [
+        "web/assets/js/ui.js:updateTopbarActive",
+        "web/assets/js/ui-page-bootstrap.test.js"
+      ]
+    },
+    {
+      "id": "MH-004",
+      "description": "页面切换时清理 listeners/timers/i18n callbacks/auto-refresh/charts。",
+      "status": "verified",
+      "evidence": [
+        "web/assets/js/ui.js:withLifecycleCapture",
+        "web/assets/js/ui.js:CCPageLifecycle",
+        "web/assets/js/stats.js:disposeCharts",
+        "web/assets/js/trend.js:dispose"
+      ]
+    },
+    {
+      "id": "MH-005",
+      "description": "失败时保留静态整页 fallback。",
+      "status": "verified",
+      "evidence": [
+        "web/assets/js/ui.js:fallbackToDocumentNavigation",
+        "internal/app/static_handler_test.go:TestDashboardHTMLStaticFallbackSupportsPartialRouter"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "V1",
+      "title": "Truth: tab click uses partial navigation",
+      "layer": "truth",
+      "check_type": "observable_behavior",
+      "wave": "1",
+      "deps": "",
+      "context_from": "",
+      "description": "验证后台 tab 点击由 router 拦截，fetch 目标 HTML 并只替换 main，成功后 pushState。",
+      "status": "completed",
+      "findings": "`ui.js` 绑定 `.topnav-link[data-nav-key]` click，调用 `navigate()`；`fetchPageDocument()` 使用 fetch + `DOMParser`；`replaceMain()` 只查找并替换 `main.main-content`；成功后 `history.pushState`。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V2",
+      "title": "Truth: back/forward remounts without duplicate pushState",
+      "layer": "truth",
+      "check_type": "observable_behavior",
+      "wave": "1",
+      "deps": "",
+      "context_from": "",
+      "description": "验证 popstate 根据当前 URL 重新局部加载，并且不重复 pushState。",
+      "status": "completed",
+      "findings": "`popstate` handler 调用 `navigate(window.location.href,{fromPopState:true,replace:true,source:'popstate'})`；`navigate()` 中 `if (!options.fromPopState)` 才写 history。测试包含 popstate 不 pushState。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V3",
+      "title": "Truth: static fallback remains valid",
+      "layer": "truth",
+      "check_type": "observable_behavior",
+      "wave": "1",
+      "deps": "",
+      "context_from": "",
+      "description": "验证 fetch 失败/缺 main/非 routable 时保留整页跳转 fallback，且 Go 静态 HTML 仍可服务。",
+      "status": "completed",
+      "findings": "`fallbackToDocumentNavigation()` 使用 `window.location.assign(rawUrl)`；Go 子测试验证 `/web/logs.html`、`/web/stats.html` status 200、HTML content-type、no-cache、版本替换、包含 main。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V4",
+      "title": "Artifact Exists: modified files and tests",
+      "layer": "artifact",
+      "check_type": "exists",
+      "wave": "1",
+      "deps": "",
+      "context_from": "",
+      "description": "验证实现与测试文件存在。",
+      "status": "completed",
+      "findings": "存在 `web/assets/js/ui.js`、`stats.js`、`logs.js`、`trend.js`、`ui-partial-router.test.js`、`ui-page-bootstrap.test.js`、`web-refactor-guard.test.js`、`internal/app/static_handler_test.go`。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V5",
+      "title": "Artifact Substance: CCPartialRouter and CCPageLifecycle",
+      "layer": "artifact",
+      "check_type": "substance",
+      "wave": "2",
+      "deps": "V4",
+      "context_from": "V1;V2;V4",
+      "description": "验证 router/lifecycle 非 stub，包含真实 fetch、DOMParser、main replacement、history 和 cleanup 逻辑。",
+      "status": "completed",
+      "findings": "`CCPartialRouter` 暴露 navigate/fetchPageDocument/extractPagePayload/replaceMain/syncPageOwnedNodes/syncHeadAssets/loadPageScripts/fallback/bind；`CCPageLifecycle` 暴露 register/mount/unmountCurrent/onCleanup/addEvent/setAutoRefresh/disposeCharts。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V6",
+      "title": "Wiring: page bootstrap and page jumps",
+      "layer": "wiring",
+      "check_type": "import_usage",
+      "wave": "2",
+      "deps": "V4",
+      "context_from": "V1;V2;V4",
+      "description": "验证关键页面接入 initPageBootstrap/PageLifecycle，stats/logs 跨页跳转接入 router。",
+      "status": "completed",
+      "findings": "index/channels/logs/stats/trend/tokens/model-test/settings 均保留 `window.initPageBootstrap({ topbarKey })`；`stats.js` 和 `logs.js` 命中 `window.CCPartialRouter.navigate(targetURL)` 且保留 `window.location.href = targetURL`。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V7",
+      "title": "Wiring: cleanup resources",
+      "layer": "wiring",
+      "check_type": "import_usage",
+      "wave": "2",
+      "deps": "V4",
+      "context_from": "V1;V4",
+      "description": "验证 listener/timer/i18n/auto-refresh/chart cleanup 连接到生命周期。",
+      "status": "completed",
+      "findings": "`withLifecycleCapture()` patch `addEventListener`/`setInterval`/`i18n.onLocaleChange` 并注册 cleanup；`createAutoRefresh()` 在 mount 中调用 `setAutoRefresh(handle)`；`stats.js` 使用 `disposeCharts(chartInstances)`；`trend.js` cleanup `window.chartInstance.dispose()`。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V8",
+      "title": "Anti-pattern scan",
+      "layer": "antipattern",
+      "check_type": "pattern_scan",
+      "wave": "3",
+      "deps": "V5;V6;V7",
+      "context_from": "V5;V6;V7",
+      "description": "扫描本次修改文件中 TODO/FIXME/XXX/HACK/stub/placeholder/disabled tests 等阻断项。",
+      "status": "completed",
+      "findings": "未发现本次新增阻断项。grep 命中均为既有 UI 文案/placeholder 用法：`SearchableCombobox placeholder`、logs 流式占位 class、分页输入 placeholder，不是未完成实现。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    },
+    {
+      "id": "V9",
+      "title": "Nyquist test coverage audit",
+      "layer": "nyquist",
+      "check_type": "test_coverage",
+      "wave": "3",
+      "deps": "V5;V6;V7",
+      "context_from": "V5;V6;V7",
+      "description": "将用户目标与测试映射，确认核心行为有自动化覆盖并运行全量测试。",
+      "status": "completed",
+      "findings": "覆盖映射：partial fetch/DOMParser/main/history/popstate/fallback → `ui-partial-router.test.js`；bootstrap/topbar/PageLifecycle → `ui-page-bootstrap.test.js`；跨页跳转 guard → `web-refactor-guard.test.js`；static fallback → `static_handler_test.go`；全量 `make www-setup && make web-test` 475 pass，`go test ./...` pass。",
+      "gaps_found": "[]",
+      "fix_plan": "",
+      "error": ""
+    }
+  ],
+  "gaps": [],
+  "antipatterns": [],
+  "fixes": [],
+  "commands": [
+    {
+      "command": "node --check web/assets/js/ui.js web/assets/js/stats.js web/assets/js/logs.js web/assets/js/trend.js",
+      "status": "passed"
+    },
+    {
+      "command": "node --test web/assets/js/ui-partial-router.test.js web/assets/js/ui-page-bootstrap.test.js web/assets/js/ui-delegated-actions.test.js web/assets/js/filter-state.test.js web/assets/js/web-refactor-guard.test.js",
+      "status": "passed",
+      "result": "34 pass"
+    },
+    {
+      "command": "node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/stats-inline-controls.test.js web/assets/js/logs-inline-controls.test.js web/assets/js/trend-filter-state.test.js web/assets/js/tokens-inline-controls.test.js web/assets/js/model-test-inline-controls.test.js",
+      "status": "passed",
+      "result": "61 pass"
+    },
+    {
+      "command": "go test ./internal/app -run 'TestStaticFileServing|TestGetContentType|TestChannelsTemplateNameLineLayout|TestDashboardHTMLStaticFallbackSupportsPartialRouter'",
+      "status": "passed"
+    },
+    {
+      "command": "make www-setup && make web-test",
+      "status": "passed",
+      "result": "475 pass"
+    },
+    {
+      "command": "go test ./...",
+      "status": "passed"
+    }
+  ]
+}

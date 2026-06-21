@@ -1,0 +1,3 @@
+id,status,findings,gaps_found,fix_plan,error
+V8,completed,未发现本次新增阻断项。grep 命中均为既有 UI 文案/placeholder 用法：`SearchableCombobox placeholder`、logs 流式占位 class、分页输入 placeholder，不是未完成实现。,[],,
+V9,completed,覆盖映射：partial fetch/DOMParser/main/history/popstate/fallback → `ui-partial-router.test.js`；bootstrap/topbar/PageLifecycle → `ui-page-bootstrap.test.js`；跨页跳转 guard → `web-refactor-guard.test.js`；static fallback → `static_handler_test.go`；全量 `make www-setup && make web-test` 475 pass，`go test ./...` pass。,[],,

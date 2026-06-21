@@ -1,0 +1,2 @@
+id,status,findings,files_modified,tests_passed,error
+TASK-002,completed,initPageBootstrap 统一注册 PageLifecycle，并在 withLifecycleCapture 中捕获 addEventListener/setInterval/i18n.onLocaleChange；createAutoRefresh 在 mount 中自动 setAutoRefresh；stats/logs 跨页入口优先 router.navigate 并保留整页 fallback；stats/trend 增加 ECharts cleanup。,web/assets/js/ui.js;web/assets/js/stats.js;web/assets/js/logs.js;web/assets/js/trend.js,node --check ui/stats/logs/trend; node --test page focused: 61 pass; make web-test: 475 pass,

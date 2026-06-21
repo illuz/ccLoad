@@ -1,0 +1,395 @@
+{
+  "id": "20260621-plan-Ppartial-refresh",
+  "title": "原生 JS 页内刷新改造计划",
+  "scope": "standalone",
+  "complexity": "medium",
+  "task_count": 3,
+  "created_at": "2026-06-21T20:26:46+08:00",
+  "summary": {
+    "goal": "将后台 tab 页面切换从整页刷新改为原生 JS 局部导航：fetch 现有 /web/*.html，DOMParser 解析并替换 main.main-content，保持 URL/history，支持 back/forward，并保留静态 HTML fallback。",
+    "strategy": "先在 shared ui.js 建立轻量 SPA-like router 与 PageLifecycle；再按页面渐进接入 mount/cleanup 和跨页 navigate；最后用 node:test 与 Go 静态服务测试覆盖路由、生命周期、history 与 fallback。默认复用现有整页 HTML，不新增后端 fragment endpoint，除非执行中证明 body 附属节点无法由前端同步。"
+  },
+  "waves": [
+    {
+      "wave": 1,
+      "tasks": [
+        "TASK-001"
+      ],
+      "description": "建立共享局部路由、应用壳幂等初始化、HTML 解析/资产同步与 history/popstate 基础能力。"
+    },
+    {
+      "wave": 2,
+      "tasks": [
+        "TASK-002"
+      ],
+      "description": "让各后台页面脚本以 PageLifecycle 挂载/卸载方式运行，处理复杂页面资源清理与跨页跳转入口。"
+    },
+    {
+      "wave": 3,
+      "tasks": [
+        "TASK-003"
+      ],
+      "description": "补齐聚焦回归测试和静态 fallback 测试，验证不整页刷新、back/forward、只替换 main 与资源去重。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "共享局部路由与应用壳生命周期基础",
+      "wave": 1,
+      "depends_on": [],
+      "estimated_minutes": 60,
+      "files": [
+        {
+          "path": "web/assets/js/ui.js",
+          "reason": "新增 CCPartialRouter、PageLifecycle、fetch+DOMParser、main 替换、topbar active 更新、history.pushState/popstate 与 fallback；同时让 initTopbar/initPageBootstrap 幂等。"
+        },
+        {
+          "path": "web/assets/js/logs-channel-editor.js",
+          "reason": "参考并可抽取/复用 getVersionedAssetURL、DOMParser fetch、loadScriptOnce 去重加载模式；必要时保留兼容导出。"
+        },
+        {
+          "path": "web/assets/js/ui-page-bootstrap.test.js",
+          "reason": "扩展共享 bootstrap/topbar 幂等与 PageLifecycle 注册行为测试。"
+        },
+        {
+          "path": "web/assets/js/ui-partial-router.test.js",
+          "reason": "新增局部路由单元测试，覆盖 HTML 解析、main/附属节点同步、history 与 popstate。"
+        }
+      ],
+      "read_first": [
+        {
+          "path": ".workflow/.csv-wave/20260621-plan-Ppartial-refresh/tasks.csv",
+          "reason": "确认 Wave 1 探索状态和本任务边界。"
+        },
+        {
+          "path": ".workflow/.csv-wave/20260621-plan-Ppartial-refresh/discoveries.ndjson",
+          "reason": "读取 E1-E4 发现的共享 bootstrap、topbar、静态 HTML、重复初始化和附属节点风险。"
+        },
+        {
+          "path": ".workflow/project.md",
+          "reason": "确认项目当前规划目标是原生 JS 页内刷新。"
+        },
+        {
+          "path": "web/assets/js/ui.js",
+          "reason": "修改文件；重点读取 NAVS/buildTopbar/initTopbar/initPageBootstrap/initDelegatedActions/persistFilterState/createAutoRefresh。"
+        },
+        {
+          "path": "web/assets/js/logs-channel-editor.js",
+          "reason": "来源依据；复用版本号、fetch HTML、DOMParser、loadScriptOnce 去重策略。"
+        },
+        {
+          "path": "web/assets/js/filter-state.js",
+          "reason": "来源依据；history helper 的 URL 构建语义不可破坏。"
+        },
+        {
+          "path": "web/logs.html",
+          "reason": "页面 HTML 示例；main 外存在 modal/template，需验证附属节点同步边界。"
+        },
+        {
+          "path": "web/stats.html",
+          "reason": "页面 HTML 示例；head 中有 echarts 与 template/filter 依赖，需验证 head asset 加载顺序。"
+        },
+        {
+          "path": "web/assets/js/ui-page-bootstrap.test.js",
+          "reason": "现有 bootstrap 约束测试，新增行为要保持旧断言。"
+        },
+        {
+          "path": "web/assets/js/filter-state.test.js",
+          "reason": "确认新 router 不让页面脚本重新直接调用 history.pushState/replaceState。"
+        }
+      ],
+      "actions": [
+        "在 ui.js 中把 topbar 变为应用壳：新增 initAppShell(activeKey) / updateTopbarActive(activeKey)，initTopbar 若已存在 .topbar 只更新 active 和登录按钮状态，不重复 append header；保留 href 作为无 JS fallback。",
+        "新增 PageLifecycle（建议命名 window.CCPageLifecycle）：register(pageKey,{mount,unmount?})、mount(pageKey, context)、unmountCurrent()、onCleanup(fn)、addEvent(target,type,handler,options)、setAutoRefresh(handle)、disposeCharts(mapOrList)；initPageBootstrap 改为兼容包装，初始整页加载自动注册并挂载当前页面，局部导航时由 router 触发挂载。",
+        "新增 CCPartialRouter：isRoutableURL(url)、navigate(url,{replace=false,source='nav'|...})、handlePopState、fetchPageDocument(url)、extractPagePayload(document)、replaceMain(payload)、syncPageOwnedNodes(payload)、syncHeadAssets(payload)、loadPageScripts(payload)、fallback(url, reason)。",
+        "fetch 策略优先请求现有 /web/*.html（保留 query/hash，credentials:'same-origin'），使用 DOMParser 解析 title、body class/dataset、main.main-content、head link/script；HTML fetch 失败、非 2xx、缺 main、跨域、target=_blank/meta key click 时直接 location.assign，确保静态 fallback。",
+        "替换策略只替换 document.querySelector('main.main-content')；body 级 modal/template 等页面附属节点放入单独的 #partial-page-owned-root 容器或标记 data-partial-owned 后同步，避免动应用壳/topbar/bg/notify。",
+        "head asset 策略：追加目标页面缺失的 stylesheet 与依赖 script，按目标 HTML 顺序串行 loadScriptOnce；跳过 theme-init、locale、i18n、ui.js 等已加载共享脚本；使用目标 HTML 中已替换后的 ?v= 版本号。",
+        "history 策略：局部导航成功后 history.pushState({ccPartial:true,pageKey},'',url)，replace 只用于初始规范化/popstate；popstate 根据 location 重新 fetch/mount，不重复 push；保留 query/hash 并在 mount 后滚动到 hash 或 top。",
+        "导航拦截：在 topbar 或 document 上委托 .topnav-link[data-nav-key] 点击，阻止默认整页跳转仅限 same-origin /web/*.html、无 modifier、无 download/target；同步 .active 与 document.body.dataset.pageKey。",
+        "错误和认证：若 fetch 返回 401 或 fetchWithAuth 触发登录逻辑，跳转 getLoginUrl；其他错误 showNotification 后 fallback 到整页 location.assign。"
+      ],
+      "convergence": {
+        "criteria": [
+          "web/assets/js/ui.js 中可 grep 到 `window.CCPartialRouter`、`navigate(`、`popstate`、`DOMParser`、`main.main-content`。",
+          "web/assets/js/ui.js 中可 grep 到 `updateTopbarActive`，且 initTopbar 不再无条件 append 新 `.topbar`。",
+          "web/assets/js/ui.js 中可 grep 到 `window.CCPageLifecycle` 或等价 PageLifecycle 全局对象，且包含 cleanup/onCleanup 语义。",
+          "新增/更新测试覆盖：topbar 重入不产生多个 `.topbar`、tab click 调用 pushState、popstate 不 pushState、fetch HTML 缺 main 时 fallback。"
+        ],
+        "test_commands": [
+          "node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/ui-delegated-actions.test.js web/assets/js/filter-state.test.js web/assets/js/ui-partial-router.test.js"
+        ]
+      },
+      "risks": [
+        {
+          "risk": "动态执行页面 classic script 可能因 top-level let/const 重复加载抛 SyntaxError。",
+          "mitigation": "loadScriptOnce 按 pathname 去重；页面 mount 由 PageLifecycle 重入执行，不依赖重复插入同一脚本。"
+        },
+        {
+          "risk": "main-only 替换导致 logs/channels/tokens/model-test 的 modal/template 缺失。",
+          "mitigation": "router 在替换 main 前同步页面 owned fragments 到独立容器；缺失 required fragment 时 fallback 整页。"
+        },
+        {
+          "risk": "initTopbar/startActiveRequestsPolling 重跑产生多个 topbar 或轮询。",
+          "mitigation": "应用壳只初始化一次，active indicator 轮询保持全站唯一。"
+        }
+      ]
+    },
+    {
+      "id": "TASK-002",
+      "title": "页面脚本接入 PageLifecycle、清理资源并改造跨页跳转",
+      "wave": 2,
+      "depends_on": [
+        "TASK-001"
+      ],
+      "estimated_minutes": 60,
+      "files": [
+        {
+          "path": "web/assets/js/index.js",
+          "reason": "接入 PageLifecycle mount/cleanup，保存 createAutoRefresh 句柄。"
+        },
+        {
+          "path": "web/assets/js/channels-init.js",
+          "reason": "接入 PageLifecycle；清理 hashchange/pageshow/keydown/i18n/auto-refresh，并支持 URL hash 定位。"
+        },
+        {
+          "path": "web/assets/js/logs.js",
+          "reason": "接入 PageLifecycle；清理 document click/keydown/pageshow/debug polling；将 channels 跳转改用 CCPartialRouter.navigate。"
+        },
+        {
+          "path": "web/assets/js/stats.js",
+          "reason": "接入 PageLifecycle；清理 auto-refresh、resize/themechange、ECharts；将 stats→logs 跳转改用 CCPartialRouter.navigate。"
+        },
+        {
+          "path": "web/assets/js/trend.js",
+          "reason": "接入 PageLifecycle；清理 resize/themechange/interval/channel filter 外部点击和 ECharts。"
+        },
+        {
+          "path": "web/assets/js/tokens.js",
+          "reason": "接入 PageLifecycle；清理 keydown/i18n/auto-refresh 和容器事件重复绑定。"
+        },
+        {
+          "path": "web/assets/js/model-test.js",
+          "reason": "接入 PageLifecycle；清理 document keydown/click、modal 临时监听与 logs-channel-editor 相关附属节点依赖。"
+        },
+        {
+          "path": "web/assets/js/settings.js",
+          "reason": "接入 PageLifecycle；保持动态表格事件在新 main 上重绑且不重复。"
+        },
+        {
+          "path": "web/*.html",
+          "reason": "必要时为 body 级 modal/template 添加 data-partial-owned/data-page-key 边界标记；保持 main.main-content 结构不变。"
+        }
+      ],
+      "read_first": [
+        {
+          "path": "web/assets/js/ui.js",
+          "reason": "修改来源；读取 TASK-001 提供的 CCPageLifecycle/CCPartialRouter API。"
+        },
+        {
+          "path": "web/assets/js/channels-init.js",
+          "reason": "修改文件；存在 hashchange、pageshow、keydown、i18n、auto-refresh 风险。"
+        },
+        {
+          "path": "web/assets/js/logs.js",
+          "reason": "修改文件；存在 debug polling、pageshow、document click/keydown 和 logs→channels 跳转入口。"
+        },
+        {
+          "path": "web/assets/js/stats.js",
+          "reason": "修改文件；存在 ECharts、resize/themechange、auto-refresh 和 stats→logs 跳转入口。"
+        },
+        {
+          "path": "web/assets/js/trend.js",
+          "reason": "修改文件；存在 ECharts、resize/themechange、setInterval 与 document click 捕获监听。"
+        },
+        {
+          "path": "web/assets/js/tokens.js",
+          "reason": "修改文件；存在 modal、keydown、i18n、auto-refresh 和动态容器事件。"
+        },
+        {
+          "path": "web/assets/js/model-test.js",
+          "reason": "修改文件；复杂 modal、document 级事件和 logs-channel-editor 依赖。"
+        },
+        {
+          "path": "web/assets/js/settings.js",
+          "reason": "修改文件；动态表格事件需在新 main 中重绑。"
+        },
+        {
+          "path": "web/logs.html",
+          "reason": "HTML 示例；logs 的 test/debug modal 和 tpl-log-* 在 main 外。"
+        },
+        {
+          "path": "web/channels.html",
+          "reason": "HTML 示例；channels 有大量 body 级 modal/template，是附属节点边界的最高风险样本。"
+        },
+        {
+          "path": "web/stats.html",
+          "reason": "HTML 示例；stats 有 template 与 inline view-state 脚本，需确认局部加载后仍恢复视图。"
+        }
+      ],
+      "actions": [
+        "逐页把 initPageBootstrap({topbarKey, run}) 的 run 提取为可重复 mount 函数，允许每次局部进入时从当前 location.search/hash 恢复状态并重新绑定新 main 内 DOM。",
+        "所有 mount 内新增 cleanup 记录：createAutoRefresh 返回值必须保存并在离页 stop；window/document addEventListener 必须通过 PageLifecycle.addEvent 或返回 cleanup remove；i18n.onLocaleChange 的 unsubscribe 必须保存；ECharts chartInstances/window.chartInstance 离页 dispose。",
+        "保留已有 dataset.bound 或委托模式，但绑定对象必须是本次 main 内元素或通过 PageLifecycle 管理，避免切页回来旧 DOM 监听继续触发。",
+        "将 stats.js 中 stats→logs 的 window.location.href 改为优先 window.CCPartialRouter.navigate(`/web/logs.html?...`)，router 不可用时回退 location.href；保留 channel_name/model query 语义。",
+        "将 logs.js 中 logs→channels?id#hash 的 window.location.href 改为优先 CCPartialRouter.navigate，保留 logChannelClickAction='navigate' 的 query/hash；openLogChannelEditor 分支不变。",
+        "channels-init.js 在 mount 后处理 location.hash 高亮；popstate 到 /web/channels.html?id=...#channel-... 时能重新 mount 并滚动/高亮。",
+        "对于 channels/tokens/logs/model-test/settings/stats/trend 的 main 外 modal/template，按 TASK-001 的边界策略补 data-partial-owned 或确认 router 自动收集；保证切页后 required template/modal 可通过 document.getElementById 找到。",
+        "避免大重构：不拆分所有页面内部业务函数，只围绕 mount/cleanup、跳转入口和必要的事件/定时器资源做最小改造。"
+      ],
+      "convergence": {
+        "criteria": [
+          "web/assets/js/stats.js 和 web/assets/js/logs.js 中可 grep 到 `CCPartialRouter.navigate`，且仍保留 `window.location.href` fallback。",
+          "web/assets/js/{index.js,channels-init.js,logs.js,stats.js,trend.js,tokens.js,model-test.js,settings.js} 中可 grep 到 `initPageBootstrap({` 或 `CCPageLifecycle.register`，每页保留对应 topbarKey。",
+          "stats.js/trend.js 中可 grep 到 `dispose(` 或等价 chart cleanup；使用 createAutoRefresh 的页面可 grep 到 `.stop()` cleanup。",
+          "logs.js 中 activeDebugLogRefreshTimer 在离页 cleanup 中停止；channels-init.js 中 hashchange/pageshow/keydown 监听通过 cleanup 移除或全局 once guard。",
+          "web/*.html 仍全部包含 `<main class=\"main-content`，且需要的 modal/template 具备 data-partial-owned 标记或被 TASK-001 测试证明可自动同步。"
+        ],
+        "test_commands": [
+          "node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/stats-inline-controls.test.js web/assets/js/logs-inline-controls.test.js web/assets/js/trend-filter-state.test.js web/assets/js/tokens-inline-controls.test.js web/assets/js/model-test-inline-controls.test.js"
+        ]
+      },
+      "risks": [
+        {
+          "risk": "一次性重构所有页面脚本容易引入业务回归。",
+          "mitigation": "只改初始化边界、cleanup 和跨页跳转；业务渲染/请求函数保持原状。"
+        },
+        {
+          "risk": "某些页面存在脚本加载阶段的 document 级监听，无法完全卸载。",
+          "mitigation": "优先移动到 mount；确需保留全局监听时加 once guard，并让 handler 每次查询当前 DOM。"
+        },
+        {
+          "risk": "popstate 只换 URL 不恢复筛选器。",
+          "mitigation": "router 每次 popstate 都重新 fetch/mount，页面 mount 继续按现有 FilterState 从 location.search 恢复。"
+        }
+      ]
+    },
+    {
+      "id": "TASK-003",
+      "title": "局部刷新回归测试与静态 fallback 验证",
+      "wave": 3,
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "estimated_minutes": 45,
+      "files": [
+        {
+          "path": "web/assets/js/ui-partial-router.test.js",
+          "reason": "新增/完善 router 单元测试，覆盖 tab 拦截、fetch/DOMParser、main-only 替换、owned fragments、history、popstate、fallback。"
+        },
+        {
+          "path": "web/assets/js/ui-page-bootstrap.test.js",
+          "reason": "强化 bootstrap/PageLifecycle 约束，防止页面重新直接绑定 DOMContentLoaded 或重复 topbar。"
+        },
+        {
+          "path": "web/assets/js/filter-state.test.js",
+          "reason": "确认 FilterState 仍只负责筛选 URL 写回，router popstate 不破坏 query 恢复。"
+        },
+        {
+          "path": "web/assets/js/web-refactor-guard.test.js",
+          "reason": "可加入源码级 guard：禁止新增直接 history.pushState/replaceState 和无 fallback 的 location.href。"
+        },
+        {
+          "path": "internal/app/static_handler_test.go",
+          "reason": "补充 /web/*.html 静态 fallback、no-cache、__VERSION__、main 结构存在性测试；若未新增后端 fragment，显式保护现有整页 HTML 策略。"
+        },
+        {
+          "path": "internal/app/static.go",
+          "reason": "只作为测试依据读取；默认不改，除非执行中确需新增 fragment endpoint。"
+        }
+      ],
+      "read_first": [
+        {
+          "path": "web/assets/js/ui-partial-router.test.js",
+          "reason": "若 TASK-001 已创建，先读现有 router 测试，避免重复覆盖。"
+        },
+        {
+          "path": "web/assets/js/ui-page-bootstrap.test.js",
+          "reason": "现有关键页面 bootstrap guard，新增 PageLifecycle 约束应放在同类测试中。"
+        },
+        {
+          "path": "web/assets/js/filter-state.test.js",
+          "reason": "现有 history/filter guard，确保 router 与筛选状态边界清晰。"
+        },
+        {
+          "path": "web/assets/js/logs-channel-editor.test.js",
+          "reason": "动态加载/DOMParser/渠道编辑器相关现有测试，避免 router 破坏 logs-channel-editor。"
+        },
+        {
+          "path": "internal/app/static_handler_test.go",
+          "reason": "现有 HTML no-cache、版本替换、Content-Type 与 channels 模板结构测试。"
+        },
+        {
+          "path": "internal/app/static.go",
+          "reason": "静态服务源码依据；确认无需新增后端 fragment endpoint。"
+        },
+        {
+          "path": "web/logs.html",
+          "reason": "测试样本；验证 main 与 logs modal/template 可被解析。"
+        },
+        {
+          "path": "web/stats.html",
+          "reason": "测试样本；验证 head assets、echarts 依赖和 stats template 可被解析。"
+        }
+      ],
+      "actions": [
+        "新增 ui-partial-router.test.js：用最小 DOM/mock fetch/history 验证点击 .topnav-link[data-nav-key] 后 fetch 目标 HTML、替换 main.main-content、同步 title/body pageKey/topbar active、追加 owned fragments，并调用 history.pushState。",
+        "测试 popstate：模拟 history back 后 router 使用当前 location 重新 mount，断言不调用 pushState、保留 query/hash、调用 PageLifecycle.unmountCurrent 后再 mount 目标页。",
+        "测试 fallback：外链、target=_blank、modifier click、fetch 404、HTML 缺 main、脚本加载失败均不破坏当前 main，并调用 location.assign 或保留默认跳转。",
+        "扩展 ui-page-bootstrap.test.js：断言 initTopbar 重复调用只保留一个 .topbar；关键页面仍通过 initPageBootstrap/PageLifecycle 初始化，不恢复直接 DOMContentLoaded 样板。",
+        "扩展 filter-state/web-refactor guard：禁止页面脚本绕过 persistFilterState/CCPartialRouter 新增直接 history.pushState/replaceState；stats/logs 跨页跳转必须有 CCPartialRouter.navigate + location.href fallback。",
+        "扩展 static_handler_test.go：使用 os.DirFS 或 fstest 确认 /web/logs.html、/web/stats.html 返回 text/html、Cache-Control no-cache、__VERSION__ 被替换、响应包含 main.main-content；若没有新增 fragment endpoint，不增加后端路由。"
+      ],
+      "convergence": {
+        "criteria": [
+          "`node --test web/assets/js/ui-partial-router.test.js` 通过，且测试名包含 partial navigation、popstate、fallback/main missing。",
+          "`node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/web-refactor-guard.test.js` 通过。",
+          "`go test ./internal/app -run 'TestStaticFileServing|TestGetContentType|TestChannelsTemplateNameLineLayout'` 通过；若新增 HTML fallback 子测试，同一命令覆盖。",
+          "`make web-test` 通过或仅有与本改造无关的既有失败且需记录失败测试名与原因。"
+        ],
+        "test_commands": [
+          "node --test web/assets/js/ui-partial-router.test.js",
+          "node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/web-refactor-guard.test.js",
+          "go test ./internal/app -run 'TestStaticFileServing|TestGetContentType|TestChannelsTemplateNameLineLayout'",
+          "make web-test"
+        ]
+      },
+      "risks": [
+        {
+          "risk": "node:test DOM mock 不完整，导致 router 测试脆弱。",
+          "mitigation": "沿用现有测试风格，优先测试纯函数 extract/normalize/isRoutable；复杂 DOM 行为用最小 fake document，避免引入新测试框架。"
+        },
+        {
+          "risk": "全量 make web-test 暴露历史无关失败。",
+          "mitigation": "先跑聚焦测试定位本功能，再跑全量；如非本任务引入，记录并不要扩大修改范围。"
+        },
+        {
+          "risk": "新增后端 fragment endpoint 会扩大范围。",
+          "mitigation": "默认不新增 endpoint；只有前端 owned fragments 无法可靠同步时才改 static.go，并同步补 static_handler_test。"
+        }
+      ]
+    }
+  ],
+  "quality_gates": [
+    "功能覆盖：tab 点击不整页刷新，fetch 现有 /web/*.html，DOMParser 提取并替换 main.main-content，URL 用 history.pushState 更新。",
+    "导航覆盖：topbar active 同步；stats→logs、logs→channels?id#hash 使用 CCPartialRouter.navigate，router 不可用时保留整页 fallback。",
+    "浏览器历史覆盖：back/forward 触发 popstate 后重新 fetch/mount，保留 query/hash 并恢复页面筛选状态。",
+    "生命周期覆盖：离页前停止 auto-refresh/debug polling，移除 window/document 监听，dispose ECharts，不重复 topbar、不重复页面事件绑定。",
+    "边界覆盖：title、body page state、head stylesheet/script assets、main 外 modal/template 附属节点同步；只替换 main 内容区，不替换应用壳。",
+    "回退覆盖：fetch 失败、HTML 缺 main、脚本加载失败、401/登录态问题、外链/新窗口点击均安全回退到整页跳转或登录页。",
+    "测试覆盖：聚焦 node:test、Go 静态服务测试和 make web-test 在交付前运行并记录结果。"
+  ],
+  "source_context": [
+    "E1: /web/*.html 由 static.go no-cache + __VERSION__ 服务，前端主体为 .app-container > main.main-content > .content-area，NAVS/buildTopbar 可拦截 topnav-link。",
+    "E2: logs-channel-editor.js 已有 fetch HTML + DOMParser + loadScriptOnce；FilterState/writeHistory 已封装 URL 写回。",
+    "E3: stats.js 跳 logs、logs.js 跳 channels?id#hash 是跨页入口；static.go 可直接服务整页 HTML。",
+    "E4: initTopbar 非幂等，页面脚本存在全局监听、timer、ECharts 和 main 外 modal/template，必须有 PageLifecycle cleanup 和 fragment 边界。"
+  ],
+  "execution": {
+    "status": "completed",
+    "session": "20260621-execute-scratch",
+    "completed_at": "2026-06-21T21:32:51+08:00"
+  }
+}

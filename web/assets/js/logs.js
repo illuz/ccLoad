@@ -1728,7 +1728,12 @@ window.initPageBootstrap({
         const channelId = parseInt(channelBtn.dataset.channelId, 10);
         if (Number.isFinite(channelId) && channelId > 0) {
           if (logChannelClickAction === 'navigate') {
-            window.location.href = `/web/channels.html?id=${channelId}#channel-${channelId}`;
+            const targetURL = `/web/channels.html?id=${channelId}#channel-${channelId}`;
+            if (window.CCPartialRouter && typeof window.CCPartialRouter.navigate === 'function') {
+              window.CCPartialRouter.navigate(targetURL);
+            } else {
+              window.location.href = targetURL;
+            }
           } else if (typeof openLogChannelEditor === 'function') {
             openLogChannelEditor(channelId);
           }

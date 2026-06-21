@@ -1,0 +1,4 @@
+id,status,findings,gaps_found,fix_plan,error
+V5,completed,`CCPartialRouter` 暴露 navigate/fetchPageDocument/extractPagePayload/replaceMain/syncPageOwnedNodes/syncHeadAssets/loadPageScripts/fallback/bind；`CCPageLifecycle` 暴露 register/mount/unmountCurrent/onCleanup/addEvent/setAutoRefresh/disposeCharts。,[],,
+V6,completed,index/channels/logs/stats/trend/tokens/model-test/settings 均保留 `window.initPageBootstrap({ topbarKey })`；`stats.js` 和 `logs.js` 命中 `window.CCPartialRouter.navigate(targetURL)` 且保留 `window.location.href = targetURL`。,[],,
+V7,completed,`withLifecycleCapture()` patch `addEventListener`/`setInterval`/`i18n.onLocaleChange` 并注册 cleanup；`createAutoRefresh()` 在 mount 中调用 `setAutoRefresh(handle)`；`stats.js` 使用 `disposeCharts(chartInstances)`；`trend.js` cleanup `window.chartInstance.dispose()`。,[],,

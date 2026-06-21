@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "generatedAt": 1782043807109,
+  "entries": [
+    {
+      "id": "project-project",
+      "type": "project",
+      "title": "ccLoad",
+      "summary": "项目：ccLoad。当前规划目标：将页面切换从整页刷新改造为原生 JS 页内刷新：点击 tab 时 fetch 局部 HTML / JSON，只替换 main 内容区，并用 history.pushState 保持 URL。",
+      "tags": [],
+      "status": "active",
+      "created": "2026-06-21T12:09:36.649Z",
+      "updated": "2026-06-21T12:09:36.649Z",
+      "scope": null,
+      "category": null,
+      "createdBy": null,
+      "sourceRef": null,
+      "parent": null,
+      "related": [],
+      "source": {
+        "kind": "file",
+        "path": "project.md"
+      }
+    }
+  ]
+}

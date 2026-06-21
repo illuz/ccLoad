@@ -1,0 +1,120 @@
+{
+  "id": "TASK-003",
+  "title": "局部刷新回归测试与静态 fallback 验证",
+  "wave": 3,
+  "depends_on": [
+    "TASK-001",
+    "TASK-002"
+  ],
+  "estimated_minutes": 45,
+  "files": [
+    {
+      "path": "web/assets/js/ui-partial-router.test.js",
+      "reason": "新增/完善 router 单元测试，覆盖 tab 拦截、fetch/DOMParser、main-only 替换、owned fragments、history、popstate、fallback。"
+    },
+    {
+      "path": "web/assets/js/ui-page-bootstrap.test.js",
+      "reason": "强化 bootstrap/PageLifecycle 约束，防止页面重新直接绑定 DOMContentLoaded 或重复 topbar。"
+    },
+    {
+      "path": "web/assets/js/filter-state.test.js",
+      "reason": "确认 FilterState 仍只负责筛选 URL 写回，router popstate 不破坏 query 恢复。"
+    },
+    {
+      "path": "web/assets/js/web-refactor-guard.test.js",
+      "reason": "可加入源码级 guard：禁止新增直接 history.pushState/replaceState 和无 fallback 的 location.href。"
+    },
+    {
+      "path": "internal/app/static_handler_test.go",
+      "reason": "补充 /web/*.html 静态 fallback、no-cache、__VERSION__、main 结构存在性测试；若未新增后端 fragment，显式保护现有整页 HTML 策略。"
+    },
+    {
+      "path": "internal/app/static.go",
+      "reason": "只作为测试依据读取；默认不改，除非执行中确需新增 fragment endpoint。"
+    }
+  ],
+  "read_first": [
+    {
+      "path": "web/assets/js/ui-partial-router.test.js",
+      "reason": "若 TASK-001 已创建，先读现有 router 测试，避免重复覆盖。"
+    },
+    {
+      "path": "web/assets/js/ui-page-bootstrap.test.js",
+      "reason": "现有关键页面 bootstrap guard，新增 PageLifecycle 约束应放在同类测试中。"
+    },
+    {
+      "path": "web/assets/js/filter-state.test.js",
+      "reason": "现有 history/filter guard，确保 router 与筛选状态边界清晰。"
+    },
+    {
+      "path": "web/assets/js/logs-channel-editor.test.js",
+      "reason": "动态加载/DOMParser/渠道编辑器相关现有测试，避免 router 破坏 logs-channel-editor。"
+    },
+    {
+      "path": "internal/app/static_handler_test.go",
+      "reason": "现有 HTML no-cache、版本替换、Content-Type 与 channels 模板结构测试。"
+    },
+    {
+      "path": "internal/app/static.go",
+      "reason": "静态服务源码依据；确认无需新增后端 fragment endpoint。"
+    },
+    {
+      "path": "web/logs.html",
+      "reason": "测试样本；验证 main 与 logs modal/template 可被解析。"
+    },
+    {
+      "path": "web/stats.html",
+      "reason": "测试样本；验证 head assets、echarts 依赖和 stats template 可被解析。"
+    }
+  ],
+  "actions": [
+    "新增 ui-partial-router.test.js：用最小 DOM/mock fetch/history 验证点击 .topnav-link[data-nav-key] 后 fetch 目标 HTML、替换 main.main-content、同步 title/body pageKey/topbar active、追加 owned fragments，并调用 history.pushState。",
+    "测试 popstate：模拟 history back 后 router 使用当前 location 重新 mount，断言不调用 pushState、保留 query/hash、调用 PageLifecycle.unmountCurrent 后再 mount 目标页。",
+    "测试 fallback：外链、target=_blank、modifier click、fetch 404、HTML 缺 main、脚本加载失败均不破坏当前 main，并调用 location.assign 或保留默认跳转。",
+    "扩展 ui-page-bootstrap.test.js：断言 initTopbar 重复调用只保留一个 .topbar；关键页面仍通过 initPageBootstrap/PageLifecycle 初始化，不恢复直接 DOMContentLoaded 样板。",
+    "扩展 filter-state/web-refactor guard：禁止页面脚本绕过 persistFilterState/CCPartialRouter 新增直接 history.pushState/replaceState；stats/logs 跨页跳转必须有 CCPartialRouter.navigate + location.href fallback。",
+    "扩展 static_handler_test.go：使用 os.DirFS 或 fstest 确认 /web/logs.html、/web/stats.html 返回 text/html、Cache-Control no-cache、__VERSION__ 被替换、响应包含 main.main-content；若没有新增 fragment endpoint，不增加后端路由。"
+  ],
+  "convergence": {
+    "criteria": [
+      "`node --test web/assets/js/ui-partial-router.test.js` 通过，且测试名包含 partial navigation、popstate、fallback/main missing。",
+      "`node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/web-refactor-guard.test.js` 通过。",
+      "`go test ./internal/app -run 'TestStaticFileServing|TestGetContentType|TestChannelsTemplateNameLineLayout'` 通过；若新增 HTML fallback 子测试，同一命令覆盖。",
+      "`make web-test` 通过或仅有与本改造无关的既有失败且需记录失败测试名与原因。"
+    ],
+    "test_commands": [
+      "node --test web/assets/js/ui-partial-router.test.js",
+      "node --test web/assets/js/ui-page-bootstrap.test.js web/assets/js/filter-state.test.js web/assets/js/web-refactor-guard.test.js",
+      "go test ./internal/app -run 'TestStaticFileServing|TestGetContentType|TestChannelsTemplateNameLineLayout'",
+      "make web-test"
+    ]
+  },
+  "risks": [
+    {
+      "risk": "node:test DOM mock 不完整，导致 router 测试脆弱。",
+      "mitigation": "沿用现有测试风格，优先测试纯函数 extract/normalize/isRoutable；复杂 DOM 行为用最小 fake document，避免引入新测试框架。"
+    },
+    {
+      "risk": "全量 make web-test 暴露历史无关失败。",
+      "mitigation": "先跑聚焦测试定位本功能，再跑全量；如非本任务引入，记录并不要扩大修改范围。"
+    },
+    {
+      "risk": "新增后端 fragment endpoint 会扩大范围。",
+      "mitigation": "默认不新增 endpoint；只有前端 owned fragments 无法可靠同步时才改 static.go，并同步补 static_handler_test。"
+    }
+  ],
+  "status": "completed",
+  "execution": {
+    "session": "20260621-execute-scratch",
+    "completed_at": "2026-06-21T21:32:51+08:00",
+    "summary_path": ".summaries/TASK-003-summary.md",
+    "files_modified": [
+      "web/assets/js/ui-partial-router.test.js",
+      "web/assets/js/ui-page-bootstrap.test.js",
+      "web/assets/js/web-refactor-guard.test.js",
+      "internal/app/static_handler_test.go"
+    ],
+    "tests_passed": "node --test ui-partial-router/bootstrap/filter/guard: 34 pass; make www-setup && make web-test: 475 pass; go test ./...: pass",
+    "findings": "新增 ui-partial-router.test.js 与静态 fallback 子测试，扩展 bootstrap/guard；确认 /web/logs.html 与 /web/stats.html 整页 HTML no-cache、版本替换、包含 main.main-content，可作为局部 router 失败时的整页 fallback。"
+  }
+}

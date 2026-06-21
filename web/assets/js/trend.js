@@ -1582,6 +1582,14 @@ function shouldShowZoom(points, hours, trendType) {
           renderChart();
         }
       });
+      if (window.CCPageLifecycle && typeof window.CCPageLifecycle.onCleanup === 'function') {
+        window.CCPageLifecycle.onCleanup(() => {
+          if (window.chartInstance && typeof window.chartInstance.dispose === 'function') {
+            window.chartInstance.dispose();
+          }
+          window.chartInstance = null;
+        });
+      }
 
       // 定期刷新数据（每5分钟）
       setInterval(loadData, 5 * 60 * 1000);

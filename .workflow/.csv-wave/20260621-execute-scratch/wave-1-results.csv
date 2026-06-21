@@ -1,0 +1,2 @@
+id,status,findings,files_modified,tests_passed,error
+TASK-001,completed,新增 CCPartialRouter 与 CCPageLifecycle；initTopbar 检测既有 .topbar 并只更新 active；fetch 整页 HTML 后 DOMParser 提取 main.main-content，只替换 main，同步 title/body/owned nodes/head assets，并在成功后 pushState；popstate 重新 navigate 但不 push。,web/assets/js/ui.js;web/assets/js/ui-page-bootstrap.test.js;web/assets/js/ui-partial-router.test.js;web/assets/js/web-refactor-guard.test.js,node --check ui.js; node --test router/bootstrap/filter/guard: 34 pass; make web-test: 475 pass,

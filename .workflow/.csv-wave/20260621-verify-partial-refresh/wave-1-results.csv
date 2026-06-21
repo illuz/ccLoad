@@ -1,0 +1,5 @@
+id,status,findings,gaps_found,fix_plan,error
+V1,completed,`ui.js` 绑定 `.topnav-link[data-nav-key]` click，调用 `navigate()`；`fetchPageDocument()` 使用 fetch + `DOMParser`；`replaceMain()` 只查找并替换 `main.main-content`；成功后 `history.pushState`。,[],,
+V2,completed,"`popstate` handler 调用 `navigate(window.location.href,{fromPopState:true,replace:true,source:'popstate'})`；`navigate()` 中 `if (!options.fromPopState)` 才写 history。测试包含 popstate 不 pushState。",[],,
+V3,completed,`fallbackToDocumentNavigation()` 使用 `window.location.assign(rawUrl)`；Go 子测试验证 `/web/logs.html`、`/web/stats.html` status 200、HTML content-type、no-cache、版本替换、包含 main。,[],,
+V4,completed,存在 `web/assets/js/ui.js`、`stats.js`、`logs.js`、`trend.js`、`ui-partial-router.test.js`、`ui-page-bootstrap.test.js`、`web-refactor-guard.test.js`、`internal/app/static_handler_test.go`。,[],,

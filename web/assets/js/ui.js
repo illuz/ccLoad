@@ -135,6 +135,7 @@
     { key: 'settings', labelKey: 'nav.settings', href: '/web/settings.html', icon: iconSettings },
   ];
   const FIXED_THEME_MODE = 'dark';
+  window.CCNavItems = NAVS;
 
   function h(tag, attrs = {}, children = []) {
     const el = document.createElement(tag);
@@ -381,10 +382,18 @@
   function onActiveRequestsData(callback) {
     if (typeof callback !== 'function') return;
     _activeDataListeners.push(callback);
+    const unsubscribe = () => {
+      const idx = _activeDataListeners.indexOf(callback);
+      if (idx >= 0) _activeDataListeners.splice(idx, 1);
+    };
+    if (window.CCPageLifecycle && typeof window.CCPageLifecycle.isMounting === 'function' && window.CCPageLifecycle.isMounting()) {
+      window.CCPageLifecycle.onCleanup(unsubscribe);
+    }
     // 已有最近数据则立即回调，避免新订阅者等到下个轮询周期
     if (_lastActiveData !== null) {
       try { callback(_lastActiveData); } catch (_) { /* 订阅者异常不影响主逻辑 */ }
     }
+    return unsubscribe;
   }
 
   function buildTopbar(active) {
@@ -489,14 +498,38 @@
     }
   }
 
+  function updateTopbarActive(activeKey) {
+    document.querySelectorAll('.topnav-link[data-nav-key]').forEach((link) => {
+      link.classList.toggle('active', link.dataset.navKey === activeKey);
+    });
+
+    const loggedIn = isLoggedIn();
+    const authBtn = document.getElementById('auth-btn');
+    if (authBtn) {
+      const key = loggedIn ? 'common.logout' : 'common.login';
+      authBtn.dataset.i18n = key;
+      authBtn.textContent = t(key);
+      authBtn.onclick = loggedIn ? onLogout : () => { location.href = window.getLoginUrl(); };
+    }
+  }
+
+  window.updateTopbarActive = updateTopbarActive;
+
   window.initTopbar = function initTopbar(activeKey) {
     document.body.classList.add('top-layout');
-    const app = document.querySelector('.app-container') || document.body;
     // 隐藏侧边栏与移动按钮
     const sidebar = document.getElementById('sidebar');
     if (sidebar) sidebar.style.display = 'none';
     const mobileBtn = document.getElementById('mobile-menu-btn');
     if (mobileBtn) mobileBtn.style.display = 'none';
+
+    const existingTopbar = document.querySelector('.topbar');
+    if (existingTopbar) {
+      updateTopbarActive(activeKey);
+      injectBackground();
+      if (isLoggedIn()) startActiveRequestsPolling();
+      return existingTopbar;
+    }
 
     // 插入顶部条
     const topbar = buildTopbar(activeKey);
@@ -507,7 +540,10 @@
 
     // 启动活动请求指示器轮询
     if (isLoggedIn()) startActiveRequestsPolling();
+    return topbar;
   }
+
+  window.initAppShell = window.initTopbar;
 
   // 供其他模块订阅活动请求数据（全站唯一轮询源，避免重复请求）
   window.onActiveRequestsData = onActiveRequestsData;
@@ -757,20 +793,552 @@
     return true;
   }
 
-  function initPageBootstrap(options = {}) {
-    const run = typeof options.run === 'function' ? options.run : () => {};
+  const dashboardPageKeys = ['index', 'channels', 'tokens', 'stats', 'trend', 'logs', 'model-test', 'settings'];
+  const lifecycleRegistry = new Map();
+  const lifecycleCleanup = [];
+  let lifecycleCurrentPage = null;
+  let lifecycleMounting = false;
 
-    const execute = async () => {
-      if (options.translate !== false && window.i18n && typeof window.i18n.translatePage === 'function') {
-        window.i18n.translatePage();
+  async function withLifecycleCapture(work) {
+    const eventTargets = [document, window].filter((target) => {
+      return target && typeof target.addEventListener === 'function' && typeof target.removeEventListener === 'function';
+    });
+    const originalAddEvent = new Map();
+    eventTargets.forEach((target) => {
+      originalAddEvent.set(target, target.addEventListener);
+      target.addEventListener = function patchedAddEventListener(type, handler, options) {
+        originalAddEvent.get(target).call(target, type, handler, options);
+        if (typeof handler === 'function') {
+          CCPageLifecycle.onCleanup(() => target.removeEventListener(type, handler, options));
+        }
+      };
+    });
+
+    const originalSetInterval = window.setInterval;
+    const originalClearInterval = window.clearInterval;
+    if (typeof originalSetInterval === 'function' && typeof originalClearInterval === 'function') {
+      window.setInterval = function patchedSetInterval(handler, timeout, ...args) {
+        const id = originalSetInterval.call(window, handler, timeout, ...args);
+        CCPageLifecycle.onCleanup(() => originalClearInterval.call(window, id));
+        return id;
+      };
+    }
+    const originalGlobalSetInterval = typeof setInterval === 'function' ? setInterval : null;
+    const originalGlobalClearInterval = typeof clearInterval === 'function' ? clearInterval : null;
+    let patchedGlobalTimer = false;
+    if (originalGlobalSetInterval && originalGlobalClearInterval && originalGlobalSetInterval !== window.setInterval) {
+      try {
+        // eslint-disable-next-line no-global-assign
+        setInterval = function patchedGlobalSetInterval(handler, timeout, ...args) {
+          const id = originalGlobalSetInterval(handler, timeout, ...args);
+          CCPageLifecycle.onCleanup(() => originalGlobalClearInterval(id));
+          return id;
+        };
+        patchedGlobalTimer = true;
+      } catch (_) { /* 部分运行环境不允许重写全局 timer */ }
+    }
+
+    const i18n = window.i18n;
+    const originalOnLocaleChange = i18n && typeof i18n.onLocaleChange === 'function'
+      ? i18n.onLocaleChange
+      : null;
+    if (originalOnLocaleChange) {
+      i18n.onLocaleChange = function patchedOnLocaleChange(callback) {
+        const unsubscribe = originalOnLocaleChange.call(i18n, callback);
+        if (typeof unsubscribe === 'function') {
+          CCPageLifecycle.onCleanup(unsubscribe);
+        }
+        return unsubscribe;
+      };
+    }
+
+    try {
+      return await work();
+    } finally {
+      eventTargets.forEach((target) => {
+        target.addEventListener = originalAddEvent.get(target);
+      });
+      if (originalSetInterval) window.setInterval = originalSetInterval;
+      if (patchedGlobalTimer) {
+        try {
+          // eslint-disable-next-line no-global-assign
+          setInterval = originalGlobalSetInterval;
+        } catch (_) { /* 忽略恢复失败 */ }
+      }
+      if (originalOnLocaleChange && window.i18n === i18n) {
+        i18n.onLocaleChange = originalOnLocaleChange;
+      }
+    }
+  }
+
+  function getCurrentPageKey() {
+    const pathname = window.location?.pathname || '';
+    const fileName = pathname.split('/').pop() || 'index.html';
+    const baseName = fileName.replace(/\.html$/, '') || 'index';
+    if (dashboardPageKeys.includes(baseName)) return baseName;
+    return document.body?.dataset?.pageKey || '';
+  }
+
+  function runLifecycleCleanup() {
+    while (lifecycleCleanup.length > 0) {
+      const cleanup = lifecycleCleanup.pop();
+      try { cleanup(); } catch (_) { /* 单个清理失败不影响后续清理 */ }
+    }
+  }
+
+  const CCPageLifecycle = {
+    register(pageKey, handlers = {}) {
+      if (!pageKey || typeof handlers.mount !== 'function') return;
+      lifecycleRegistry.set(pageKey, {
+        mount: handlers.mount,
+        unmount: typeof handlers.unmount === 'function' ? handlers.unmount : null
+      });
+    },
+    async mount(pageKey, context = {}) {
+      const key = pageKey || getCurrentPageKey();
+      const entry = lifecycleRegistry.get(key);
+      if (!entry || lifecycleMounting) return false;
+
+      lifecycleMounting = true;
+      lifecycleCurrentPage = key;
+      document.body.dataset.pageKey = key;
+      try {
+        await entry.mount({
+          ...context,
+          pageKey: key,
+          onCleanup: CCPageLifecycle.onCleanup,
+          addEvent: CCPageLifecycle.addEvent,
+          setAutoRefresh: CCPageLifecycle.setAutoRefresh,
+          disposeCharts: CCPageLifecycle.disposeCharts
+        });
+      } finally {
+        lifecycleMounting = false;
+      }
+      return true;
+    },
+    unmountCurrent() {
+      const key = lifecycleCurrentPage;
+      const entry = key ? lifecycleRegistry.get(key) : null;
+      if (entry && entry.unmount) {
+        try { entry.unmount(); } catch (_) { /* 页面卸载失败不阻断导航 */ }
+      }
+      runLifecycleCleanup();
+      lifecycleCurrentPage = null;
+    },
+    onCleanup(cleanup) {
+      if (typeof cleanup === 'function') {
+        lifecycleCleanup.push(cleanup);
+      }
+      return cleanup;
+    },
+    addEvent(target, type, handler, options) {
+      if (!target || typeof target.addEventListener !== 'function' || typeof handler !== 'function') return;
+      target.addEventListener(type, handler, options);
+      CCPageLifecycle.onCleanup(() => {
+        if (typeof target.removeEventListener === 'function') {
+          target.removeEventListener(type, handler, options);
+        }
+      });
+    },
+    setAutoRefresh(handle) {
+      if (handle && typeof handle.stop === 'function') {
+        CCPageLifecycle.onCleanup(() => handle.stop());
+      }
+      return handle;
+    },
+    disposeCharts(charts) {
+      CCPageLifecycle.onCleanup(() => {
+        const isArray = Array.isArray(charts);
+        const list = isArray
+          ? charts
+          : (charts && typeof charts === 'object' ? Object.values(charts) : []);
+        list.forEach((chart) => {
+          if (chart && typeof chart.dispose === 'function') {
+            try { chart.dispose(); } catch (_) { /* 忽略图表清理异常 */ }
+          }
+        });
+      if (!isArray && charts && typeof charts === 'object') {
+        Object.keys(charts).forEach((key) => { delete charts[key]; });
+      } else if (isArray) {
+        charts.length = 0;
+      }
+      });
+    },
+    getCurrentPageKey() {
+      return lifecycleCurrentPage;
+    },
+    isMounting() {
+      return lifecycleMounting;
+    }
+  };
+
+  window.CCPageLifecycle = CCPageLifecycle;
+
+  const sharedScriptPaths = new Set([
+    '/web/assets/js/theme-init.js',
+    '/web/assets/locales/zh-CN.js',
+    '/web/assets/locales/en.js',
+    '/web/assets/js/i18n.js',
+    '/web/assets/js/ui.js'
+  ]);
+  const loadedScriptPromises = new Map();
+  let partialNavigationActive = false;
+
+  function normalizeAssetURL(rawUrl) {
+    try {
+      return new URL(rawUrl, window.location.origin);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function normalizeAssetPath(rawUrl) {
+    const url = normalizeAssetURL(rawUrl);
+    return url ? url.pathname : rawUrl;
+  }
+
+  function seedLoadedScript(scriptPath) {
+    if (!scriptPath) return;
+    const normalizedPath = normalizeAssetPath(scriptPath);
+    if (!loadedScriptPromises.has(normalizedPath)) {
+      loadedScriptPromises.set(normalizedPath, Promise.resolve());
+    }
+  }
+
+  function seedExistingScripts() {
+    if (!document.scripts) return;
+    Array.from(document.scripts).forEach((script) => {
+      if (script.src) seedLoadedScript(script.src);
+    });
+  }
+
+  function isDashboardPagePath(pathname) {
+    return /^\/web\/(?:index|channels|tokens|stats|trend|logs|model-test|settings)\.html$/.test(pathname);
+  }
+
+  function getPageKeyFromURL(url) {
+    const parsed = typeof url === 'string' ? normalizeAssetURL(url) : url;
+    if (!parsed) return '';
+    const fileName = parsed.pathname.split('/').pop() || '';
+    return fileName.replace(/\.html$/, '');
+  }
+
+  function isRoutableURL(rawUrl) {
+    const url = normalizeAssetURL(rawUrl);
+    return Boolean(url && url.origin === window.location.origin && isDashboardPagePath(url.pathname));
+  }
+
+  function fallbackToDocumentNavigation(rawUrl, reason) {
+    if (reason && window.console && console.warn) {
+      console.warn('[partial-router] fallback:', reason);
+    }
+    if (window.location && typeof window.location.assign === 'function') {
+      window.location.assign(rawUrl);
+    } else {
+      window.location.href = rawUrl;
+    }
+  }
+
+  async function fetchPageDocument(rawUrl) {
+    const response = await fetch(rawUrl, {
+      credentials: 'same-origin',
+      headers: { 'X-CCLoad-Partial': '1' }
+    });
+    if (response.status === 401) {
+      fallbackToDocumentNavigation(window.getLoginUrl ? window.getLoginUrl() : '/web/login.html', 'unauthorized');
+      throw new Error('Unauthorized');
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to fetch page: HTTP ${response.status}`);
+    }
+    const html = await response.text();
+    return new DOMParser().parseFromString(html, 'text/html');
+  }
+
+  function collectOwnedNodes(sourceDocument) {
+    const body = sourceDocument.body;
+    if (!body) return [];
+    return Array.from(body.children).filter((node) => {
+      if (!node || node.tagName === 'SCRIPT') return false;
+      if (node.classList?.contains('app-container')) return false;
+      if (node.classList?.contains('topbar')) return false;
+      if (node.classList?.contains('bg-anim')) return false;
+      if (node.id === 'notify-host' || node.id === 'partial-page-owned-root') return false;
+      return true;
+    });
+  }
+
+  function extractPagePayload(sourceDocument, rawUrl) {
+    const main = sourceDocument.querySelector('main.main-content');
+    if (!main) {
+      throw new Error('Target page missing main.main-content');
+    }
+
+    const scripts = Array.from(sourceDocument.querySelectorAll('script[src]')).map((script) => script.getAttribute('src')).filter(Boolean);
+    const stylesheets = Array.from(sourceDocument.querySelectorAll('link[rel~="stylesheet"][href]')).map((link) => link.getAttribute('href')).filter(Boolean);
+    const title = sourceDocument.querySelector('title')?.textContent || document.title;
+
+    return {
+      url: rawUrl,
+      pageKey: getPageKeyFromURL(rawUrl),
+      title,
+      bodyClassName: sourceDocument.body?.className || '',
+      bodyDataset: { ...(sourceDocument.body?.dataset || {}) },
+      main,
+      ownedNodes: collectOwnedNodes(sourceDocument),
+      stylesheets,
+      scripts
+    };
+  }
+
+  function removeCurrentPageOwnedNodes() {
+    Array.from(document.body.children).forEach((node) => {
+      if (!node || node.tagName === 'SCRIPT') return;
+      if (node.id === 'partial-page-owned-root') return;
+      if (node.classList?.contains('app-container')) return;
+      if (node.classList?.contains('topbar')) return;
+      if (node.classList?.contains('bg-anim')) return;
+      if (node.id === 'notify-host') return;
+      node.remove();
+    });
+  }
+
+  function syncBodyState(payload) {
+    const nextClasses = (payload.bodyClassName || '').split(/\s+/).filter(Boolean);
+    document.body.className = nextClasses.join(' ');
+    Object.keys(document.body.dataset || {}).forEach((key) => {
+      if (key !== 'partialRouterBound') delete document.body.dataset[key];
+    });
+    document.body.classList.add('top-layout');
+    document.body.dataset.pageKey = payload.pageKey || '';
+    Object.entries(payload.bodyDataset || {}).forEach(([key, value]) => {
+      document.body.dataset[key] = value;
+    });
+  }
+
+  function replaceMain(payload) {
+    const currentMain = document.querySelector('main.main-content');
+    if (!currentMain) {
+      throw new Error('Current page missing main.main-content');
+    }
+    const nextMain = document.importNode(payload.main, true);
+    currentMain.replaceWith(nextMain);
+  }
+
+  function syncPageOwnedNodes(payload) {
+    removeCurrentPageOwnedNodes();
+    let root = document.getElementById('partial-page-owned-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'partial-page-owned-root';
+      document.body.appendChild(root);
+    }
+    root.innerHTML = '';
+    payload.ownedNodes.forEach((node) => {
+      const imported = document.importNode(node, true);
+      if (imported.dataset) imported.dataset.partialOwned = '1';
+      root.appendChild(imported);
+    });
+  }
+
+  function syncHeadAssets(payload) {
+    payload.stylesheets.forEach((href) => {
+      const path = normalizeAssetPath(href);
+      const exists = Array.from(document.querySelectorAll('link[rel~="stylesheet"][href]'))
+        .some((link) => normalizeAssetPath(link.href || link.getAttribute('href')) === path);
+      if (exists) return;
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      document.head.appendChild(link);
+    });
+  }
+
+  function loadScriptOnce(src) {
+    const normalizedPath = normalizeAssetPath(src);
+    if (!normalizedPath || sharedScriptPaths.has(normalizedPath)) {
+      seedLoadedScript(src);
+      return Promise.resolve();
+    }
+    if (loadedScriptPromises.has(normalizedPath)) {
+      return loadedScriptPromises.get(normalizedPath);
+    }
+
+    const existingScript = Array.from(document.scripts || []).find((script) => {
+      return script.src && normalizeAssetPath(script.src) === normalizedPath;
+    });
+    if (existingScript) {
+      seedLoadedScript(src);
+      return loadedScriptPromises.get(normalizedPath);
+    }
+
+    const promise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+      document.head.appendChild(script);
+    });
+    loadedScriptPromises.set(normalizedPath, promise);
+    return promise;
+  }
+
+  async function loadPageScripts(payload) {
+    seedExistingScripts();
+    for (const src of payload.scripts) {
+      await loadScriptOnce(src);
+    }
+  }
+
+  function scrollAfterNavigation(rawUrl) {
+    const target = normalizeAssetURL(rawUrl);
+    const hash = target?.hash || '';
+    if (hash) {
+      const id = decodeURIComponent(hash.slice(1));
+      const el = document.getElementById(id);
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'start' });
+        return;
+      }
+    }
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, left: 0 });
+    }
+  }
+
+  async function navigate(rawUrl, options = {}) {
+    const target = normalizeAssetURL(rawUrl);
+    if (!target || !isRoutableURL(target.href)) {
+      fallbackToDocumentNavigation(rawUrl, 'not routable');
+      return false;
+    }
+
+    if (partialNavigationActive) return false;
+    partialNavigationActive = true;
+    try {
+      const sourceDocument = await fetchPageDocument(target.href);
+      const payload = extractPagePayload(sourceDocument, target.href);
+
+      CCPageLifecycle.unmountCurrent();
+      syncHeadAssets(payload);
+      replaceMain(payload);
+      syncPageOwnedNodes(payload);
+      syncBodyState(payload);
+      document.title = payload.title;
+      if (typeof window.updateTopbarActive === 'function') {
+        window.updateTopbarActive(payload.pageKey);
       }
 
-      if (options.topbarKey && typeof window.initTopbar === 'function') {
-        window.initTopbar(options.topbarKey);
+      await loadPageScripts(payload);
+      const mounted = await CCPageLifecycle.mount(payload.pageKey, {
+        partial: true,
+        url: target.href,
+        source: options.source || 'router'
+      });
+      if (!mounted) {
+        fallbackToDocumentNavigation(target.href, `missing lifecycle for ${payload.pageKey}`);
+        return false;
+      }
+
+      if (!options.fromPopState) {
+        const state = { ccPartial: true, pageKey: payload.pageKey };
+        if (options.replace) {
+          history.replaceState(state, '', target.href);
+        } else {
+          history.pushState(state, '', target.href);
+        }
+      }
+      scrollAfterNavigation(target.href);
+      return true;
+    } catch (error) {
+      fallbackToDocumentNavigation(target.href, error.message);
+      return false;
+    } finally {
+      partialNavigationActive = false;
+    }
+  }
+
+  function bindPartialNavigation() {
+    if (!document || typeof document.addEventListener !== 'function') return;
+    if (document.body?.dataset?.partialRouterBound === '1') return;
+    if (document.body?.dataset) document.body.dataset.partialRouterBound = '1';
+
+    document.addEventListener('click', (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!target || typeof target.closest !== 'function') return;
+      const link = target.closest('a.topnav-link[data-nav-key]');
+      if (!link || link.target || link.hasAttribute('download')) return;
+      const href = link.getAttribute('href');
+      if (!href || !isRoutableURL(href)) return;
+      event.preventDefault();
+      void navigate(href, { source: 'nav' });
+    });
+
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('popstate', () => {
+        if (isRoutableURL(window.location.href)) {
+          void navigate(window.location.href, { fromPopState: true, replace: true, source: 'popstate' });
+        }
+      });
+    }
+  }
+
+  const CCPartialRouter = {
+    navigate,
+    isRoutableURL,
+    fetchPageDocument,
+    extractPagePayload,
+    replaceMain,
+    syncPageOwnedNodes,
+    syncHeadAssets,
+    loadPageScripts,
+    fallback: fallbackToDocumentNavigation,
+    bind: bindPartialNavigation,
+    isPartialNavigationActive() {
+      return partialNavigationActive;
+    }
+  };
+
+  window.CCPartialRouter = CCPartialRouter;
+
+  function initPageBootstrap(options = {}) {
+    const run = typeof options.run === 'function' ? options.run : () => {};
+    const topbarKey = options.topbarKey || getCurrentPageKey();
+    const shouldAutoExecute = !(
+      window.CCPartialRouter
+      && typeof window.CCPartialRouter.isPartialNavigationActive === 'function'
+      && window.CCPartialRouter.isPartialNavigationActive()
+    );
+
+    if (topbarKey && window.CCPageLifecycle) {
+      window.CCPageLifecycle.register(topbarKey, {
+        mount: async (context = {}) => {
+          if (options.translate !== false && window.i18n && typeof window.i18n.translatePage === 'function') {
+            window.i18n.translatePage();
+          }
+
+          if (topbarKey && typeof window.initTopbar === 'function') {
+            window.initTopbar(topbarKey);
+          }
+
+          await withLifecycleCapture(() => run(context));
+        },
+        unmount: options.unmount
+      });
+    }
+
+    const execute = async () => {
+      if (topbarKey && window.CCPageLifecycle) {
+        await window.CCPageLifecycle.mount(topbarKey, { partial: false, source: 'initial' });
+        return;
       }
 
       await run();
     };
+
+    if (!shouldAutoExecute) return;
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
@@ -780,6 +1348,12 @@
     }
 
     void execute();
+  }
+
+  if (document.readyState === 'loading' && typeof document.addEventListener === 'function') {
+    document.addEventListener('DOMContentLoaded', bindPartialNavigation, { once: true });
+  } else if (document.body) {
+    bindPartialNavigation();
   }
 
   function getFilterControlConfig(config) {
@@ -1201,7 +1775,11 @@
       intervalMs = 0;
     }
 
-    return { init, stop };
+    const handle = { init, stop };
+    if (window.CCPageLifecycle && typeof window.CCPageLifecycle.isMounting === 'function' && window.CCPageLifecycle.isMounting()) {
+      window.CCPageLifecycle.setAutoRefresh(handle);
+    }
+    return handle;
   }
 
   window.createAutoRefresh = createAutoRefresh;

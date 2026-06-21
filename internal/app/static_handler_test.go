@@ -173,6 +173,43 @@ func TestChannelsTemplateNameLineLayout(t *testing.T) {
 	}
 }
 
+func TestDashboardHTMLStaticFallbackSupportsPartialRouter(t *testing.T) {
+	origFS := embedFS
+	origVersion := version.Version
+	defer func() {
+		embedFS = origFS
+		version.Version = origVersion
+	}()
+
+	SetEmbedFS(os.DirFS("../.."), "web")
+	version.Version = "test-version"
+
+	r := gin.New()
+	setupStaticFiles(r)
+
+	for _, page := range []string{"logs.html", "stats.html"} {
+		t.Run(page, func(t *testing.T) {
+			w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/"+page, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+			}
+			if got := w.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+				t.Fatalf("Content-Type=%q, want html", got)
+			}
+			if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "no-cache") {
+				t.Fatalf("Cache-Control=%q, want no-cache for html", got)
+			}
+			body := w.Body.String()
+			if strings.Contains(body, "__VERSION__") {
+				t.Fatalf("%s still contains __VERSION__", page)
+			}
+			if !strings.Contains(body, `<main class="main-content`) {
+				t.Fatalf("%s missing main.main-content fallback target", page)
+			}
+		})
+	}
+}
+
 func TestGetContentType(t *testing.T) {
 	t.Parallel()
 

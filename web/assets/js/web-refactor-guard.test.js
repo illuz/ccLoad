@@ -90,6 +90,17 @@ test('logs、stats、trend 通过共享 helper 持久化筛选状态', () => {
   assert.doesNotMatch(trendSource, /window\.FilterState\.writeHistory\(/);
 });
 
+test('后台局部导航通过 CCPartialRouter 管理 history 和跨页跳转', () => {
+  assert.match(uiSource, /window\.CCPartialRouter\s*=\s*CCPartialRouter/);
+  assert.match(uiSource, /const state = \{ ccPartial: true, pageKey: payload\.pageKey \};/);
+  assert.match(uiSource, /history\.pushState\(state,\s*'',\s*target\.href\)/);
+  assert.match(uiSource, /history\.replaceState\(state,\s*'',\s*target\.href\)/);
+  assert.match(statsSource, /window\.CCPartialRouter\.navigate\(targetURL\)/);
+  assert.match(statsSource, /window\.location\.href = targetURL/);
+  assert.match(logsSource, /window\.CCPartialRouter\.navigate\(targetURL\)/);
+  assert.match(logsSource, /window\.location\.href = targetURL/);
+});
+
 test('共享样式层提供吸收内联样式的 utility class', () => {
   assert.match(sharedCss, /\.animate-delay-1\s*\{[^}]*animation-delay:\s*0\.1s;/s);
   assert.match(sharedCss, /\.animate-delay-2\s*\{[^}]*animation-delay:\s*0\.2s;/s);

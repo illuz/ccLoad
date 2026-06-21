@@ -1,0 +1,64 @@
+{
+  "id": "VAL-001",
+  "session": "20260621-verify-partial-refresh",
+  "status": "passed",
+  "completed_at": "2026-06-21T21:37:43+08:00",
+  "coverage": [
+    {
+      "requirement": "fetch + DOMParser + only replace main.main-content",
+      "coverage": "COVERED",
+      "tests": [
+        "ui-partial-router.test.js",
+        "web-refactor-guard.test.js"
+      ]
+    },
+    {
+      "requirement": "history.pushState and popstate back/forward",
+      "coverage": "COVERED",
+      "tests": [
+        "ui-partial-router.test.js",
+        "web-refactor-guard.test.js"
+      ]
+    },
+    {
+      "requirement": "topbar idempotent active update",
+      "coverage": "COVERED",
+      "tests": [
+        "ui-page-bootstrap.test.js"
+      ]
+    },
+    {
+      "requirement": "stats/logs cross-page navigate with fallback",
+      "coverage": "COVERED",
+      "tests": [
+        "web-refactor-guard.test.js",
+        "stats-inline-controls.test.js"
+      ]
+    },
+    {
+      "requirement": "static full-page fallback",
+      "coverage": "COVERED",
+      "tests": [
+        "internal/app/static_handler_test.go"
+      ]
+    },
+    {
+      "requirement": "full frontend regression",
+      "coverage": "COVERED",
+      "tests": [
+        "make www-setup && make web-test"
+      ]
+    },
+    {
+      "requirement": "full Go regression",
+      "coverage": "COVERED",
+      "tests": [
+        "go test ./..."
+      ]
+    }
+  ],
+  "coverage_gaps": [],
+  "notes": [
+    "`make web-test` 需要先运行 `make www-setup` 复制 www 静态站点共享资源；直接运行时可能因 gitignored i18n.js 缺失失败。"
+  ]
+}

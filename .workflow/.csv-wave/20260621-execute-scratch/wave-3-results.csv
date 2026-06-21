@@ -1,0 +1,2 @@
+id,status,findings,files_modified,tests_passed,error
+TASK-003,completed,新增 ui-partial-router.test.js 与静态 fallback 子测试，扩展 bootstrap/guard；确认 /web/logs.html 与 /web/stats.html 整页 HTML no-cache、版本替换、包含 main.main-content，可作为局部 router 失败时的整页 fallback。,web/assets/js/ui-partial-router.test.js;web/assets/js/ui-page-bootstrap.test.js;web/assets/js/web-refactor-guard.test.js;internal/app/static_handler_test.go,node --test ui-partial-router/bootstrap/filter/guard: 34 pass; make www-setup && make web-test: 475 pass; go test ./...: pass,

@@ -1098,6 +1098,10 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       }
     }
 
+    // ========== 图表视图功能 ==========
+    let currentView = 'table'; // 当前视图: 'table' | 'chart'
+    let chartInstances = {}; // ECharts 实例缓存
+
     // 页面初始化
     window.initPageBootstrap({
       topbarKey: 'stats',
@@ -1189,7 +1193,12 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
             const channelName = channelLink.dataset.channelName;
             if (channelName) {
               const params = buildStatsLogLinkParams({ channel_name: channelName });
-              window.location.href = `/web/logs.html?${params.toString()}`;
+              const targetURL = `/web/logs.html?${params.toString()}`;
+              if (window.CCPartialRouter && typeof window.CCPartialRouter.navigate === 'function') {
+                window.CCPartialRouter.navigate(targetURL);
+              } else {
+                window.location.href = targetURL;
+              }
             }
             return;
           }
@@ -1205,7 +1214,12 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
                 channel_name: channelName,
                 model
               });
-              window.location.href = `/web/logs.html?${params.toString()}`;
+              const targetURL = `/web/logs.html?${params.toString()}`;
+              if (window.CCPartialRouter && typeof window.CCPartialRouter.navigate === 'function') {
+                window.CCPartialRouter.navigate(targetURL);
+              } else {
+                window.location.href = targetURL;
+              }
             }
             return;
           }
@@ -1216,12 +1230,11 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       if (typeof window.createAutoRefresh === 'function') {
         window.createAutoRefresh({ load: loadStats }).init();
       }
+      if (window.CCPageLifecycle && typeof window.CCPageLifecycle.disposeCharts === 'function') {
+        window.CCPageLifecycle.disposeCharts(chartInstances);
+      }
       }
     });
-
-    // ========== 图表视图功能 ==========
-    let currentView = 'table'; // 当前视图: 'table' | 'chart'
-    let chartInstances = {}; // ECharts 实例缓存
 
     function getStatsChartTheme() {
       return typeof window.getChartTheme === 'function'
