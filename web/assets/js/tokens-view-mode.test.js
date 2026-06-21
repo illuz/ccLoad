@@ -160,7 +160,7 @@ test('tokens 视图切换会在列表/分组之间切换渲染', () => {
   `, sandbox);
 
   vm.runInContext('renderTokens();', sandbox);
-  assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table tokens-table');
+  assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table mobile-card-table--selectable tokens-table');
   assert.equal(elements['tokenListViewBtn'].classList.contains('active'), true);
   assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), false);
 
@@ -171,7 +171,7 @@ test('tokens 视图切换会在列表/分组之间切换渲染', () => {
   assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), true);
 
   vm.runInContext('setTokenViewMode("list");', sandbox);
-  assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table tokens-table');
+  assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table mobile-card-table--selectable tokens-table');
   assert.equal(elements['tokenListViewBtn'].classList.contains('active'), true);
   assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), false);
 });

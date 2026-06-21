@@ -8,13 +8,15 @@ const tokensHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'tokens.html
 const tokensScript = fs.readFileSync(path.join(__dirname, 'tokens.js'), 'utf8');
 
 test('tokens 桌面宽表在 Windows DPI 缩放下不引入页面横向滚动', () => {
-  assert.match(tokensScript, /<colgroup>[\s\S]*class="tokens-colgroup-token"[\s\S]*class="tokens-colgroup-token-usage"[\s\S]*class="tokens-colgroup-actions"[\s\S]*<\/colgroup>/);
+  assert.match(tokensScript, /<colgroup>[\s\S]*class="tokens-colgroup-checkbox"[\s\S]*class="tokens-colgroup-token"[\s\S]*class="tokens-colgroup-token-usage"[\s\S]*class="tokens-colgroup-actions"[\s\S]*<\/colgroup>/);
   assert.doesNotMatch(tokensScript, /class="tokens-colgroup-description"/);
   assert.match(tokensCss, /\.tokens-table\s*\{[\s\S]*?table-layout:\s*fixed;[\s\S]*?width:\s*100%;/);
   assert.doesNotMatch(tokensCss, /\.tokens-table\s*\{[\s\S]*?min-width:\s*1770px;/);
   assert.doesNotMatch(tokensCss, /\.tokens-colgroup-description\s*\{/);
-  assert.match(tokensCss, /\.tokens-colgroup-token\s*\{[\s\S]*?width:\s*24%;/);
+  assert.match(tokensCss, /\.tokens-colgroup-checkbox\s*\{[\s\S]*?width:\s*36px;/);
+  assert.match(tokensCss, /\.tokens-colgroup-token\s*\{[\s\S]*?width:\s*21%;/);
   assert.match(tokensCss, /\.tokens-colgroup-token-usage\s*\{[\s\S]*?width:\s*12%;/);
+  assert.match(tokensCss, /\.tokens-colgroup-enabled\s*\{[\s\S]*?width:\s*5%;/);
   assert.match(tokensCss, /\.tokens-colgroup-actions\s*\{[\s\S]*?width:\s*9%;/);
   assert.match(tokensCss, /\.token-row-description\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/);
   assert.match(tokensScript, /function\s+formatLastUsedHtml[\s\S]*?token-last-used-date[\s\S]*?token-last-used-time/);
@@ -24,18 +26,24 @@ test('tokens 桌面宽表在 Windows DPI 缩放下不引入页面横向滚动', 
 });
 
 test('tokens 页为手机卡片布局补齐模板标签和按钮布局', () => {
-  assert.match(tokensScript, /table\.className\s*=\s*'mobile-card-table tokens-table'/);
+  assert.match(tokensScript, /table\.className\s*=\s*'mobile-card-table mobile-card-table--selectable tokens-table'/);
   assert.doesNotMatch(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?min-width:\s*980px;/);
   assert.match(tokensHtml, /<template id="tpl-token-row">[\s\S]*?class="mobile-card-row token-card-row"/);
   assert.doesNotMatch(tokensHtml, /class="[^"]*tokens-col-description/);
-  assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description">\{\{description\}\}/);
+  assert.match(tokensHtml, /class="tokens-col-checkbox mobile-card-no-label"[\s\S]*class="token-select-checkbox" data-token-id="\{\{id\}\}"/);
+  assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span><\/div>/);
+  assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*class="token-row-key">\{\{maskedToken\}\}<\/span>/);
+  assert.match(tokensHtml, /class="tokens-col-enabled"[^>]*data-mobile-label="\{\{mobileLabelEnabled\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-concurrency[^"]*"[^>]*data-mobile-label="\{\{mobileLabelConcurrency\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-actions[^"]*"[^>]*data-mobile-label="\{\{mobileLabelActions\}\}"/);
   assert.doesNotMatch(tokensScript, /mobileLabelDescription:\s*t\('tokens\.table\.description'\)/);
   assert.match(tokensScript, /mobileLabelConcurrency:\s*t\('tokens\.table\.concurrency'\)/);
+  assert.match(tokensScript, /mobileLabelEnabled:\s*t\('channels\.table\.enabled'\)/);
   assert.match(tokensScript, /mobileLabelActions:\s*t\('tokens\.table\.actions'\)/);
   assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.tokens-table\s+\.tokens-col-token,\s*[\r\n\s]*\.tokens-table\s+\.tokens-col-token-usage,\s*[\r\n\s]*\.tokens-table\s+\.tokens-col-last-used,\s*[\r\n\s]*\.tokens-table\s+\.tokens-col-actions\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
   assert.match(tokensCss, /\.token-row-actions\s*\{[\s\S]*?justify-content:\s*center;[\s\S]*?flex-wrap:\s*nowrap;/);
+  assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.tokens-table thead th\.tokens-col-checkbox\s*\{[\s\S]*?display:\s*block;/);
+  assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.tokens-table\s+\.tokens-col-checkbox\s*\{[\s\S]*?position:\s*absolute;/);
 });
 
 test('tokens 页手机卡片使用单列信息流，避免字段挤到令牌右侧', () => {

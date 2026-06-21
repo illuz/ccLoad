@@ -57,7 +57,7 @@ test('channels 列表参数在指定类型时只携带 type', () => {
 test('channels 筛选下拉记录渠道名和模型是否精确命中选项', () => {
   assert.match(channelsFiltersSource, /inputId:\s*'modelFilter'[\s\S]*?allowCustomInput:\s*true/);
   assert.match(channelsFiltersSource, /filters\.modelExact\s*=\s*isExactChannelModelFilter\(value\);/);
-  assert.match(channelsFiltersSource, /filters\.searchExact\s*=\s*!isAllToken && isExactChannelNameFilter\(raw\);/);
+  assert.match(channelsFiltersSource, /filters\.searchExact\s*=\s*false;/);
   assert.match(channelsFiltersSource, /filterChannels\(\);/);
   assert.doesNotMatch(channelsFiltersSource, /loadChannels\(filters\.channelType\)/);
 });

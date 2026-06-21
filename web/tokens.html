@@ -24,19 +24,6 @@
   <div class="app-container">
     <main class="main-content">
       <div class="content-area">
-        <header class="mt-2 mb-4">
-          <div class="glass-card tokens-hero-card">
-            <div class="tokens-hero-bar">
-              <div>
-                <h1 class="page-title" data-i18n="tokens.pageTitle">API访问令牌</h1>
-              </div>
-              <button type="button" data-action="show-create-modal" class="btn btn-primary tokens-create-btn" data-i18n="tokens.createToken">
-                + 创建令牌
-              </button>
-            </div>
-          </div>
-        </header>
-
         <!-- 时间范围选择器 -->
         <section class="mb-2">
           <div class="time-range-container">
@@ -50,18 +37,20 @@
               <div class="tokens-search-row">
                 <span class="tokens-filter-label" data-i18n="tokens.searchLabel">令牌名称</span>
                 <div class="tokens-search-control">
-                <input
-                  id="tokenSearchInput"
-                  class="form-input tokens-search-input"
-                  type="text"
-                  autocomplete="off"
-                  data-i18n-placeholder="tokens.searchPlaceholder"
-                  placeholder="搜索令牌名称/描述">
-                  <button type="button" class="btn btn-primary btn-sm" data-action="filter-tokens" data-i18n="common.search">搜索</button>
+                  <input
+                    id="tokenSearchInput"
+                    class="form-input tokens-search-input"
+                    type="text"
+                    autocomplete="off"
+                    data-i18n-placeholder="tokens.searchPlaceholder"
+                    placeholder="搜索令牌名称/描述">
                   <button type="button" class="btn btn-secondary btn-sm" data-action="clear-token-search" data-i18n="common.clear">清空</button>
                 </div>
               </div>
               <div class="tokens-filter-actions">
+                <button type="button" data-action="show-create-modal" class="btn btn-primary tokens-create-btn" data-i18n="tokens.createToken">
+                  + 创建令牌
+                </button>
                 <span class="tokens-view-switch" role="group" data-i18n-aria-label="tokens.viewSwitcher" aria-label="令牌视图切换">
                   <button id="tokenListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-list" data-i18n="tokens.listView">列表视图</button>
                   <button id="tokenGroupViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-group" data-i18n="tokens.groupView">分组视图</button>
@@ -89,6 +78,39 @@
             <button type="button" data-action="show-create-modal" class="btn btn-primary" data-i18n="tokens.createTokenBtn">创建令牌</button>
           </div>
         </section>
+
+        <div id="tokenBatchFloatingMenu" class="token-batch-float" aria-hidden="true">
+          <div class="token-batch-float__content">
+            <div class="token-batch-float__header">
+              <div class="token-batch-selection">
+                <span id="selectedTokensCountBadge" class="token-batch-count-badge">0</span>
+                <div class="token-batch-selection-meta">
+                  <span id="selectedTokensSummary" class="token-batch-summary" data-i18n="tokens.batchSelectedCount">0 令牌已选择</span>
+                </div>
+              </div>
+            </div>
+            <div class="token-batch-actions">
+              <button id="batchEnableTokensBtn" type="button" class="btn btn-sm token-batch-action token-batch-action--enable"
+                data-action="batch-enable-tokens" disabled>
+                <span data-i18n="tokens.batchEnableTokens">批量启用</span>
+              </button>
+              <button id="batchDisableTokensBtn" type="button" class="btn btn-sm token-batch-action token-batch-action--disable"
+                data-action="batch-disable-tokens" disabled>
+                <span data-i18n="tokens.batchDisableTokens">批量禁用</span>
+              </button>
+              <button id="batchDeleteTokensBtn" type="button" class="btn btn-sm token-batch-action token-batch-action--delete"
+                data-action="batch-delete-tokens" disabled>
+                <span data-i18n="tokens.batchDeleteTokens">批量删除</span>
+              </button>
+            </div>
+            <button id="batchTokenFloatingMenuCloseBtn" type="button" class="token-batch-close"
+              data-action="clear-selected-tokens" data-i18n-title="common.close" title="关闭" disabled>
+              <svg width="22" height="22" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -370,7 +392,7 @@
   </div>
 
   <!-- 渠道选择对话框 -->
-  <div id="channelSelectModal" class="modal">
+  <div id="channelSelectModal" class="modal token-stacked-modal">
     <div class="modal-content modal-content--sm">
       <div class="modal-header">
         <h2 class="modal-title" data-i18n="tokens.selectChannelTitle">选择渠道</h2>
@@ -405,7 +427,7 @@
   </div>
 
   <!-- 模型选择对话框 -->
-  <div id="modelSelectModal" class="modal">
+  <div id="modelSelectModal" class="modal token-stacked-modal">
     <div class="modal-content modal-content--sm">
       <div class="modal-header">
         <h2 class="modal-title" data-i18n="tokens.selectModelTitle">选择模型</h2>
@@ -437,7 +459,7 @@
   </div>
 
   <!-- 批量导入模型对话框 -->
-  <div id="modelImportModal" class="modal token-model-import-modal">
+  <div id="modelImportModal" class="modal token-model-import-modal token-stacked-modal">
     <div class="modal-content modal-content--sm">
       <div class="modal-header">
         <h2 class="modal-title" data-i18n="tokens.importModelTitle">手动输入模型</h2>
@@ -477,51 +499,75 @@
       </div>
       <div class="modal-body token-group-manager-body">
         <div class="token-group-list-panel">
-          <h3 class="token-edit-section-title" data-i18n="tokens.groupList">分组列表</h3>
+          <div class="token-group-list-header">
+            <h3 class="token-edit-section-title" data-i18n="tokens.groupList">分组列表</h3>
+            <button type="button" class="btn btn-primary btn-sm token-group-create-btn" data-action="create-token-group-draft" data-i18n="tokens.groupCreate">创建分组</button>
+          </div>
           <div id="tokenGroupList" class="token-group-list"></div>
         </div>
         <div class="token-group-form-panel">
-          <h3 class="token-edit-section-title" data-i18n="tokens.groupEdit">编辑分组</h3>
-          <input type="hidden" id="tokenGroupEditId">
-          <div class="form-group">
-            <label class="form-label" data-i18n="tokens.groupName">分组名称</label>
-            <input id="tokenGroupName" class="form-input" type="text" data-i18n-placeholder="tokens.groupNamePlaceholder" placeholder="例如：默认付费组">
-          </div>
-          <div class="form-group">
-            <label class="form-label" data-i18n="tokens.descriptionLabel">描述 *</label>
-            <input id="tokenGroupDescription" class="form-input" type="text">
-          </div>
-          <div class="form-group form-row-inline">
-            <label class="form-label form-row-inline__label" data-i18n="tokens.costLimitLabel">费用上限</label>
-            <div class="form-row-inline__content token-limit-control">
-              <div class="token-limit-input-line">
-                <span class="token-cost-prefix token-limit-prefix-slot">$</span>
-                <input type="number" id="tokenGroupCostLimitUSD" class="form-input field-grow" min="0" step="0.01" value="0">
+          <section class="token-edit-section token-group-basic-section">
+            <h3 class="token-edit-section-title" data-i18n="tokens.groupEdit">编辑分组</h3>
+            <input type="hidden" id="tokenGroupEditId">
+            <div class="token-group-basic-grid">
+              <div class="form-group token-group-basic-field">
+                <label class="form-label" data-i18n="tokens.groupName">分组名称</label>
+                <input id="tokenGroupName" class="form-input" type="text" data-i18n-placeholder="tokens.groupNamePlaceholder" placeholder="例如：默认付费组">
+              </div>
+              <div class="form-group token-group-basic-field">
+                <label class="form-label" data-i18n="tokens.groupDescriptionLabel">描述</label>
+                <input id="tokenGroupDescription" class="form-input" type="text">
+              </div>
+              <div class="form-group form-row-inline token-group-basic-field token-group-basic-field--limit">
+                <label class="form-label form-row-inline__label" data-i18n="tokens.costLimitLabel">费用上限</label>
+                <div class="form-row-inline__content token-limit-control">
+                  <div class="token-limit-input-line">
+                    <span class="token-cost-prefix token-limit-prefix-slot">$</span>
+                    <input type="number" id="tokenGroupCostLimitUSD" class="form-input field-grow" min="0" step="0.01" value="0">
+                  </div>
+                </div>
+              </div>
+              <div class="form-group form-row-inline token-group-basic-field token-group-basic-field--limit">
+                <label class="form-label form-row-inline__label" data-i18n="tokens.maxConcurrencyLabel">并发上限</label>
+                <div class="form-row-inline__content token-limit-control">
+                  <div class="token-limit-input-line">
+                    <span class="token-group-limit-prefix-slot token-limit-prefix-slot--empty" aria-hidden="true"></span>
+                    <input type="number" id="tokenGroupMaxConcurrency" class="form-input field-grow" min="0" step="1" value="0">
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="form-group form-row-inline">
-            <label class="form-label form-row-inline__label" data-i18n="tokens.maxConcurrencyLabel">并发上限</label>
-            <div class="form-row-inline__content token-limit-control">
-              <div class="token-limit-input-line">
-                <span class="token-group-limit-prefix-slot token-limit-prefix-slot--empty" aria-hidden="true"></span>
-                <input type="number" id="tokenGroupMaxConcurrency" class="form-input field-grow" min="0" step="1" value="0">
+          </section>
+          <div class="token-edit-main token-group-main">
+            <section class="token-edit-section token-edit-section--channels token-group-restrictions token-group-restrictions--channels">
+              <div class="token-group-restrictions__header">
+                <h4 class="token-edit-section-title" data-i18n="tokens.channelRestriction">渠道限制</h4>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-channel-select" data-i18n="tokens.selectChannel">
+                  + 选择渠道
+                </button>
               </div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" data-i18n="tokens.groupAllowedChannels">渠道限制ID</label>
-            <textarea id="tokenGroupAllowedChannels" class="form-input" rows="3" data-i18n-placeholder="tokens.groupAllowedChannelsPlaceholder" placeholder="例如：1,2,3，留空表示不限制"></textarea>
-          </div>
-          <div class="form-group">
-            <label class="form-label" data-i18n="tokens.groupAllowedModels">模型限制</label>
-            <textarea id="tokenGroupAllowedModels" class="form-input" rows="5" data-i18n-placeholder="tokens.groupAllowedModelsPlaceholder" placeholder="每行或逗号分隔，留空表示不限制"></textarea>
+              <div class="token-group-restrictions__list" id="tokenGroupAllowedChannelsSummary"></div>
+            </section>
+            <section class="token-edit-section token-edit-section--models token-group-restrictions token-group-restrictions--models">
+              <div class="token-group-restrictions__header">
+                <h4 class="token-edit-section-title" data-i18n="tokens.modelRestriction">模型限制</h4>
+                <div class="token-group-restrictions__actions">
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-model-select" data-i18n="tokens.selectFromList">
+                    + 从列表选择
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-model-import" data-i18n="tokens.manualInput">
+                    + 手动输入
+                  </button>
+                </div>
+              </div>
+              <div class="token-group-restrictions__list token-group-restrictions__list--mono" id="tokenGroupAllowedModelsSummary"></div>
+            </section>
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" data-action="close-token-group-modal" class="btn btn-secondary" data-i18n="common.close">关闭</button>
-        <button id="tokenGroupSaveBtn" type="button" data-action="create-token-group" class="btn btn-primary" data-i18n="tokens.groupCreate">创建分组</button>
+        <button id="tokenGroupSaveBtn" type="button" data-action="create-token-group" class="btn btn-primary" data-i18n="common.save">保存</button>
       </div>
     </div>
   </div>
@@ -538,17 +584,15 @@
   <!-- 令牌行模板 -->
   <template id="tpl-token-row">
     <tr class="mobile-card-row token-card-row" data-token-id="{{id}}">
+      <td class="tokens-col-checkbox mobile-card-no-label">
+        <input type="checkbox" class="token-select-checkbox" data-token-id="{{id}}" {{selectedAttr}} aria-label="{{selectionLabel}}">
+      </td>
       <td class="tokens-col-token" data-mobile-label="{{mobileLabelToken}}">
-        <div class="token-row-primary">
-          <span class="token-display token-display-{{statusClass}}">{{maskedToken}}</span>
-          <button type="button" class="btn-copy-token btn-icon token-inline-copy-btn" data-token="{{token}}"
-            data-i18n-title="common.copy" data-i18n-aria-label="common.copy" title="复制" aria-label="复制">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4C2.9 15 2 14.1 2 13V4C2 2.9 2.9 2 4 2H13C14.1 2 15 2.9 15 4V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          </button>
+        <div class="token-row-description"><span class="token-row-name">{{description}}</span></div>
+        <div class="token-row-meta">
+          {{{groupHtml}}}
+          <span class="token-row-key">{{maskedToken}}</span>
         </div>
-        <div class="token-row-description">{{description}}</div>
-        {{{groupHtml}}}
-        <div class="token-row-meta">{{createdAt}}{{createdLabel}} · {{expiresAt}}</div>
       </td>
       <td class="tokens-col-calls" data-mobile-label="{{mobileLabelCalls}}">{{{callsHtml}}}</td>
       <td class="tokens-col-success-rate" data-mobile-label="{{mobileLabelSuccessRate}}">{{{successRateHtml}}}</td>
@@ -558,13 +602,16 @@
       <td class="tokens-col-concurrency" data-mobile-label="{{mobileLabelConcurrency}}">{{{concurrencyHtml}}}</td>
       <td class="tokens-col-stream {{streamCellClass}}" data-mobile-label="{{mobileLabelStream}}">{{{streamAvgHtml}}}</td>
       <td class="tokens-col-non-stream {{nonStreamCellClass}}" data-mobile-label="{{mobileLabelNonStream}}">{{{nonStreamAvgHtml}}}</td>
+      <td class="tokens-col-enabled" data-mobile-label="{{mobileLabelEnabled}}">
+        <button type="button" class="token-enable-switch {{tokenEnableSwitchClass}}" data-action="toggle-token-active"
+          data-token-id="{{id}}" data-enabled="{{isActive}}" role="switch" aria-checked="{{isActive}}"
+          title="{{toggleTitle}}" aria-label="{{toggleTitle}}">
+          <span class="token-enable-switch__knob" aria-hidden="true"></span>
+        </button>
+      </td>
       <td class="tokens-col-last-used" data-mobile-label="{{mobileLabelLastUsed}}">{{{lastUsed}}}</td>
       <td class="tokens-col-actions" data-mobile-label="{{mobileLabelActions}}">
         <div class="token-row-actions">
-          <button type="button" class="btn-copy-token btn-icon token-row-action-btn" data-token="{{token}}"
-            data-i18n-title="common.copy" data-i18n-aria-label="common.copy" title="复制" aria-label="复制">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4C2.9 15 2 14.1 2 13V4C2 2.9 2.9 2 4 2H13C14.1 2 15 2.9 15 4V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          </button>
           <button type="button" class="btn-icon btn-edit token-row-action-btn"
             data-i18n-title="common.edit" data-i18n-aria-label="common.edit" title="编辑" aria-label="编辑">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M3 17.25V21H6.75L17.81 9.94L14.06 6.19L3 17.25Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.71 7.04C21.1 6.65 21.1 6.02 20.71 5.63L18.37 3.29C17.98 2.9 17.35 2.9 16.96 3.29L15.13 5.12L18.88 8.87L20.71 7.04Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>

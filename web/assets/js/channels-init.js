@@ -53,15 +53,8 @@ function loadChannelsFilters() {
 function resetChannelSearchFilter() {
   filters.search = '';
   filters.searchExact = false;
-  if (typeof channelNameCombobox !== 'undefined' && channelNameCombobox) {
-    channelNameCombobox.setValue('', getChannelNameAllLabel());
-  } else {
-    const searchInputEl = document.getElementById('searchInput');
-    if (searchInputEl) {
-      const allLabel = (window.t && window.t('channels.channelNameAll')) || '所有渠道';
-      searchInputEl.value = allLabel;
-    }
-  }
+  const searchInputEl = document.getElementById('searchInput');
+  if (searchInputEl) searchInputEl.value = '';
 }
 
 function initChannelsPageActions() {
@@ -140,8 +133,7 @@ window.initPageBootstrap({
       }
       const searchInputEl = document.getElementById('searchInput');
       if (searchInputEl) {
-        const allLabel = (window.t && window.t('channels.channelNameAll')) || '所有渠道';
-        searchInputEl.value = filters.search || allLabel;
+        searchInputEl.value = filters.search || '';
       }
     } else if (savedFilters) {
       filters.status = savedFilters.status || 'all';
@@ -156,17 +148,9 @@ window.initPageBootstrap({
         const modelFilterEl = document.getElementById('modelFilter');
         if (modelFilterEl) modelFilterEl.value = modelFilterInputValueFromFilterValue(filters.model);
       }
-      if (typeof channelNameCombobox !== 'undefined' && channelNameCombobox) {
-        const allLabel = (typeof getChannelNameAllLabel === 'function')
-          ? getChannelNameAllLabel()
-          : ((window.t && window.t('channels.channelNameAll')) || '所有渠道');
-        channelNameCombobox.setValue(filters.search, filters.search || allLabel);
-      } else {
-        const searchInputEl = document.getElementById('searchInput');
-        if (searchInputEl) {
-          const allLabel = (window.t && window.t('channels.channelNameAll')) || '所有渠道';
-          searchInputEl.value = filters.search || allLabel;
-        }
+      const searchInputEl = document.getElementById('searchInput');
+      if (searchInputEl) {
+        searchInputEl.value = filters.search || '';
       }
       saveChannelsFilters();
     }
@@ -183,9 +167,8 @@ window.initPageBootstrap({
         const modelFilterEl = document.getElementById('modelFilter');
         if (modelFilterEl) modelFilterEl.value = modelFilterInputValueFromFilterValue('all');
       }
-      if (typeof channelNameCombobox !== 'undefined' && channelNameCombobox) {
-        channelNameCombobox.setValue('', getChannelNameAllLabel());
-      }
+      const searchInputEl = document.getElementById('searchInput');
+      if (searchInputEl) searchInputEl.value = '';
       saveChannelsFilters();
       loadChannels(type);
     });

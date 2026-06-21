@@ -634,37 +634,6 @@ body {
   gap: 2px;
 }
 
-/* 版本徽章 - 轻量纯文本样式 */
-.version-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 6px;
-  cursor: pointer;
-  font-size: 12px;
-  font-family: monospace;
-  color: var(--neutral-500);
-  margin-right: 0;
-  position: relative;
-  transition: color 0.2s;
-  text-decoration: none;
-}
-
-.version-badge:hover {
-  color: var(--neutral-700);
-}
-
-/* 有新版本时显示小圆点 */
-.version-badge.has-update::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  right: 0;
-  width: 6px;
-  height: 6px;
-  background: var(--success-500);
-  border-radius: 50%;
-}
-
 /* GitHub链接 */
 .github-link {
   display: inline-flex;
@@ -4750,7 +4719,7 @@ body.trend-page .content-area {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  max-width: none;
+  max-width: var(--container-max-width);
   width: 100%;
 }
 
@@ -4767,6 +4736,7 @@ body.trend-page .trend-chart-card {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  width: 100%;
 }
 
 body.trend-page .chart-container {

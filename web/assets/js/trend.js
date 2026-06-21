@@ -1622,14 +1622,6 @@ function shouldShowZoom(points, hours, trendType) {
         });
       }
 
-      // 筛选按钮
-      const btnFilter = document.getElementById('btn_filter');
-      if (btnFilter) {
-        btnFilter.addEventListener('click', () => {
-          loadData();
-        });
-      }
-
       // 渠道ID和渠道名已改为 combobox，onSelect 回调自动触发 persistState + loadData
     }
 

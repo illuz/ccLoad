@@ -38,36 +38,6 @@
   <div class="app-container">
     <main class="main-content">
       <div class="content-area">
-        <header class="mt-2 mb-2">
-          <div class="glass-card channel-page-header-card">
-            <div class="channel-page-hero">
-              <div class="channel-page-copy">
-                <div class="channel-page-brand" aria-hidden="true">CH</div>
-                <div class="channel-page-copy-body">
-                  <h1 class="channel-page-title" data-i18n="channels.title">渠道管理</h1>
-                </div>
-              </div>
-              <div class="channel-page-actions">
-                <button id="exportCsvBtn" type="button" class="btn btn-secondary channel-page-action-btn"
-                  data-i18n-title="channels.exportCsvTitle"
-                  title="导出渠道列表为CSV">
-                  <span data-i18n="channels.exportCsv">导出 CSV</span>
-                </button>
-                <button id="importCsvBtn" type="button" class="btn btn-secondary channel-page-action-btn"
-                  data-i18n-title="channels.importCsvTitle"
-                  title="从CSV导入渠道">
-                  <span data-i18n="channels.importCsv">导入 CSV</span>
-                </button>
-                <button type="button" data-action="show-add-modal" class="btn btn-primary channel-page-action-btn"
-                  data-i18n-title="channels.addChannelTitle" title="添加新渠道">
-                  <span data-i18n="channels.addChannel">+ 添加渠道</span>
-                </button>
-                <input type="file" id="importCsvInput" accept=".csv" style="display: none;" />
-              </div>
-            </div>
-          </div>
-        </header>
-
         <!-- Filter Bar -->
         <div class="filter-bar">
           <div class="filter-controls channels-filter-controls">
@@ -100,11 +70,8 @@
             <div class="filter-group channel-search-filter-group">
               <label class="filter-label" data-i18n="channels.filterSearch">渠道名称</label>
               <div class="channel-search-control">
-                <div class="filter-combobox-wrapper filter-control--compact">
-                  <input id="searchInput" class="filter-select filter-combobox" type="text" autocomplete="off"
-                    spellcheck="false" data-i18n-placeholder="channels.searchPlaceholder" placeholder="输入渠道名称..." />
-                  <div id="searchInputDropdown" class="filter-dropdown" role="listbox" aria-label="渠道名称"></div>
-                </div>
+                <input id="searchInput" class="filter-select filter-control--compact" type="text" autocomplete="off"
+                  spellcheck="false" data-i18n-placeholder="channels.searchPlaceholder" placeholder="输入渠道名称..." />
               </div>
             </div>
             <div class="channel-filter-summary">
@@ -113,17 +80,33 @@
               </div>
 
               <div class="channel-toolbar-actions">
+                <button id="exportCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
+                  data-i18n-title="channels.exportCsvTitle"
+                  title="导出渠道列表为CSV">
+                  <span data-i18n="channels.exportCsv">导出 CSV</span>
+                </button>
+                <button id="importCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
+                  data-i18n-title="channels.importCsvTitle"
+                  title="从CSV导入渠道">
+                  <span data-i18n="channels.importCsv">导入 CSV</span>
+                </button>
+                <button type="button" data-action="show-add-modal" class="btn btn-primary channel-filter-action-btn"
+                  data-i18n-title="channels.addChannelTitle" title="添加新渠道">
+                  <span data-i18n="channels.addChannel">+ 添加渠道</span>
+                </button>
                 <button id="clearSearchBtn" type="button" class="btn btn-secondary btn-sm"
                   data-i18n="common.clear" data-i18n-title="common.clearSearch" title="清空搜索">
                   清空
                 </button>
                 <button id="btn_sort" type="button" class="btn btn-secondary channel-filter-action-btn"
                   data-i18n="channels.sortBtn">排序</button>
-                <button id="btn_filter" type="button" class="btn btn-primary channel-filter-action-btn"
-                  data-i18n="channels.filterBtn">筛选</button>
+                <!-- 已改为即时筛选，保留隐藏按钮占位以兼容旧测试/脚本 -->
+                <button id="btn_filter" type="button" class="btn btn-primary channel-filter-action-btn display-none"
+                  data-i18n="channels.filterBtn" aria-hidden="true" tabindex="-1">筛选</button>
               </div>
             </div>
           </div>
+          <input type="file" id="importCsvInput" accept=".csv" style="display: none;" />
         </div>
 
         <section>
@@ -1109,8 +1092,8 @@
         <div class="ch-name-cell">
           <div class="ch-name-line">
             <div class="ch-name-main">{{{typeBadge}}}<strong>{{name}}</strong>{{{protocolTransformBadges}}}</div>
+            <div class="ch-url-line" title="{{url}}">{{url}}</div>
           </div>
-          <div class="ch-url-line" title="{{url}}">{{url}}</div>
           <div class="ch-refresh-result-slot">{{{batchRefreshStatusHtml}}}</div>
           {{{healthHtml}}}
           <div class="ch-last-request-slot ch-last-request-slot--desktop">{{{lastRequestFailureHtml}}}</div>
