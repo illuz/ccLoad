@@ -398,6 +398,12 @@ func ensureAuthTokensGroupFields(ctx context.Context, db *sql.DB, dialect Dialec
 	})
 }
 
+func ensureAuthTokenGroupsColor(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_token_groups", "color",
+		"VARCHAR(16) NOT NULL DEFAULT '#64748b'",
+		"TEXT NOT NULL DEFAULT '#64748b'")
+}
+
 func ensureChannelsProtocolTransformMode(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "protocol_transform_mode",
 		"VARCHAR(32) NOT NULL DEFAULT 'local'",

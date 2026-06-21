@@ -125,6 +125,7 @@ func DefineAuthTokenGroupsTable() *TableBuilder {
 		Column("id INT PRIMARY KEY AUTO_INCREMENT").
 		Column("name VARCHAR(191) NOT NULL UNIQUE").
 		Column("description VARCHAR(512) NOT NULL DEFAULT ''").
+		Column("color VARCHAR(16) NOT NULL DEFAULT '#64748b'").
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Column("cost_limit_microusd BIGINT NOT NULL DEFAULT 0").

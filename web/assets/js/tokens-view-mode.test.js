@@ -74,7 +74,7 @@ function loadHarness() {
   };
 
   const localStorage = {
-    _store: new Map([['tokens.viewMode', 'list']]),
+    _store: new Map([['tokens.viewMode', 'group']]),
     getItem(key) {
       return this._store.has(key) ? this._store.get(key) : null;
     },
@@ -160,6 +160,12 @@ test('tokens 视图切换会在列表/分组之间切换渲染', () => {
   `, sandbox);
 
   vm.runInContext('renderTokens();', sandbox);
+  assert.equal(elements['tokens-container'].children[0].className, 'token-grouped-view');
+  assert.equal(elements['tokenListViewBtn'].classList.contains('active'), false);
+  assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), true);
+
+  vm.runInContext('setTokenViewMode("list");', sandbox);
+  assert.equal(localStorage.getItem('tokens.viewMode'), 'list');
   assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table mobile-card-table--selectable tokens-table');
   assert.equal(elements['tokenListViewBtn'].classList.contains('active'), true);
   assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), false);
@@ -169,9 +175,4 @@ test('tokens 视图切换会在列表/分组之间切换渲染', () => {
   assert.equal(elements['tokens-container'].children[0].className, 'token-grouped-view');
   assert.equal(elements['tokenListViewBtn'].classList.contains('active'), false);
   assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), true);
-
-  vm.runInContext('setTokenViewMode("list");', sandbox);
-  assert.equal(elements['tokens-container'].children[0].className, 'mobile-card-table mobile-card-table--selectable tokens-table');
-  assert.equal(elements['tokenListViewBtn'].classList.contains('active'), true);
-  assert.equal(elements['tokenGroupViewBtn'].classList.contains('active'), false);
 });

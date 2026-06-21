@@ -185,6 +185,12 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 		}
 
+		if tb.Name() == "auth_token_groups" {
+			if err := ensureAuthTokenGroupsColor(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_token_groups color: %w", err)
+			}
+		}
+
 		// 增量迁移：channel_models表添加redirect_model字段，迁移数据后删除channels冗余字段
 		if tb.Name() == "channel_models" {
 			if err := migrateChannelModelsSchema(ctx, db, dialect); err != nil {

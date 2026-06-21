@@ -32,8 +32,9 @@ test('tokens 页为手机卡片布局补齐模板标签和按钮布局', () => {
   assert.doesNotMatch(tokensHtml, /class="[^"]*tokens-col-description/);
   assert.match(tokensHtml, /class="tokens-col-checkbox mobile-card-no-label"[\s\S]*class="token-select-checkbox" data-token-id="\{\{id\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span><\/div>/);
-  assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*class="token-row-key">\{\{maskedToken\}\}<\/span>/);
-  assert.match(tokensHtml, /class="tokens-col-enabled"[^>]*data-mobile-label="\{\{mobileLabelEnabled\}\}"/);
+  assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*>\{\{maskedToken\}\}<\/button>/);
+  assert.match(tokensHtml, /class="token-mobile-details-toggle"[\s\S]*data-action="toggle-token-mobile-details"/);
+  assert.match(tokensHtml, /class="[^"]*tokens-col-enabled[^"]*"[^>]*data-mobile-label="\{\{mobileLabelEnabled\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-concurrency[^"]*"[^>]*data-mobile-label="\{\{mobileLabelConcurrency\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-actions[^"]*"[^>]*data-mobile-label="\{\{mobileLabelActions\}\}"/);
   assert.doesNotMatch(tokensScript, /mobileLabelDescription:\s*t\('tokens\.table\.description'\)/);
@@ -44,6 +45,20 @@ test('tokens 页为手机卡片布局补齐模板标签和按钮布局', () => {
   assert.match(tokensCss, /\.token-row-actions\s*\{[\s\S]*?justify-content:\s*center;[\s\S]*?flex-wrap:\s*nowrap;/);
   assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.tokens-table thead th\.tokens-col-checkbox\s*\{[\s\S]*?display:\s*block;/);
   assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.tokens-table\s+\.tokens-col-checkbox\s*\{[\s\S]*?position:\s*absolute;/);
+});
+
+test('tokens 页手机卡片默认折叠调用次数及以下信息但保留最后使用', () => {
+  assert.match(tokensHtml, /class="tokens-col-calls token-mobile-foldable"/);
+  assert.match(tokensHtml, /class="tokens-col-enabled token-mobile-foldable"/);
+  assert.match(tokensHtml, /<td class="tokens-col-last-used"[^>]*data-mobile-label="\{\{mobileLabelLastUsed\}\}">\{\{\{lastUsed\}\}\}<\/td>/);
+  assert.match(tokensScript, /'toggle-token-mobile-details': \(actionTarget\) => toggleTokenMobileDetails\(actionTarget\)/);
+  assert.match(tokensScript, /function toggleTokenMobileDetails\(actionTarget\)/);
+  assert.match(tokensScript, /token-card-row--details-open/);
+  assert.match(tokensCss, /\.token-mobile-details-toggle\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(tokensCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.token-mobile-details-toggle\s*\{[\s\S]*?display:\s*inline-flex;/);
+  assert.match(tokensCss, /\.tokens-table\s+\.token-card-row:not\(\.token-card-row--details-open\)\s+\.token-mobile-foldable\s*\{[\s\S]*?display:\s*none\s*!important;/);
+  assert.match(tokensCss, /\.tokens-table\s+\.token-card-row--details-open\s+\.token-mobile-foldable\s*\{[\s\S]*?display:\s*flex\s*!important;/);
+  assert.match(tokensCss, /\.tokens-table\s+\.token-card-row--details-open\s+\.token-mobile-foldable\.mobile-empty-cell\s*\{[\s\S]*?display:\s*none\s*!important;/);
 });
 
 test('tokens 页手机卡片使用单列信息流，避免字段挤到令牌右侧', () => {

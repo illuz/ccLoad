@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -33,6 +34,7 @@ func (s *Server) HandleListAuthTokenGroups(c *gin.Context) {
 type authTokenGroupRequest struct {
 	Name              *string  `json:"name"`
 	Description       *string  `json:"description"`
+	Color             *string  `json:"color"`
 	AllowedModels     []string `json:"allowed_models"`
 	AllowedChannelIDs []int64  `json:"allowed_channel_ids"`
 	CostLimitUSD      *float64 `json:"cost_limit_usd"`
@@ -50,6 +52,20 @@ func buildAuthTokenGroupFromRequest(req authTokenGroupRequest, existing *model.A
 	}
 	if req.Description != nil {
 		group.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Color != nil {
+		color := model.NormalizeAuthTokenGroupColor(*req.Color)
+		if color == "" {
+			group.Color = model.DefaultAuthTokenGroupColor
+		} else {
+			if !model.IsSupportedAuthTokenGroupColor(color) {
+				return nil, errors.New("color must be one of the preset values")
+			}
+			group.Color = color
+		}
+	}
+	if group.Color == "" {
+		group.Color = model.DefaultAuthTokenGroupColor
 	}
 	if req.AllowedModels != nil {
 		group.AllowedModels = req.AllowedModels

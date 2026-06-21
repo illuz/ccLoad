@@ -4,10 +4,21 @@
     let isToday = true;      // 是否为本日（本日才显示最近一分钟）
     let tokenSearch = '';
     let authTokenGroups = [];
-    let tokenViewMode = localStorage.getItem('tokens.viewMode') || 'list';
+    let tokenViewMode = localStorage.getItem('tokens.viewMode') || 'group';
     let collapsedTokenGroups = new Set(JSON.parse(localStorage.getItem('tokens.collapsedGroups') || '[]'));
     let selectedTokenIds = new Set();
     let tokenBatchActionInFlight = false;
+
+    const TOKEN_GROUP_COLOR_PRESETS = [
+      '#64748b',
+      '#ef4444',
+      '#f97316',
+      '#f59e0b',
+      '#22c55e',
+      '#14b8a6',
+      '#3b82f6',
+      '#8b5cf6'
+    ];
 
     // 当前选中的时间范围(默认为本日)
     let currentTimeRange = 'today';
@@ -143,6 +154,7 @@
           'close-token-result-modal': () => closeTokenResultModal(),
           'copy-token-result': () => copyToken(),
           'copy-edit-token': () => copyEditToken(),
+          'copy-token-key': (actionTarget) => copyTokenKey(actionTarget),
           'close-edit-modal': () => closeEditModal(),
           'update-token': () => updateToken(),
           'show-model-select-modal': () => showModelSelectModal(),
@@ -164,15 +176,16 @@
           'batch-disable-tokens': () => batchSetSelectedTokensEnabled(false),
           'batch-delete-tokens': () => batchDeleteSelectedTokens(),
           'clear-selected-tokens': () => clearSelectedTokens(),
+          'toggle-token-mobile-details': (actionTarget) => toggleTokenMobileDetails(actionTarget),
           'close-token-group-modal': () => closeTokenGroupModal(),
           'create-token-group': () => createTokenGroupFromModal(),
           'toggle-token-group-section': (actionTarget) => {
             const groupKey = actionTarget.dataset.groupKey;
             if (groupKey !== undefined) toggleTokenGroupCollapsed(groupKey);
           },
-          'toggle-token-group-selection': (actionTarget) => {
-            const groupKey = actionTarget.dataset.groupKey;
-            if (groupKey !== undefined) toggleTokenGroupSelection(groupKey);
+          'edit-token-group-from-view': (actionTarget) => {
+            const groupID = Number(actionTarget.dataset.groupId);
+            if (!Number.isNaN(groupID)) showTokenGroupManager(groupID);
           },
           'edit-token-group': (actionTarget) => {
             const groupID = Number(actionTarget.dataset.groupId);
@@ -244,7 +257,7 @@
       container.addEventListener('change', (e) => {
         const headerCheckbox = e.target.closest('.tokens-visible-selection-checkbox');
         if (headerCheckbox) {
-          toggleVisibleTokensSelection(headerCheckbox.dataset.groupKey || '');
+          setVisibleTokensSelection(headerCheckbox.checked, headerCheckbox.dataset.groupKey || '');
           return;
         }
 
@@ -357,6 +370,30 @@
       return token && token.group_id ? String(token.group_id) : '0';
     }
 
+    function normalizeTokenGroupColor(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function getDefaultTokenGroupColor() {
+      return TOKEN_GROUP_COLOR_PRESETS[0];
+    }
+
+    function isSupportedTokenGroupColor(value) {
+      return TOKEN_GROUP_COLOR_PRESETS.includes(normalizeTokenGroupColor(value));
+    }
+
+    function getTokenGroupColor(value) {
+      const color = normalizeTokenGroupColor(value);
+      if (isSupportedTokenGroupColor(color)) return color;
+      return getDefaultTokenGroupColor();
+    }
+
+    function getTokenGroupColorByID(groupID) {
+      const group = getGroupByID(groupID);
+      if (!group) return getDefaultTokenGroupColor();
+      return getTokenGroupColor(group.color);
+    }
+
     function getTokenComparableTime(value) {
       const numeric = Number(value);
       if (Number.isFinite(numeric) && numeric > 0) return numeric;
@@ -437,6 +474,12 @@
         if (el) el.disabled = isDisabled;
       });
 
+      document.querySelectorAll('.token-select-checkbox').forEach((checkbox) => {
+        const tokenID = normalizeSelectedTokenID(checkbox.dataset.tokenId);
+        checkbox.checked = !!tokenID && selectedTokenIds.has(tokenID);
+        checkbox.disabled = tokenBatchActionInFlight;
+      });
+
       document.querySelectorAll('.tokens-visible-selection-checkbox').forEach((checkbox) => {
         const groupKey = checkbox.dataset.groupKey || '';
         const visibleTokens = getVisibleTokensForSelection(groupKey);
@@ -462,30 +505,22 @@
         }
       });
 
-      document.querySelectorAll('.token-group-select-btn').forEach((button) => {
-        const groupKey = button.dataset.groupKey || '';
-        const visibleTokens = getVisibleTokensForSelection(groupKey);
-        const visibleIDs = visibleTokens.map((token) => normalizeSelectedTokenID(token.id)).filter(Boolean);
-        const selectedVisibleCount = visibleIDs.filter((tokenID) => selectedTokenIds.has(tokenID)).length;
-        const allSelected = visibleIDs.length > 0 && selectedVisibleCount === visibleIDs.length;
-        const actionKey = allSelected ? 'tokens.batchDeselectGroup' : 'tokens.batchSelectGroup';
-        button.disabled = visibleIDs.length === 0 || tokenBatchActionInFlight;
-        button.textContent = t(actionKey);
-      });
     }
 
     function selectAllVisibleTokens(groupKey = '') {
-      getVisibleTokensForSelection(groupKey).forEach((token) => {
-        const tokenID = normalizeSelectedTokenID(token.id);
-        if (tokenID) selectedTokenIds.add(tokenID);
-      });
-      renderTokens();
+      setVisibleTokensSelection(true, groupKey);
     }
 
     function deselectVisibleTokens(groupKey = '') {
+      setVisibleTokensSelection(false, groupKey);
+    }
+
+    function setVisibleTokensSelection(checked, groupKey = '') {
       getVisibleTokensForSelection(groupKey).forEach((token) => {
         const tokenID = normalizeSelectedTokenID(token.id);
-        if (tokenID) selectedTokenIds.delete(tokenID);
+        if (!tokenID) return;
+        if (checked) selectedTokenIds.add(tokenID);
+        else selectedTokenIds.delete(tokenID);
       });
       renderTokens();
     }
@@ -509,8 +544,12 @@
       renderTokens();
     }
 
-    function toggleTokenGroupSelection(groupKey) {
-      toggleVisibleTokensSelection(groupKey);
+    function toggleTokenMobileDetails(actionTarget) {
+      const row = actionTarget.closest('.token-card-row');
+      if (!row) return;
+      const expanded = row.classList.toggle('token-card-row--details-open');
+      actionTarget.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      actionTarget.textContent = t(expanded ? 'tokens.mobileDetailsCollapse' : 'tokens.mobileDetailsExpand');
     }
 
     function updateTokensEmptyState(isSearchEmpty) {
@@ -640,7 +679,6 @@
             <th class="tokens-col-checkbox mobile-card-select-header">
               <label class="tokens-visible-selection-toggle" title="${escapeHtml(t('tokens.batchSelectVisible'))}">
                 <input type="checkbox" class="tokens-visible-selection-checkbox" data-group-key="${escapeHtml(String(selectionGroupKey || ''))}">
-                <span class="tokens-visible-selection-text">${escapeHtml(t('tokens.batchSelectVisible'))}</span>
               </label>
             </th>
             <th>${t('tokens.table.token')}</th>
@@ -681,6 +719,11 @@
       if (!token || !token.group_id) return t('tokens.ungrouped');
       const group = authTokenGroups.find(g => Number(g.id) === Number(token.group_id));
       return (group && group.name) || token.group_name || `${t('tokens.group')} #${token.group_id}`;
+    }
+
+    function getTokenCopyValue(token) {
+      if (!token) return '';
+      return String(token.plain_token || '').trim();
     }
 
     function getGroupSummaryHtml(group) {
@@ -736,23 +779,28 @@
         const visibleIDs = tokens.map((token) => normalizeSelectedTokenID(token.id)).filter(Boolean);
         const selectedVisibleCount = visibleIDs.filter((tokenID) => selectedTokenIds.has(tokenID)).length;
         const allSelected = visibleIDs.length > 0 && selectedVisibleCount === visibleIDs.length;
+        const canEditGroup = group && group.id && !group.__synthetic;
         const section = document.createElement('section');
         section.className = `token-group-section${collapsed ? ' token-group-section--collapsed' : ''}`;
         section.innerHTML = `
-          <button type="button" class="token-group-header" data-action="toggle-token-group-section" data-group-key="${escapeHtml(key)}">
-            <span class="token-group-chevron">${collapsed ? '▶' : '▼'}</span>
-            <span class="token-group-name">${escapeHtml(name || t('tokens.ungrouped'))}</span>
-            <span class="token-group-count">${tokens.length}</span>
+          <div class="token-group-header">
+            <button type="button" class="token-group-toggle" data-action="toggle-token-group-section" data-group-key="${escapeHtml(key)}">
+              <span class="token-group-chevron">${collapsed ? '▶' : '▼'}</span>
+              <span class="token-group-name">${escapeHtml(name || t('tokens.ungrouped'))}</span>
+              <span class="token-group-count">${tokens.length}</span>
+            </button>
             <span class="token-group-summary">${getGroupSummaryHtml(group)}</span>
-          </button>
+            ${canEditGroup ? `
+              <button type="button" class="btn btn-secondary btn-sm token-group-edit-btn" data-action="edit-token-group-from-view" data-group-id="${escapeHtml(group.id)}">
+                ${escapeHtml(t('common.edit'))}
+              </button>
+            ` : ''}
+          </div>
           <div class="token-group-toolbar">
             <label class="tokens-visible-selection-toggle" title="${escapeHtml(t(selectedVisibleCount > 0 ? 'tokens.batchDeselectVisible' : 'tokens.batchSelectVisible'))}">
               <input type="checkbox" class="tokens-visible-selection-checkbox" data-group-key="${escapeHtml(key)}" ${allSelected ? 'checked' : ''}>
               <span class="tokens-visible-selection-text">${escapeHtml(t(selectedVisibleCount > 0 ? 'tokens.batchDeselectVisible' : 'tokens.batchSelectVisible'))}</span>
             </label>
-            <button type="button" class="btn btn-secondary btn-sm token-group-select-btn" data-action="toggle-token-group-selection" data-group-key="${escapeHtml(key)}">
-              ${escapeHtml(t(allSelected ? 'tokens.batchDeselectGroup' : 'tokens.batchSelectGroup'))}
-            </button>
           </div>
         `;
         if (!collapsed) {
@@ -838,19 +886,22 @@
 
       // 使用模板引擎渲染
       const displayToken = token.plain_token || '';
-      const maskedToken = displayToken.length > 8
-        ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
-        : displayToken || '****';
+      const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const isActive = !!token.is_active;
       const toggleTitle = getTokenToggleTitle(token);
       const tokenID = normalizeSelectedTokenID(token.id);
+      const copyTokenValue = getTokenCopyValue(token);
+      const copyTokenTitle = copyTokenValue ? t('common.copy') : t('tokens.msg.noPlainToken');
 
       return TemplateEngine.render('tpl-token-row', {
         id: token.id,
         description: token.description,
         token: displayToken,
         maskedToken: maskedToken,
+        copyTokenValue: copyTokenValue,
+        copyTokenTitle: copyTokenTitle,
+        copyTokenDisabledAttr: copyTokenValue ? '' : 'disabled',
         groupHtml: groupHtml,
         statusClass: status.class,
         createdAt: createdAt,
@@ -886,6 +937,14 @@
         mobileLabelLastUsed: t('tokens.table.lastUsed'),
         mobileLabelActions: t('tokens.table.actions')
       });
+    }
+
+    function maskTokenForDisplay(value) {
+      const displayToken = String(value || '');
+      if (!displayToken) return '****';
+      return displayToken.length > 12
+        ? displayToken.substring(0, 6) + '****' + displayToken.slice(-6)
+        : displayToken;
     }
 
     function formatLastUsedHtml(value, locale) {
@@ -1053,7 +1112,8 @@
       if (token && token.inherit_models) inherits.push(t('tokens.models'));
       const inheritText = inherits.length > 0 ? ` · ${t('tokens.inherit')}: ${inherits.join('/')}` : '';
       const title = inheritText ? `${groupName}${inheritText}` : groupName;
-      return `<span class="token-row-group" title="${escapeHtml(title)}">${escapeHtml(groupName)}</span>`;
+      const color = getTokenGroupColorByID(token && token.group_id);
+      return `<span class="token-row-group" style="--token-group-color:${escapeHtml(color)}" title="${escapeHtml(title)}">${escapeHtml(groupName)}</span>`;
     }
 
     function getTokenToggleTitle(token) {
@@ -1138,12 +1198,12 @@
       const nonStreamCellClass = token.non_stream_count ? '' : ' mobile-empty-cell';
 
       const displayToken = token.plain_token || '';
-      const maskedToken = displayToken.length > 8
-        ? displayToken.substring(0, 4) + '****' + displayToken.slice(-4)
-        : displayToken || '****';
+      const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const enableSwitchHtml = buildTokenEnableSwitchHtml(token);
       const tokenID = normalizeSelectedTokenID(token.id);
+      const copyTokenValue = getTokenCopyValue(token);
+      const copyTokenTitle = copyTokenValue ? t('common.copy') : t('tokens.msg.noPlainToken');
 
       return `
         <tr class="mobile-card-row token-card-row" data-token-id="${token.id}">
@@ -1154,17 +1214,18 @@
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
             <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span></div>
-            <div class="token-row-meta">${groupHtml}<span class="token-row-key">${escapeHtml(maskedToken)}</span></div>
+            <div class="token-row-meta">${groupHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
+            <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>
-          <td class="tokens-col-calls" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
-          <td class="tokens-col-success-rate" data-mobile-label="${t('tokens.table.successRate')}">${successRateHtml}</td>
-          <td class="tokens-col-rpm" data-mobile-label="${t('tokens.table.rpm')}">${rpmHtml}</td>
-          <td class="tokens-col-token-usage" data-mobile-label="${t('tokens.table.tokenUsage')}">${tokensHtml}</td>
-          <td class="tokens-col-cost${costCellClass}" data-mobile-label="${t('tokens.table.totalCost')}">${costHtml}</td>
-          <td class="tokens-col-concurrency" data-mobile-label="${t('tokens.table.concurrency')}">${concurrencyHtml}</td>
-          <td class="tokens-col-stream${streamCellClass}" data-mobile-label="${t('tokens.table.streamAvg')}">${streamAvgHtml}</td>
-          <td class="tokens-col-non-stream${nonStreamCellClass}" data-mobile-label="${t('tokens.table.nonStreamAvg')}">${nonStreamAvgHtml}</td>
-          <td class="tokens-col-enabled" data-mobile-label="${t('channels.table.enabled')}">${enableSwitchHtml}</td>
+          <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
+          <td class="tokens-col-success-rate token-mobile-foldable" data-mobile-label="${t('tokens.table.successRate')}">${successRateHtml}</td>
+          <td class="tokens-col-rpm token-mobile-foldable" data-mobile-label="${t('tokens.table.rpm')}">${rpmHtml}</td>
+          <td class="tokens-col-token-usage token-mobile-foldable" data-mobile-label="${t('tokens.table.tokenUsage')}">${tokensHtml}</td>
+          <td class="tokens-col-cost token-mobile-foldable${costCellClass}" data-mobile-label="${t('tokens.table.totalCost')}">${costHtml}</td>
+          <td class="tokens-col-concurrency token-mobile-foldable" data-mobile-label="${t('tokens.table.concurrency')}">${concurrencyHtml}</td>
+          <td class="tokens-col-stream token-mobile-foldable${streamCellClass}" data-mobile-label="${t('tokens.table.streamAvg')}">${streamAvgHtml}</td>
+          <td class="tokens-col-non-stream token-mobile-foldable${nonStreamCellClass}" data-mobile-label="${t('tokens.table.nonStreamAvg')}">${nonStreamAvgHtml}</td>
+          <td class="tokens-col-enabled token-mobile-foldable" data-mobile-label="${t('channels.table.enabled')}">${enableSwitchHtml}</td>
           <td class="tokens-col-last-used" data-mobile-label="${t('tokens.table.lastUsed')}">${lastUsed}</td>
           <td class="tokens-col-actions" data-mobile-label="${t('tokens.table.actions')}">
             <div class="token-row-actions">
@@ -1262,6 +1323,15 @@
       window.copyToClipboard(value).then(() => {
         window.showNotification(t('tokens.msg.copySuccess'), 'success');
       });
+    }
+
+    function copyTokenKey(actionTarget) {
+      const value = String(actionTarget?.dataset?.tokenValue || '').trim();
+      if (!value) {
+        window.showNotification(t('tokens.msg.noPlainToken'), 'warning');
+        return;
+      }
+      copyTokenToClipboard(value);
     }
 
     function copyEditToken() {
@@ -1747,17 +1817,20 @@
         const el = document.getElementById(id);
         if (el) el.value = value;
       });
+      setTokenGroupColorValue(getDefaultTokenGroupColor());
       tokenGroupAllowedChannelIDs = [];
       tokenGroupAllowedModels = [];
       renderTokenGroupRestrictionSummaries();
     }
 
-    async function showTokenGroupManager() {
+    async function showTokenGroupManager(groupID = 0) {
       await ensureAuthTokenGroupsLoaded();
+      renderTokenGroupColorPicker();
       renderTokenGroupList();
       resetTokenGroupForm();
       document.getElementById('tokenGroupModal').style.display = 'block';
       pushModal(closeTokenGroupModal);
+      if (groupID) editTokenGroupInModal(groupID);
     }
 
     function closeTokenGroupModal() {
@@ -1780,10 +1853,11 @@
         const quota = Number(group.cost_limit_usd || 0) > 0
           ? `$${Number(group.cost_limit_usd).toFixed(2)} / ${group.max_concurrency || 0}`
           : t('tokens.unlimited');
+        const groupColor = getTokenGroupColor(group.color);
         return `
           <div class="token-group-list-item" data-action="edit-token-group" data-group-id="${group.id}">
             <div class="token-group-list-main">
-              <div class="token-group-list-name">${escapeHtml(group.name)}</div>
+              <div class="token-group-list-name"><span class="token-group-list-color" style="--token-group-color:${escapeHtml(groupColor)}" aria-hidden="true"></span>${escapeHtml(group.name)}</div>
               <div class="token-group-list-desc">${escapeHtml(group.description || '')}</div>
               <div class="token-group-list-meta">
                 <span>${escapeHtml(t('tokens.quota'))}: ${escapeHtml(quota)}</span>
@@ -1817,6 +1891,7 @@
       document.getElementById('tokenGroupDescription').value = group.description || '';
       document.getElementById('tokenGroupCostLimitUSD').value = group.cost_limit_usd || 0;
       document.getElementById('tokenGroupMaxConcurrency').value = group.max_concurrency || 0;
+      setTokenGroupColorValue(group.color);
       tokenGroupAllowedChannelIDs = (group.allowed_channel_ids || []).map((id) => Number(id)).filter((id) => id > 0);
       tokenGroupAllowedModels = (group.allowed_models || []).slice();
       renderTokenGroupRestrictionSummaries();
@@ -1842,6 +1917,7 @@
           body: JSON.stringify({
             name: defaultName,
             description: '',
+            color: getDefaultTokenGroupColor(),
             cost_limit_usd: 0,
             max_concurrency: 0,
             allowed_channel_ids: [],
@@ -1867,6 +1943,7 @@
       const id = Number(document.getElementById('tokenGroupEditId')?.value) || 0;
       const name = (document.getElementById('tokenGroupName')?.value || '').trim();
       const description = (document.getElementById('tokenGroupDescription')?.value || '').trim();
+      const color = getTokenGroupColor(document.getElementById('tokenGroupColor')?.value);
       const costLimitUSD = parseFloat(document.getElementById('tokenGroupCostLimitUSD')?.value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenGroupMaxConcurrency')?.value);
       if (!name) {
@@ -1888,6 +1965,7 @@
           body: JSON.stringify({
             name,
             description,
+            color,
             cost_limit_usd: costLimitUSD,
             max_concurrency: maxConcurrencyResult.value,
             allowed_channel_ids: tokenGroupAllowedChannelIDs,
@@ -1941,6 +2019,41 @@
         console.error('Failed to delete token group:', error);
         window.showNotification(t('tokens.msg.groupDeleteFailed') + ': ' + error.message, 'error');
       }
+    }
+
+    function renderTokenGroupColorPicker() {
+      const container = document.getElementById('tokenGroupColorPicker');
+      if (!container) return;
+      const selectedColor = getTokenGroupColor(document.getElementById('tokenGroupColor')?.value);
+      container.innerHTML = TOKEN_GROUP_COLOR_PRESETS.map((color) => {
+        const checked = color === selectedColor;
+        return `
+          <button type="button" class="token-group-color-option${checked ? ' is-active' : ''}" data-token-group-color="${color}"
+            style="--token-group-color:${color}" aria-label="${escapeHtml(color)}" aria-pressed="${checked}">
+            <span class="token-group-color-option__dot" aria-hidden="true"></span>
+          </button>
+        `;
+      }).join('');
+
+      if (!container.dataset.bound) {
+        container.addEventListener('click', (event) => {
+          const option = event.target.closest('[data-token-group-color]');
+          if (!option) return;
+          setTokenGroupColorValue(option.dataset.tokenGroupColor || '');
+        });
+        container.dataset.bound = '1';
+      }
+    }
+
+    function setTokenGroupColorValue(value) {
+      const color = getTokenGroupColor(value);
+      const input = document.getElementById('tokenGroupColor');
+      if (input) input.value = color;
+      document.querySelectorAll('#tokenGroupColorPicker [data-token-group-color]').forEach((option) => {
+        const active = getTokenGroupColor(option.dataset.tokenGroupColor) === color;
+        option.classList.toggle('is-active', active);
+        option.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
     }
 
     // ============================================================================

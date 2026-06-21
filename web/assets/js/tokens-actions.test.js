@@ -25,6 +25,7 @@ test('tokens 操作列使用图标按钮而不是文字按钮', () => {
   assert.match(template, /<button[^>]*class="btn-icon btn-edit[\s\S]*?<svg[\s\S]*?aria-hidden="true"[\s\S]*?<\/button>/);
   assert.match(template, /<button[^>]*class="btn-icon btn-danger btn-delete[\s\S]*?<svg[\s\S]*?aria-hidden="true"[\s\S]*?<\/button>/);
 
+  assert.match(template, /class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*data-token-value="\{\{copyTokenValue\}\}"/);
   assert.doesNotMatch(template, /btn-copy-token/);
   assert.doesNotMatch(template, /<button[^>]*data-i18n="common\.(?:edit|delete)"[^>]*>/);
   assert.doesNotMatch(template, />\s*(?:编辑|删除)\s*<\/button>/);
@@ -85,9 +86,15 @@ test('tokens 列表支持默认按最后使用排序与批量选择', () => {
   assert.match(tokensScript, /class="tokens-visible-selection-checkbox" data-group-key="\$\{escapeHtml\(String\(selectionGroupKey \|\| ''\)\)\}"/);
   assert.match(tokensScript, /selectedTokenIds = new Set|let selectedTokenIds = new Set\(\);/);
   assert.match(tokensScript, /function updateBatchTokenSelectionUI\(\)/);
+  assert.match(tokensScript, /document\.querySelectorAll\('\.token-select-checkbox'\)\.forEach/);
+  assert.match(tokensScript, /checkbox\.checked = !!tokenID && selectedTokenIds\.has\(tokenID\);/);
   assert.match(tokensScript, /function batchSetSelectedTokensEnabled\(isActive\)/);
   assert.match(tokensScript, /function batchDeleteSelectedTokens\(\)/);
-  assert.match(tokensScript, /function toggleTokenGroupSelection\(groupKey\)/);
+  assert.match(tokensScript, /function setVisibleTokensSelection\(checked,\s*groupKey = ''\)/);
+  assert.match(tokensScript, /setVisibleTokensSelection\(headerCheckbox\.checked,\s*headerCheckbox\.dataset\.groupKey \|\| ''\)/);
+  assert.doesNotMatch(tokensScript, /token-group-select-btn/);
+  assert.doesNotMatch(tokensScript, /toggle-token-group-selection/);
+  assert.doesNotMatch(tokensScript, /<span class="tokens-visible-selection-text">\$\{escapeHtml\(t\('tokens\.batchSelectVisible'\)\)\}<\/span>/);
 });
 
 test('tokens 分组管理弹窗改为左窄右宽，右侧渠道和模型使用双主区块布局', () => {
@@ -103,6 +110,20 @@ test('tokens 分组管理弹窗改为左窄右宽，右侧渠道和模型使用�
   assert.match(tokensCss, /\.token-group-basic-field\s*\{[\s\S]*?grid-template-columns:\s*76px\s+minmax\(0,\s*1fr\);[\s\S]*?align-items:\s*center;/);
   assert.match(tokensCss, /\.token-group-main\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\);/);
   assert.match(tokensCss, /\.token-group-restrictions__list\s*\{[\s\S]*?flex:\s*1\s+1\s+auto;[\s\S]*?min-height:\s*200px;/);
+});
+
+test('tokens 分组管理支持预设颜色并在列表/令牌徽标中展示颜色', () => {
+  assert.match(tokensHtml, /id="tokenGroupColorPicker"/);
+  assert.match(tokensHtml, /id="tokenGroupColor" value="#64748b"/);
+  assert.match(tokensScript, /const TOKEN_GROUP_COLOR_PRESETS = \[/);
+  assert.match(tokensScript, /function renderTokenGroupColorPicker\(\)/);
+  assert.match(tokensScript, /function setTokenGroupColorValue\(value\)/);
+  assert.match(tokensScript, /style="--token-group-color:\$\{escapeHtml\(groupColor\)\}"/);
+  assert.match(tokensScript, /style="--token-group-color:\$\{escapeHtml\(color\)\}"/);
+  assert.match(tokensCss, /\.token-group-color-picker\s*\{/);
+  assert.match(tokensCss, /\.token-group-color-option\.is-active\s*\{/);
+  assert.match(tokensCss, /\.token-group-list-color\s*\{/);
+  assert.match(tokensCss, /\.token-row-group\s*\{[\s\S]*?--token-group-color/);
 });
 
 test('tokens 分组管理左侧摘要压成单行，整行可编辑且子弹窗层级高于父弹窗', () => {
@@ -131,8 +152,28 @@ test('tokens 页列表/分组视图切换会切到分组渲染并切换 active �
   assert.match(tokensScript, /if \(tokenViewMode === 'group'\) \{[\s\S]*?renderGroupedTokens\(container,\s*visibleTokens\);[\s\S]*?\} else \{[\s\S]*?container\.appendChild\(createTokensTable\(visibleTokens\)\);[\s\S]*?\}/);
   assert.match(tokensScript, /if \(listBtn\) listBtn\.classList\.toggle\('active', tokenViewMode !== 'group'\);/);
   assert.match(tokensScript, /if \(groupBtn\) groupBtn\.classList\.toggle\('active', tokenViewMode === 'group'\);/);
+  assert.match(tokensScript, /localStorage\.getItem\('tokens\.viewMode'\) \|\| 'group'/);
+  assert.match(tokensHtml, /id="tokenGroupViewBtn"[\s\S]*id="tokenListViewBtn"/);
   assert.match(tokensHtml, /data-action="set-token-view-list"/);
   assert.match(tokensHtml, /data-action="set-token-view-group"/);
+});
+
+test('tokens 分组视图提供编辑分组按钮并移除全选分组按钮', () => {
+  assert.match(tokensScript, /'edit-token-group-from-view': \(actionTarget\) => \{/);
+  assert.match(tokensScript, /showTokenGroupManager\(groupID\)/);
+  assert.match(tokensScript, /class="btn btn-secondary btn-sm token-group-edit-btn" data-action="edit-token-group-from-view"/);
+  assert.match(tokensScript, /async function showTokenGroupManager\(groupID = 0\)/);
+  assert.match(tokensScript, /if \(groupID\) editTokenGroupInModal\(groupID\);/);
+  assert.match(tokensCss, /\.token-group-toggle\s*\{/);
+  assert.match(tokensCss, /\.token-group-edit-btn\s*\{/);
+  assert.doesNotMatch(tokensScript, /data-action="toggle-token-group-selection"/);
+  assert.doesNotMatch(tokensScript, /class="btn btn-secondary btn-sm token-group-select-btn"/);
+});
+
+test('tokens Key 展示长度改为 16 位并复用统一掩码函数', () => {
+  assert.match(tokensScript, /function maskTokenForDisplay\(value\)/);
+  assert.match(tokensScript, /displayToken\.substring\(0,\s*6\) \+ '\*\*\*\*' \+ displayToken\.slice\(-6\)/);
+  assert.doesNotMatch(tokensScript, /substring\(0,\s*4\) \+ '\*\*\*\*' \+ displayToken\.slice\(-4\)/);
 });
 
 test('tokens 增删改后等待列表刷新完成', () => {

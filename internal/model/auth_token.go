@@ -81,6 +81,7 @@ type AuthTokenGroup struct {
 	ID                int64     `json:"id"`
 	Name              string    `json:"name"`
 	Description       string    `json:"description"`
+	Color             string    `json:"color"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	CostLimitMicroUSD int64     `json:"-"`
@@ -88,6 +89,39 @@ type AuthTokenGroup struct {
 	AllowedModels     []string  `json:"allowed_models,omitempty"`
 	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
 	TokenCount        int       `json:"token_count,omitempty"`
+}
+
+const DefaultAuthTokenGroupColor = "#64748b"
+
+var authTokenGroupColorPalette = map[string]struct{}{
+	"#64748b": {},
+	"#ef4444": {},
+	"#f97316": {},
+	"#f59e0b": {},
+	"#22c55e": {},
+	"#14b8a6": {},
+	"#3b82f6": {},
+	"#8b5cf6": {},
+}
+
+func NormalizeAuthTokenGroupColor(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func IsSupportedAuthTokenGroupColor(value string) bool {
+	_, ok := authTokenGroupColorPalette[NormalizeAuthTokenGroupColor(value)]
+	return ok
+}
+
+func CanonicalAuthTokenGroupColor(value string) string {
+	color := NormalizeAuthTokenGroupColor(value)
+	if color == "" {
+		return DefaultAuthTokenGroupColor
+	}
+	if IsSupportedAuthTokenGroupColor(color) {
+		return color
+	}
+	return DefaultAuthTokenGroupColor
 }
 
 // AuthTokenRangeStats 某个时间范围内的token统计（从logs表聚合，2025-12新增）
@@ -306,6 +340,7 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	if strings.TrimSpace(g.Name) == "" {
 		return errors.New("name is required")
 	}
+	g.Color = CanonicalAuthTokenGroupColor(g.Color)
 	if g.CostLimitMicroUSD < 0 {
 		return errors.New("cost_limit_usd must be >= 0")
 	}
@@ -427,6 +462,7 @@ type authTokenGroupJSON struct {
 	ID                int64     `json:"id"`
 	Name              string    `json:"name"`
 	Description       string    `json:"description"`
+	Color             string    `json:"color"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	CostLimitUSD      float64   `json:"cost_limit_usd"`
@@ -442,6 +478,7 @@ func (g AuthTokenGroup) MarshalJSON() ([]byte, error) {
 		ID:                g.ID,
 		Name:              g.Name,
 		Description:       g.Description,
+		Color:             CanonicalAuthTokenGroupColor(g.Color),
 		CreatedAt:         g.CreatedAt,
 		UpdatedAt:         g.UpdatedAt,
 		CostLimitUSD:      g.CostLimitUSD(),

@@ -52,8 +52,8 @@
                   + 创建令牌
                 </button>
                 <span class="tokens-view-switch" role="group" data-i18n-aria-label="tokens.viewSwitcher" aria-label="令牌视图切换">
-                  <button id="tokenListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-list" data-i18n="tokens.listView">列表视图</button>
                   <button id="tokenGroupViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-group" data-i18n="tokens.groupView">分组视图</button>
+                  <button id="tokenListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-list" data-i18n="tokens.listView">列表视图</button>
                 </span>
                 <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-manager" data-i18n="tokens.groupManager">分组管理</button>
               </div>
@@ -89,6 +89,7 @@
                 </div>
               </div>
             </div>
+            <div class="token-batch-divider" aria-hidden="true"></div>
             <div class="token-batch-actions">
               <button id="batchEnableTokensBtn" type="button" class="btn btn-sm token-batch-action token-batch-action--enable"
                 data-action="batch-enable-tokens" disabled>
@@ -507,7 +508,14 @@
         </div>
         <div class="token-group-form-panel">
           <section class="token-edit-section token-group-basic-section">
-            <h3 class="token-edit-section-title" data-i18n="tokens.groupEdit">编辑分组</h3>
+            <div class="token-group-basic-title-row">
+              <h3 class="token-edit-section-title" data-i18n="tokens.groupEdit">编辑分组</h3>
+              <div class="token-group-color-control">
+                <span class="token-group-color-label" data-i18n="tokens.groupColor">颜色</span>
+                <div id="tokenGroupColorPicker" class="token-group-color-picker" role="radiogroup" aria-label="分组颜色"></div>
+                <input type="hidden" id="tokenGroupColor" value="#64748b">
+              </div>
+            </div>
             <input type="hidden" id="tokenGroupEditId">
             <div class="token-group-basic-grid">
               <div class="form-group token-group-basic-field">
@@ -591,18 +599,20 @@
         <div class="token-row-description"><span class="token-row-name">{{description}}</span></div>
         <div class="token-row-meta">
           {{{groupHtml}}}
-          <span class="token-row-key">{{maskedToken}}</span>
+          <button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="{{copyTokenValue}}"
+            title="{{copyTokenTitle}}" aria-label="{{copyTokenTitle}}" {{copyTokenDisabledAttr}}>{{maskedToken}}</button>
         </div>
+        <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false" data-i18n="tokens.mobileDetailsExpand">展开</button>
       </td>
-      <td class="tokens-col-calls" data-mobile-label="{{mobileLabelCalls}}">{{{callsHtml}}}</td>
-      <td class="tokens-col-success-rate" data-mobile-label="{{mobileLabelSuccessRate}}">{{{successRateHtml}}}</td>
-      <td class="tokens-col-rpm" data-mobile-label="{{mobileLabelRpm}}">{{{rpmHtml}}}</td>
-      <td class="tokens-col-token-usage" data-mobile-label="{{mobileLabelTokenUsage}}">{{{tokensHtml}}}</td>
-      <td class="tokens-col-cost {{costCellClass}}" data-mobile-label="{{mobileLabelCost}}">{{{costHtml}}}</td>
-      <td class="tokens-col-concurrency" data-mobile-label="{{mobileLabelConcurrency}}">{{{concurrencyHtml}}}</td>
-      <td class="tokens-col-stream {{streamCellClass}}" data-mobile-label="{{mobileLabelStream}}">{{{streamAvgHtml}}}</td>
-      <td class="tokens-col-non-stream {{nonStreamCellClass}}" data-mobile-label="{{mobileLabelNonStream}}">{{{nonStreamAvgHtml}}}</td>
-      <td class="tokens-col-enabled" data-mobile-label="{{mobileLabelEnabled}}">
+      <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="{{mobileLabelCalls}}">{{{callsHtml}}}</td>
+      <td class="tokens-col-success-rate token-mobile-foldable" data-mobile-label="{{mobileLabelSuccessRate}}">{{{successRateHtml}}}</td>
+      <td class="tokens-col-rpm token-mobile-foldable" data-mobile-label="{{mobileLabelRpm}}">{{{rpmHtml}}}</td>
+      <td class="tokens-col-token-usage token-mobile-foldable" data-mobile-label="{{mobileLabelTokenUsage}}">{{{tokensHtml}}}</td>
+      <td class="tokens-col-cost token-mobile-foldable {{costCellClass}}" data-mobile-label="{{mobileLabelCost}}">{{{costHtml}}}</td>
+      <td class="tokens-col-concurrency token-mobile-foldable" data-mobile-label="{{mobileLabelConcurrency}}">{{{concurrencyHtml}}}</td>
+      <td class="tokens-col-stream token-mobile-foldable {{streamCellClass}}" data-mobile-label="{{mobileLabelStream}}">{{{streamAvgHtml}}}</td>
+      <td class="tokens-col-non-stream token-mobile-foldable {{nonStreamCellClass}}" data-mobile-label="{{mobileLabelNonStream}}">{{{nonStreamAvgHtml}}}</td>
+      <td class="tokens-col-enabled token-mobile-foldable" data-mobile-label="{{mobileLabelEnabled}}">
         <button type="button" class="token-enable-switch {{tokenEnableSwitchClass}}" data-action="toggle-token-active"
           data-token-id="{{id}}" data-enabled="{{isActive}}" role="switch" aria-checked="{{isActive}}"
           title="{{toggleTitle}}" aria-label="{{toggleTitle}}">
