@@ -266,13 +266,14 @@ func applyAuthTokenGroupEffective(tokens []*model.AuthToken, groupByID map[int64
 func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	var req struct {
 		Description       string   `json:"description" binding:"required"`
-		ExpiresAt         *int64   `json:"expires_at"`          // Unix毫秒时间戳，nil表示永不过期
-		IsActive          *bool    `json:"is_active"`           // nil表示默认启用
-		AllowedModels     []string `json:"allowed_models"`      // 允许的模型列表，空表示无限制
-		AllowedChannelIDs []int64  `json:"allowed_channel_ids"` // 允许的渠道ID列表，空表示无限制
-		CostLimitUSD      *float64 `json:"cost_limit_usd"`      // 费用上限（0=无限制）
-		MaxConcurrency    *int     `json:"max_concurrency"`     // 最大并发请求数（0=无限制）
-		GroupID           *int64   `json:"group_id"`            // 分组ID，0/空表示未分组
+		ExpiresAt         *int64   `json:"expires_at"`           // Unix毫秒时间戳，nil表示永不过期
+		IsActive          *bool    `json:"is_active"`            // nil表示默认启用
+		AllowedModels     []string `json:"allowed_models"`       // 允许的模型列表，空表示无限制
+		AllowedChannelIDs []int64  `json:"allowed_channel_ids"`  // 允许的渠道ID列表，空表示无限制
+		CostLimitUSD      *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
+		DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		MaxConcurrency    *int     `json:"max_concurrency"`      // 最大并发请求数（0=无限制）
+		GroupID           *int64   `json:"group_id"`             // 分组ID，0/空表示未分组
 		InheritQuota      *bool    `json:"inherit_quota"`
 		InheritChannels   *bool    `json:"inherit_channels"`
 		InheritModels     *bool    `json:"inherit_models"`
@@ -284,6 +285,10 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 	if req.CostLimitUSD != nil && *req.CostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
+		return
+	}
+	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {
@@ -341,6 +346,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	if req.CostLimitUSD != nil {
 		authToken.SetCostLimitUSD(*req.CostLimitUSD)
 	}
+	if req.DailyCostLimitUSD != nil {
+		authToken.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
+	}
 	if req.MaxConcurrency != nil {
 		authToken.MaxConcurrency = *req.MaxConcurrency
 	}
@@ -374,19 +382,20 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 
 	// 返回明文令牌
 	RespondJSON(c, http.StatusOK, gin.H{
-		"id":                  authToken.ID,
-		"token":               tokenPlain, // 明文令牌，仅创建时返回
-		"description":         authToken.Description,
-		"created_at":          authToken.CreatedAt,
-		"expires_at":          authToken.ExpiresAt,
-		"is_active":           authToken.IsActive,
-		"allowed_models":      authToken.AllowedModels,
-		"allowed_channel_ids": authToken.AllowedChannelIDs,
-		"max_concurrency":     authToken.MaxConcurrency,
-		"group_id":            authToken.GroupID,
-		"inherit_quota":       authToken.InheritQuota,
-		"inherit_channels":    authToken.InheritChannels,
-		"inherit_models":      authToken.InheritModels,
+		"id":                   authToken.ID,
+		"token":                tokenPlain, // 明文令牌，仅创建时返回
+		"description":          authToken.Description,
+		"created_at":           authToken.CreatedAt,
+		"expires_at":           authToken.ExpiresAt,
+		"is_active":            authToken.IsActive,
+		"allowed_models":       authToken.AllowedModels,
+		"allowed_channel_ids":  authToken.AllowedChannelIDs,
+		"daily_cost_limit_usd": authToken.DailyCostLimitUSD(),
+		"max_concurrency":      authToken.MaxConcurrency,
+		"group_id":             authToken.GroupID,
+		"inherit_quota":        authToken.InheritQuota,
+		"inherit_channels":     authToken.InheritChannels,
+		"inherit_models":       authToken.InheritModels,
 	})
 }
 
@@ -404,11 +413,12 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		Description       *string           `json:"description"`
 		IsActive          *bool             `json:"is_active"`
 		ExpiresAt         optionalInt64JSON `json:"expires_at"`
-		AllowedModels     *[]string         `json:"allowed_models"`      // nil=不更新，空数组=清除限制
-		AllowedChannelIDs *[]int64          `json:"allowed_channel_ids"` // nil=不更新，空数组=清除限制
-		CostLimitUSD      *float64          `json:"cost_limit_usd"`      // 费用上限（0=无限制）
-		MaxConcurrency    *int              `json:"max_concurrency"`     // 最大并发请求数（0=无限制）
-		GroupID           *int64            `json:"group_id"`            // 分组ID，0表示未分组
+		AllowedModels     *[]string         `json:"allowed_models"`       // nil=不更新，空数组=清除限制
+		AllowedChannelIDs *[]int64          `json:"allowed_channel_ids"`  // nil=不更新，空数组=清除限制
+		CostLimitUSD      *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
+		DailyCostLimitUSD *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		MaxConcurrency    *int              `json:"max_concurrency"`      // 最大并发请求数（0=无限制）
+		GroupID           *int64            `json:"group_id"`             // 分组ID，0表示未分组
 		InheritQuota      *bool             `json:"inherit_quota"`
 		InheritChannels   *bool             `json:"inherit_channels"`
 		InheritModels     *bool             `json:"inherit_models"`
@@ -420,6 +430,10 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.CostLimitUSD != nil && *req.CostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
+		return
+	}
+	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {
@@ -484,6 +498,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	// cost_limit_usd 只有传入时才更新
 	if req.CostLimitUSD != nil {
 		token.SetCostLimitUSD(*req.CostLimitUSD)
+	}
+	if req.DailyCostLimitUSD != nil {
+		token.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
 	}
 	if req.MaxConcurrency != nil {
 		token.MaxConcurrency = *req.MaxConcurrency

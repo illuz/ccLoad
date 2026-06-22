@@ -44,8 +44,9 @@ func NormalizeProtocolTransformMode(value string) string {
 
 // ModelEntry 模型配置条目
 type ModelEntry struct {
-	Model         string `json:"model"`                    // 模型名称
-	RedirectModel string `json:"redirect_model,omitempty"` // 重定向目标模型（空表示不重定向）
+	Model               string  `json:"model"`                            // 模型名称
+	RedirectModel       string  `json:"redirect_model,omitempty"`         // 重定向目标模型（空表示不重定向）
+	FixedCostPerRequest float64 `json:"fixed_cost_per_request,omitempty"` // 按次价格（美元，0表示禁用）
 }
 
 // Validate 验证并规范化模型条目
@@ -63,6 +64,9 @@ func (e *ModelEntry) Validate() error {
 	e.RedirectModel = strings.TrimSpace(e.RedirectModel)
 	if strings.ContainsAny(e.RedirectModel, "\x00\r\n") {
 		return errors.New("redirect_model contains illegal characters")
+	}
+	if e.FixedCostPerRequest < 0 {
+		return errors.New("fixed_cost_per_request must be >= 0")
 	}
 	return nil
 }
@@ -119,6 +123,8 @@ type Config struct {
 
 	// 模型配置（统一管理模型和重定向）
 	ModelEntries []ModelEntry `json:"models"`
+	// 模型按次计费开关：开启后允许为每个模型配置 fixed_cost_per_request
+	ModelFixedPriceEnabled bool `json:"model_fixed_price_enabled,omitempty"`
 
 	// 渠道级冷却（从cooldowns表迁移）
 	CooldownUntil      int64 `json:"cooldown_until"`       // Unix秒时间戳，0表示无冷却
@@ -158,28 +164,29 @@ func (c *Config) Clone() *Config {
 		return nil
 	}
 	dst := &Config{
-		ID:                    c.ID,
-		Name:                  c.Name,
-		ChannelType:           c.ChannelType,
-		ProtocolTransformMode: c.ProtocolTransformMode,
-		ProtocolTransforms:    append([]string(nil), c.ProtocolTransforms...),
-		URL:                   c.URL,
-		Priority:              c.Priority,
-		RPMLimit:              c.RPMLimit,
-		MaxConcurrency:        c.MaxConcurrency,
-		Enabled:               c.Enabled,
-		ScheduledCheckEnabled: c.ScheduledCheckEnabled,
-		ScheduledCheckModel:   c.ScheduledCheckModel,
-		CooldownUntil:         c.CooldownUntil,
-		CooldownDurationMs:    c.CooldownDurationMs,
-		DailyCostLimit:        c.DailyCostLimit,
-		CostMultiplier:        c.CostMultiplier,
-		CustomRequestRules:    c.CustomRequestRules,
-		ProxyURL:              c.ProxyURL,
-		CreatedAt:             c.CreatedAt,
-		UpdatedAt:             c.UpdatedAt,
-		KeyCount:              c.KeyCount,
-		CooldownFallback:      c.CooldownFallback,
+		ID:                     c.ID,
+		Name:                   c.Name,
+		ChannelType:            c.ChannelType,
+		ProtocolTransformMode:  c.ProtocolTransformMode,
+		ProtocolTransforms:     append([]string(nil), c.ProtocolTransforms...),
+		URL:                    c.URL,
+		Priority:               c.Priority,
+		RPMLimit:               c.RPMLimit,
+		MaxConcurrency:         c.MaxConcurrency,
+		Enabled:                c.Enabled,
+		ScheduledCheckEnabled:  c.ScheduledCheckEnabled,
+		ScheduledCheckModel:    c.ScheduledCheckModel,
+		CooldownUntil:          c.CooldownUntil,
+		CooldownDurationMs:     c.CooldownDurationMs,
+		DailyCostLimit:         c.DailyCostLimit,
+		CostMultiplier:         c.CostMultiplier,
+		CustomRequestRules:     c.CustomRequestRules,
+		ProxyURL:               c.ProxyURL,
+		CreatedAt:              c.CreatedAt,
+		UpdatedAt:              c.UpdatedAt,
+		KeyCount:               c.KeyCount,
+		CooldownFallback:       c.CooldownFallback,
+		ModelFixedPriceEnabled: c.ModelFixedPriceEnabled,
 	}
 	if c.ModelEntries != nil {
 		dst.ModelEntries = make([]ModelEntry, len(c.ModelEntries))
@@ -335,6 +342,17 @@ func (c *Config) SupportsModel(model string) bool {
 	defer c.indexMu.RUnlock()
 	_, exists := c.modelIndex[model]
 	return exists
+}
+
+// GetFixedCostPerRequest 获取模型按次价格（美元）
+func (c *Config) GetFixedCostPerRequest(model string) (float64, bool) {
+	c.buildIndexIfNeeded()
+	c.indexMu.RLock()
+	defer c.indexMu.RUnlock()
+	if entry, exists := c.modelIndex[model]; exists && entry.FixedCostPerRequest > 0 {
+		return entry.FixedCostPerRequest, true
+	}
+	return 0, false
 }
 
 // GetChannelType 默认返回"anthropic"（Claude API）

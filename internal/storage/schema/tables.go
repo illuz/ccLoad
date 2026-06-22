@@ -18,6 +18,7 @@ func DefineChannelsTable() *TableBuilder {
 		Column("cooldown_duration_ms BIGINT NOT NULL DEFAULT 0").
 		Column("daily_cost_limit DOUBLE NOT NULL DEFAULT 0").
 		Column("cost_multiplier DOUBLE NOT NULL DEFAULT 1").
+		Column("model_fixed_price_enabled TINYINT NOT NULL DEFAULT 0").
 		Column("custom_request_rules TEXT").
 		Column("proxy_url VARCHAR(255) NOT NULL DEFAULT ''").
 		Column("created_at BIGINT NOT NULL").
@@ -53,6 +54,7 @@ func DefineChannelModelsTable() *TableBuilder {
 		Column("channel_id INT NOT NULL").
 		Column("model VARCHAR(191) NOT NULL").
 		Column("redirect_model VARCHAR(191) NOT NULL DEFAULT ''"). // 重定向目标模型（空表示不重定向）
+		Column("fixed_cost_per_request DOUBLE NOT NULL DEFAULT 0").
 		Column("created_at BIGINT NOT NULL DEFAULT 0").
 		Column("PRIMARY KEY (channel_id, model)").
 		Column("FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE").
@@ -107,6 +109,9 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("total_cost_usd DOUBLE NOT NULL DEFAULT 0.0").
 		Column("cost_used_microusd BIGINT NOT NULL DEFAULT 0").
 		Column("cost_limit_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("daily_cost_used_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("daily_cost_limit_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("daily_cost_day_key INT NOT NULL DEFAULT 0").
 		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("max_concurrency INT NOT NULL DEFAULT 0").

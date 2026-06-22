@@ -59,14 +59,22 @@ func TestAuthToken_CostConversions(t *testing.T) {
 	t.Parallel()
 
 	token := &AuthToken{
-		CostUsedMicroUSD:  1_230_000, // $1.23
-		CostLimitMicroUSD: 4_500_000, // $4.50
+		CostUsedMicroUSD:       1_230_000, // $1.23
+		CostLimitMicroUSD:      4_500_000, // $4.50
+		DailyCostUsedMicroUSD:  120_000,   // $0.12
+		DailyCostLimitMicroUSD: 900_000,   // $0.90
 	}
 	if got := token.CostUsedUSD(); math.Abs(got-1.23) > 1e-9 {
 		t.Fatalf("CostUsedUSD() = %v, want 1.23", got)
 	}
 	if got := token.CostLimitUSD(); math.Abs(got-4.5) > 1e-9 {
 		t.Fatalf("CostLimitUSD() = %v, want 4.5", got)
+	}
+	if got := token.DailyCostUsedUSD(); math.Abs(got-0.12) > 1e-9 {
+		t.Fatalf("DailyCostUsedUSD() = %v, want 0.12", got)
+	}
+	if got := token.DailyCostLimitUSD(); math.Abs(got-0.9) > 1e-9 {
+		t.Fatalf("DailyCostLimitUSD() = %v, want 0.9", got)
 	}
 
 	token.SetCostLimitUSD(0)
@@ -78,20 +86,27 @@ func TestAuthToken_CostConversions(t *testing.T) {
 	if token.CostLimitMicroUSD != 1_500_000 {
 		t.Fatalf("SetCostLimitUSD(1.5) microUSD = %d, want 1500000", token.CostLimitMicroUSD)
 	}
+
+	token.SetDailyCostLimitUSD(0.75)
+	if token.DailyCostLimitMicroUSD != 750_000 {
+		t.Fatalf("SetDailyCostLimitUSD(0.75) microUSD = %d, want 750000", token.DailyCostLimitMicroUSD)
+	}
 }
 
 func TestAuthToken_MarshalJSON_ExposesCostFields(t *testing.T) {
 	t.Parallel()
 
 	token := AuthToken{
-		ID:                123,
-		Token:             "hash",
-		IsActive:          true,
-		CostUsedMicroUSD:  250_000, // $0.25
-		CostLimitMicroUSD: 2_000_000,
-		AllowedModels:     []string{"gpt-4"},
-		AllowedChannelIDs: []int64{11, 22},
-		MaxConcurrency:    3,
+		ID:                     123,
+		Token:                  "hash",
+		IsActive:               true,
+		CostUsedMicroUSD:       250_000, // $0.25
+		CostLimitMicroUSD:      2_000_000,
+		DailyCostUsedMicroUSD:  50_000,
+		DailyCostLimitMicroUSD: 800_000,
+		AllowedModels:          []string{"gpt-4"},
+		AllowedChannelIDs:      []int64{11, 22},
+		MaxConcurrency:         3,
 	}
 
 	b, err := json.Marshal(token)
@@ -100,10 +115,12 @@ func TestAuthToken_MarshalJSON_ExposesCostFields(t *testing.T) {
 	}
 
 	var got struct {
-		CostUsedUSD      float64 `json:"cost_used_usd"`
-		CostLimitUSD     float64 `json:"cost_limit_usd"`
-		AllowedChannelID []int64 `json:"allowed_channel_ids"`
-		MaxConcurrency   int     `json:"max_concurrency"`
+		CostUsedUSD       float64 `json:"cost_used_usd"`
+		CostLimitUSD      float64 `json:"cost_limit_usd"`
+		DailyCostUsedUSD  float64 `json:"daily_cost_used_usd"`
+		DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
+		AllowedChannelID  []int64 `json:"allowed_channel_ids"`
+		MaxConcurrency    int     `json:"max_concurrency"`
 	}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
@@ -114,6 +131,12 @@ func TestAuthToken_MarshalJSON_ExposesCostFields(t *testing.T) {
 	}
 	if math.Abs(got.CostLimitUSD-2.0) > 1e-9 {
 		t.Fatalf("cost_limit_usd = %#v, want 2.0", got.CostLimitUSD)
+	}
+	if math.Abs(got.DailyCostUsedUSD-0.05) > 1e-9 {
+		t.Fatalf("daily_cost_used_usd = %#v, want 0.05", got.DailyCostUsedUSD)
+	}
+	if math.Abs(got.DailyCostLimitUSD-0.8) > 1e-9 {
+		t.Fatalf("daily_cost_limit_usd = %#v, want 0.8", got.DailyCostLimitUSD)
 	}
 	if len(got.AllowedChannelID) != 2 || got.AllowedChannelID[0] != 11 || got.AllowedChannelID[1] != 22 {
 		t.Fatalf("allowed_channel_ids = %#v, want [11 22]", got.AllowedChannelID)

@@ -55,8 +55,8 @@ func TestUpdateTokenStats_SingleUpdateSemantics(t *testing.T) {
 		t.Fatalf("unexpected token totals after failure: prompt=%d completion=%d cache_read=%d cache_create=%d",
 			got.PromptTokensTotal, got.CompletionTokensTotal, got.CacheReadTokensTotal, got.CacheCreationTokensTotal)
 	}
-	if got.TotalCostUSD != 0 || got.CostUsedMicroUSD != 0 {
-		t.Fatalf("unexpected cost after failure: total_cost_usd=%v cost_used_microusd=%d", got.TotalCostUSD, got.CostUsedMicroUSD)
+	if got.TotalCostUSD != 0 || got.CostUsedMicroUSD != 0 || got.DailyCostUsedMicroUSD != 0 {
+		t.Fatalf("unexpected cost after failure: total_cost_usd=%v cost_used_microusd=%d daily_cost_used_microusd=%d", got.TotalCostUSD, got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD)
 	}
 	if got.NonStreamCount != 1 || got.NonStreamAvgRT != 2.0 {
 		t.Fatalf("unexpected non-stream stats after failure: count=%d avg=%v", got.NonStreamCount, got.NonStreamAvgRT)
@@ -83,6 +83,9 @@ func TestUpdateTokenStats_SingleUpdateSemantics(t *testing.T) {
 	}
 	if got.CostUsedMicroUSD != util.USDToMicroUSD(0.5) {
 		t.Fatalf("unexpected cost_used_microusd after success: %d", got.CostUsedMicroUSD)
+	}
+	if got.DailyCostUsedMicroUSD != util.USDToMicroUSD(0.5) {
+		t.Fatalf("unexpected daily_cost_used_microusd after success: %d", got.DailyCostUsedMicroUSD)
 	}
 	if got.NonStreamCount != 2 || got.NonStreamAvgRT != 3.0 {
 		t.Fatalf("unexpected non-stream stats after success: count=%d avg=%v", got.NonStreamCount, got.NonStreamAvgRT)

@@ -147,6 +147,16 @@ func ensureLogsNewColumns(ctx context.Context, db *sql.DB, dialect Dialect) erro
 	return ensureLogsColumnsSQLite(ctx, db)
 }
 
+func ensureChannelModelsColumns(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channel_models", "fixed_cost_per_request",
+		"DOUBLE NOT NULL DEFAULT 0", "REAL NOT NULL DEFAULT 0")
+}
+
+func ensureChannelsModelFixedPriceEnabled(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "model_fixed_price_enabled",
+		"TINYINT NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0")
+}
+
 // ensureLogsColumnsSQLite SQLite增量迁移logs表新字段
 func ensureLogsColumnsSQLite(ctx context.Context, db *sql.DB) error {
 	// 第一步：添加基础字段（幂等操作）
@@ -356,6 +366,9 @@ func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect)
 		return ensureMySQLColumns(ctx, db, "auth_tokens", []mysqlColumnDef{
 			{name: "cost_used_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
 			{name: "cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "daily_cost_used_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "daily_cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "daily_cost_day_key", definition: "INT NOT NULL DEFAULT 0"},
 		})
 	}
 
@@ -363,6 +376,9 @@ func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect)
 	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
 		{name: "cost_used_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "daily_cost_used_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "daily_cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "daily_cost_day_key", definition: "INTEGER NOT NULL DEFAULT 0"},
 	})
 }
 

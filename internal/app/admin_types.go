@@ -18,24 +18,25 @@ import (
 
 // ChannelRequest 渠道创建/更新请求结构
 type ChannelRequest struct {
-	Name                  string                    `json:"name" binding:"required"`
-	APIKey                string                    `json:"api_key" binding:"required"`
-	ChannelType           string                    `json:"channel_type,omitempty"` // 渠道类型:anthropic, codex, gemini
-	ProtocolTransformMode string                    `json:"protocol_transform_mode,omitempty"`
-	ProtocolTransforms    []string                  `json:"protocol_transforms,omitempty"`
-	KeyStrategy           string                    `json:"key_strategy,omitempty"` // Key使用策略:sequential, round_robin
-	URL                   string                    `json:"url" binding:"required"`
-	Priority              int                       `json:"priority"`
-	RPMLimit              int                       `json:"rpm_limit"`                       // 每分钟请求数限制，0表示无限制
-	MaxConcurrency        int                       `json:"max_concurrency"`                 // 最大并发请求数，0表示无限制
-	Models                []model.ModelEntry        `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
-	Enabled               bool                      `json:"enabled"`
-	ScheduledCheckEnabled bool                      `json:"scheduled_check_enabled"`
-	ScheduledCheckModel   string                    `json:"scheduled_check_model"`
-	DailyCostLimit        float64                   `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
-	CostMultiplier        float64                   `json:"cost_multiplier"`  // 成本倍率（默认1，0=免费，>=0）
-	CustomRequestRules    *model.CustomRequestRules `json:"custom_request_rules,omitempty"`
-	ProxyURL              string                    `json:"proxy_url,omitempty"` // 渠道级代理（http/https/socks5/socks5h）
+	Name                   string                    `json:"name" binding:"required"`
+	APIKey                 string                    `json:"api_key" binding:"required"`
+	ChannelType            string                    `json:"channel_type,omitempty"` // 渠道类型:anthropic, codex, gemini
+	ProtocolTransformMode  string                    `json:"protocol_transform_mode,omitempty"`
+	ProtocolTransforms     []string                  `json:"protocol_transforms,omitempty"`
+	KeyStrategy            string                    `json:"key_strategy,omitempty"` // Key使用策略:sequential, round_robin
+	URL                    string                    `json:"url" binding:"required"`
+	Priority               int                       `json:"priority"`
+	RPMLimit               int                       `json:"rpm_limit"`                       // 每分钟请求数限制，0表示无限制
+	MaxConcurrency         int                       `json:"max_concurrency"`                 // 最大并发请求数，0表示无限制
+	Models                 []model.ModelEntry        `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
+	ModelFixedPriceEnabled bool                      `json:"model_fixed_price_enabled,omitempty"`
+	Enabled                bool                      `json:"enabled"`
+	ScheduledCheckEnabled  bool                      `json:"scheduled_check_enabled"`
+	ScheduledCheckModel    string                    `json:"scheduled_check_model"`
+	DailyCostLimit         float64                   `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
+	CostMultiplier         float64                   `json:"cost_multiplier"`  // 成本倍率（默认1，0=免费，>=0）
+	CustomRequestRules     *model.CustomRequestRules `json:"custom_request_rules,omitempty"`
+	ProxyURL               string                    `json:"proxy_url,omitempty"` // 渠道级代理（http/https/socks5/socks5h）
 }
 
 func validateChannelBaseURL(raw string) (string, error) {
@@ -240,22 +241,23 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 	}
 
 	return &model.Config{
-		Name:                  strings.TrimSpace(cr.Name),
-		ChannelType:           strings.TrimSpace(cr.ChannelType), // 传递渠道类型
-		ProtocolTransformMode: cr.ProtocolTransformMode,
-		ProtocolTransforms:    append([]string(nil), cr.ProtocolTransforms...),
-		URL:                   strings.TrimSpace(cr.URL),
-		Priority:              cr.Priority,
-		RPMLimit:              cr.RPMLimit,
-		MaxConcurrency:        cr.MaxConcurrency,
-		ModelEntries:          normalizedModels,
-		Enabled:               cr.Enabled,
-		ScheduledCheckEnabled: cr.ScheduledCheckEnabled,
-		ScheduledCheckModel:   cr.ScheduledCheckModel,
-		DailyCostLimit:        cr.DailyCostLimit,
-		CostMultiplier:        cr.CostMultiplier,
-		CustomRequestRules:    cr.CustomRequestRules,
-		ProxyURL:              cr.ProxyURL,
+		Name:                   strings.TrimSpace(cr.Name),
+		ChannelType:            strings.TrimSpace(cr.ChannelType), // 传递渠道类型
+		ProtocolTransformMode:  cr.ProtocolTransformMode,
+		ProtocolTransforms:     append([]string(nil), cr.ProtocolTransforms...),
+		URL:                    strings.TrimSpace(cr.URL),
+		Priority:               cr.Priority,
+		RPMLimit:               cr.RPMLimit,
+		MaxConcurrency:         cr.MaxConcurrency,
+		ModelEntries:           normalizedModels,
+		ModelFixedPriceEnabled: cr.ModelFixedPriceEnabled,
+		Enabled:                cr.Enabled,
+		ScheduledCheckEnabled:  cr.ScheduledCheckEnabled,
+		ScheduledCheckModel:    cr.ScheduledCheckModel,
+		DailyCostLimit:         cr.DailyCostLimit,
+		CostMultiplier:         cr.CostMultiplier,
+		CustomRequestRules:     cr.CustomRequestRules,
+		ProxyURL:               cr.ProxyURL,
 	}
 }
 

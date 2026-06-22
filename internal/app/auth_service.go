@@ -37,14 +37,15 @@ type AuthService struct {
 
 	// API 认证（代理 API 使用的数据库令牌）
 	// [FIX] 2025-12: 存储过期时间而非bool，支持懒惰过期校验
-	authTokens          map[string]int64          // Token哈希 → 过期时间(Unix毫秒，0=永不过期)
-	authTokenIDs        map[string]int64          // Token哈希 → Token ID 映射（用于日志记录，2025-12新增）
-	authTokenModels     map[string][]string       // Token哈希 → 允许的模型列表（2026-01新增）
-	authTokenChannels   map[string][]int64        // Token哈希 → 允许的渠道ID列表（2026-04新增）
-	authTokenCostLimits map[string]tokenCostLimit // Token哈希 → 费用限额状态（仅限额>0的令牌）
-	authTokenMaxConns   map[string]int            // Token哈希 → 最大并发请求数（0=无限制）
-	authTokenActiveReqs map[string]int            // Token哈希 → 当前进行中请求数
-	authTokensMux       sync.RWMutex              // 并发保护（支持热更新）
+	authTokens               map[string]int64               // Token哈希 → 过期时间(Unix毫秒，0=永不过期)
+	authTokenIDs             map[string]int64               // Token哈希 → Token ID 映射（用于日志记录，2025-12新增）
+	authTokenModels          map[string][]string            // Token哈希 → 允许的模型列表（2026-01新增）
+	authTokenChannels        map[string][]int64             // Token哈希 → 允许的渠道ID列表（2026-04新增）
+	authTokenCostLimits      map[string]tokenCostLimit      // Token哈希 → 费用限额状态（仅限额>0的令牌）
+	authTokenDailyCostLimits map[string]dailyTokenCostLimit // Token哈希 → 当日费用限额状态（仅限额>0的令牌）
+	authTokenMaxConns        map[string]int                 // Token哈希 → 最大并发请求数（0=无限制）
+	authTokenActiveReqs      map[string]int                 // Token哈希 → 当前进行中请求数
+	authTokensMux            sync.RWMutex                   // 并发保护（支持热更新）
 
 	// 数据库依赖（用于热更新令牌）
 	store storage.Store
@@ -65,6 +66,12 @@ type tokenCostLimit struct {
 	limitMicroUSD int64
 }
 
+type dailyTokenCostLimit struct {
+	usedMicroUSD  int64
+	limitMicroUSD int64
+	dayKey        int
+}
+
 // NewAuthService 创建认证服务实例
 // 初始化时自动从数据库加载API访问令牌和管理员会话
 func NewAuthService(
@@ -79,19 +86,20 @@ func NewAuthService(
 	}
 
 	s := &AuthService{
-		passwordHash:        passwordHash,
-		validTokens:         make(map[string]time.Time),
-		authTokens:          make(map[string]int64),
-		authTokenIDs:        make(map[string]int64),
-		authTokenModels:     make(map[string][]string),
-		authTokenChannels:   make(map[string][]int64),
-		authTokenCostLimits: make(map[string]tokenCostLimit),
-		authTokenMaxConns:   make(map[string]int),
-		authTokenActiveReqs: make(map[string]int),
-		loginRateLimiter:    loginRateLimiter,
-		store:               store,
-		lastUsedCh:          make(chan string, 256), // 带缓冲，避免阻塞请求
-		done:                make(chan struct{}),
+		passwordHash:             passwordHash,
+		validTokens:              make(map[string]time.Time),
+		authTokens:               make(map[string]int64),
+		authTokenIDs:             make(map[string]int64),
+		authTokenModels:          make(map[string][]string),
+		authTokenChannels:        make(map[string][]int64),
+		authTokenCostLimits:      make(map[string]tokenCostLimit),
+		authTokenDailyCostLimits: make(map[string]dailyTokenCostLimit),
+		authTokenMaxConns:        make(map[string]int),
+		authTokenActiveReqs:      make(map[string]int),
+		loginRateLimiter:         loginRateLimiter,
+		store:                    store,
+		lastUsedCh:               make(chan string, 256), // 带缓冲，避免阻塞请求
+		done:                     make(chan struct{}),
 	}
 
 	// 启动 last_used_at 更新 worker
@@ -351,6 +359,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			delete(s.authTokenModels, tokenHash)
 			delete(s.authTokenChannels, tokenHash)
 			delete(s.authTokenCostLimits, tokenHash)
+			delete(s.authTokenDailyCostLimits, tokenHash)
 			delete(s.authTokenMaxConns, tokenHash)
 			s.authTokensMux.Unlock()
 
@@ -531,8 +540,10 @@ func (s *AuthService) ReloadAuthTokens() error {
 	newTokenModels := make(map[string][]string, len(tokens))
 	newTokenChannels := make(map[string][]int64, len(tokens))
 	newTokenCostLimits := make(map[string]tokenCostLimit, len(tokens))
+	newTokenDailyCostLimits := make(map[string]dailyTokenCostLimit, len(tokens))
 	newTokenMaxConns := make(map[string]int, len(tokens))
 	for _, t := range tokens {
+		t.NormalizeDailyCostForToday()
 		t.ApplyGroupEffective(groupByID[t.GroupID])
 		t.ApplyEffectiveValuesToRawForRuntime()
 		if err := t.ValidateUsageLimits(); err != nil {
@@ -560,6 +571,14 @@ func (s *AuthService) ReloadAuthTokens() error {
 				limitMicroUSD: limitMicro,
 			}
 		}
+		dailyLimitMicro := t.DailyCostLimitMicroUSD
+		if dailyLimitMicro > 0 {
+			newTokenDailyCostLimits[t.Token] = dailyTokenCostLimit{
+				usedMicroUSD:  t.DailyCostUsedMicroUSD,
+				limitMicroUSD: dailyLimitMicro,
+				dayKey:        t.DailyCostDayKey,
+			}
+		}
 		if t.MaxConcurrency > 0 {
 			newTokenMaxConns[t.Token] = t.MaxConcurrency
 		}
@@ -577,11 +596,29 @@ func (s *AuthService) ReloadAuthTokens() error {
 			newTokenCostLimits[tok] = lim
 		}
 	}
+	currentDayKey := model.CurrentLocalDayKey()
+	for tok, lim := range newTokenDailyCostLimits {
+		if lim.dayKey != currentDayKey {
+			lim.usedMicroUSD = 0
+			lim.dayKey = currentDayKey
+		}
+		if old, ok := s.authTokenDailyCostLimits[tok]; ok {
+			if old.dayKey != currentDayKey {
+				old.usedMicroUSD = 0
+				old.dayKey = currentDayKey
+			}
+			if old.dayKey == lim.dayKey && old.usedMicroUSD > lim.usedMicroUSD {
+				lim.usedMicroUSD = old.usedMicroUSD
+			}
+		}
+		newTokenDailyCostLimits[tok] = lim
+	}
 	s.authTokens = newTokens
 	s.authTokenIDs = newTokenIDs
 	s.authTokenModels = newTokenModels
 	s.authTokenChannels = newTokenChannels
 	s.authTokenCostLimits = newTokenCostLimits
+	s.authTokenDailyCostLimits = newTokenDailyCostLimits
 	s.authTokenMaxConns = newTokenMaxConns
 	s.authTokensMux.Unlock()
 
@@ -730,6 +767,26 @@ func (s *AuthService) IsCostLimitExceeded(tokenHash string) (usedMicroUSD, limit
 	return v.usedMicroUSD, v.limitMicroUSD, v.usedMicroUSD >= v.limitMicroUSD
 }
 
+// IsDailyCostLimitExceeded 检查令牌是否超过当日费用限额（微美元）。
+func (s *AuthService) IsDailyCostLimitExceeded(tokenHash string) (usedMicroUSD, limitMicroUSD int64, exceeded bool) {
+	currentDayKey := model.CurrentLocalDayKey()
+
+	s.authTokensMux.Lock()
+	v, ok := s.authTokenDailyCostLimits[tokenHash]
+	if !ok || v.limitMicroUSD <= 0 {
+		s.authTokensMux.Unlock()
+		return 0, 0, false
+	}
+	if v.dayKey != currentDayKey {
+		v.dayKey = currentDayKey
+		v.usedMicroUSD = 0
+		s.authTokenDailyCostLimits[tokenHash] = v
+	}
+	s.authTokensMux.Unlock()
+
+	return v.usedMicroUSD, v.limitMicroUSD, v.usedMicroUSD >= v.limitMicroUSD
+}
+
 // AddCostToCache 原子更新令牌的已消耗费用缓存
 // 仅更新内存缓存，数据库更新由 UpdateTokenStats 异步处理
 func (s *AuthService) AddCostToCache(tokenHash string, deltaMicroUSD int64) {
@@ -742,6 +799,16 @@ func (s *AuthService) AddCostToCache(tokenHash string, deltaMicroUSD int64) {
 	if ok && v.limitMicroUSD > 0 {
 		v.usedMicroUSD += deltaMicroUSD
 		s.authTokenCostLimits[tokenHash] = v
+	}
+	daily, ok := s.authTokenDailyCostLimits[tokenHash]
+	if ok && daily.limitMicroUSD > 0 {
+		currentDayKey := model.CurrentLocalDayKey()
+		if daily.dayKey != currentDayKey {
+			daily.dayKey = currentDayKey
+			daily.usedMicroUSD = 0
+		}
+		daily.usedMicroUSD += deltaMicroUSD
+		s.authTokenDailyCostLimits[tokenHash] = daily
 	}
 	s.authTokensMux.Unlock()
 }

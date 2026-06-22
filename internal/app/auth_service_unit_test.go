@@ -109,6 +109,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 			"t1": {usedMicroUSD: 50, limitMicroUSD: 100},
 			"t0": {usedMicroUSD: 50, limitMicroUSD: 0},
 		},
+		authTokenDailyCostLimits: map[string]dailyTokenCostLimit{
+			"t1": {usedMicroUSD: 20, limitMicroUSD: 30, dayKey: model.CurrentLocalDayKey()},
+			"t0": {usedMicroUSD: 20, limitMicroUSD: 0, dayKey: model.CurrentLocalDayKey()},
+		},
 	}
 
 	used, limit, exceeded := s.IsCostLimitExceeded("missing")
@@ -125,6 +129,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 	if used != 50 || limit != 100 || exceeded {
 		t.Fatalf("t1 before add: got (%d,%d,%v), want (50,100,false)", used, limit, exceeded)
 	}
+	used, limit, exceeded = s.IsDailyCostLimitExceeded("t1")
+	if used != 20 || limit != 30 || exceeded {
+		t.Fatalf("t1 daily before add: got (%d,%d,%v), want (20,30,false)", used, limit, exceeded)
+	}
 
 	s.AddCostToCache("t1", 0)
 	s.AddCostToCache("t1", -1)
@@ -134,6 +142,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 	used, limit, exceeded = s.IsCostLimitExceeded("t1")
 	if used != 110 || limit != 100 || !exceeded {
 		t.Fatalf("t1 after add: got (%d,%d,%v), want (110,100,true)", used, limit, exceeded)
+	}
+	used, limit, exceeded = s.IsDailyCostLimitExceeded("t1")
+	if used != 80 || limit != 30 || !exceeded {
+		t.Fatalf("t1 daily after add: got (%d,%d,%v), want (80,30,true)", used, limit, exceeded)
 	}
 }
 
@@ -193,6 +205,21 @@ func TestReloadAuthTokens_DoesNotRegressUsage(t *testing.T) {
 	}
 	if used, _, _ := s.IsCostLimitExceeded(hash); used != 150 {
 		t.Fatalf("reload regressed in-memory usage: used=%d, want 150 (DB lagging value must not overwrite memory)", used)
+	}
+}
+
+func TestAuthService_DailyCostLimitResetsOnNewDay(t *testing.T) {
+	t.Parallel()
+
+	s := &AuthService{
+		authTokenDailyCostLimits: map[string]dailyTokenCostLimit{
+			"t1": {usedMicroUSD: 100, limitMicroUSD: 200, dayKey: 20000101},
+		},
+	}
+
+	used, limit, exceeded := s.IsDailyCostLimitExceeded("t1")
+	if used != 0 || limit != 200 || exceeded {
+		t.Fatalf("daily reset: got (%d,%d,%v), want (0,200,false)", used, limit, exceeded)
 	}
 }
 

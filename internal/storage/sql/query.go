@@ -122,6 +122,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	var c model.Config
 	var enabledInt int
 	var scheduledCheckEnabledInt int
+	var modelFixedPriceEnabledInt int
 	var scheduledCheckModel string
 	var customRequestRules sql.NullString
 	var createdAtRaw, updatedAtRaw any // 使用any接受任意类型（兼容字符串、整数或RFC3339）
@@ -130,13 +131,14 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	// 注意：不再包含 models 和 model_redirects 字段
 	if err := scanner.Scan(&c.ID, &c.Name, &c.URL, &c.Priority,
 		&c.RPMLimit, &c.MaxConcurrency, &c.ChannelType, &c.ProtocolTransformMode, &enabledInt, &scheduledCheckEnabledInt, &scheduledCheckModel,
-		&c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &customRequestRules, &c.ProxyURL, &c.KeyCount,
+		&c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &c.ProxyURL, &c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
 		return nil, err
 	}
 
 	c.Enabled = enabledInt != 0
 	c.ScheduledCheckEnabled = scheduledCheckEnabledInt != 0
+	c.ModelFixedPriceEnabled = modelFixedPriceEnabledInt != 0
 	c.ScheduledCheckModel = scheduledCheckModel
 	c.CustomRequestRules = parseCustomRequestRules(c.ID, customRequestRules)
 	if c.CostMultiplier < 0 {

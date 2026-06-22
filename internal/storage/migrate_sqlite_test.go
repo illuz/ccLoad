@@ -189,7 +189,7 @@ func TestEnsureAuthTokensCostLimit_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqliteExistingColumns: %v", err)
 	}
-	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd"} {
+	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key"} {
 		if !cols[col] {
 			t.Errorf("column %s not found in auth_tokens", col)
 		}
@@ -222,6 +222,9 @@ func TestMigrateSQLite_LegacyCostLimitedAuthTokenGetsDefaultMaxConcurrency(t *te
 			total_cost_usd REAL NOT NULL DEFAULT 0.0,
 			cost_used_microusd INTEGER NOT NULL DEFAULT 0,
 			cost_limit_microusd INTEGER NOT NULL DEFAULT 0,
+			daily_cost_used_microusd INTEGER NOT NULL DEFAULT 0,
+			daily_cost_limit_microusd INTEGER NOT NULL DEFAULT 0,
+			daily_cost_day_key INTEGER NOT NULL DEFAULT 0,
 			allowed_models TEXT NOT NULL DEFAULT '',
 			allowed_channel_ids TEXT NOT NULL DEFAULT ''
 		)

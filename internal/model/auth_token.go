@@ -43,8 +43,11 @@ type AuthToken struct {
 	// 费用限额（2026-01新增）
 	// 使用微美元整数存储，避免浮点误差。JSON序列化时自动转换为USD浮点数。
 	// 1 USD = 1,000,000 微美元
-	CostUsedMicroUSD  int64 `json:"-"` // 已消耗费用（微美元）
-	CostLimitMicroUSD int64 `json:"-"` // 费用上限（微美元；0=无限制）
+	CostUsedMicroUSD       int64 `json:"-"` // 已消耗费用（微美元）
+	CostLimitMicroUSD      int64 `json:"-"` // 费用上限（微美元；0=无限制）
+	DailyCostUsedMicroUSD  int64 `json:"-"` // 当日已消耗费用（微美元）
+	DailyCostLimitMicroUSD int64 `json:"-"` // 当日费用上限（微美元；0=无限制）
+	DailyCostDayKey        int   `json:"-"` // 当日费用所属日期（YYYYMMDD，本地时区）
 
 	// RPM统计（2025-12新增，用于tokens.html显示）
 	PeakRPM   float64 `json:"peak_rpm,omitempty"`   // 峰值RPM
@@ -182,6 +185,25 @@ func (t *AuthToken) UpdateLastUsed() {
 	t.LastUsedAt = &now
 }
 
+// CurrentLocalDayKey 返回当前本地日期键（YYYYMMDD）。
+func CurrentLocalDayKey() int {
+	now := time.Now().In(time.Local)
+	return now.Year()*10000 + int(now.Month())*100 + now.Day()
+}
+
+// NormalizeDailyCostForToday 将过期的“当日费用”重置为今天的口径。
+func (t *AuthToken) NormalizeDailyCostForToday() {
+	if t == nil {
+		return
+	}
+	dayKey := CurrentLocalDayKey()
+	if t.DailyCostDayKey == dayKey {
+		return
+	}
+	t.DailyCostUsedMicroUSD = 0
+	t.DailyCostDayKey = dayKey
+}
+
 // IsModelAllowed 检查模型是否被令牌允许访问
 // 如果 AllowedModels 为空，表示无限制，允许所有模型
 func (t *AuthToken) IsModelAllowed(model string) bool {
@@ -220,6 +242,16 @@ func (t *AuthToken) CostLimitUSD() float64 {
 	return util.MicroUSDToUSD(t.CostLimitMicroUSD)
 }
 
+// DailyCostUsedUSD 返回当日已消耗费用（美元）
+func (t *AuthToken) DailyCostUsedUSD() float64 {
+	return util.MicroUSDToUSD(t.DailyCostUsedMicroUSD)
+}
+
+// DailyCostLimitUSD 返回当日费用上限（美元）
+func (t *AuthToken) DailyCostLimitUSD() float64 {
+	return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD)
+}
+
 // SetCostLimitUSD 设置费用上限（从美元转换为微美元）
 func (t *AuthToken) SetCostLimitUSD(usd float64) {
 	if usd <= 0 {
@@ -227,6 +259,15 @@ func (t *AuthToken) SetCostLimitUSD(usd float64) {
 		return
 	}
 	t.CostLimitMicroUSD = util.USDToMicroUSD(usd)
+}
+
+// SetDailyCostLimitUSD 设置当日费用上限（从美元转换为微美元）
+func (t *AuthToken) SetDailyCostLimitUSD(usd float64) {
+	if usd <= 0 {
+		t.DailyCostLimitMicroUSD = 0
+		return
+	}
+	t.DailyCostLimitMicroUSD = util.USDToMicroUSD(usd)
 }
 
 // EffectiveCostLimitUSD 返回已计算的有效费用上限（美元）。
@@ -303,10 +344,13 @@ func (t *AuthToken) ValidateUsageLimits() error {
 	if t.CostLimitMicroUSD < 0 {
 		return errors.New("cost_limit_usd must be >= 0")
 	}
+	if t.DailyCostLimitMicroUSD < 0 {
+		return errors.New("daily_cost_limit_usd must be >= 0")
+	}
 	if t.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
 	}
-	if t.CostLimitMicroUSD > 0 && t.MaxConcurrency <= 0 && !(t.GroupID > 0 && t.InheritQuota) {
+	if (t.CostLimitMicroUSD > 0 || t.DailyCostLimitMicroUSD > 0) && t.MaxConcurrency <= 0 && !(t.GroupID > 0 && t.InheritQuota) {
 		return errors.New("cost-limited auth token requires max_concurrency > 0")
 	}
 	return nil
@@ -377,6 +421,8 @@ type authTokenJSON struct {
 	EffectiveCostUSD           float64   `json:"effective_cost_usd"`
 	CostUsedUSD                float64   `json:"cost_used_usd"`
 	CostLimitUSD               float64   `json:"cost_limit_usd"`
+	DailyCostUsedUSD           float64   `json:"daily_cost_used_usd"`
+	DailyCostLimitUSD          float64   `json:"daily_cost_limit_usd"`
 	PeakRPM                    float64   `json:"peak_rpm,omitempty"`
 	AvgRPM                     float64   `json:"avg_rpm,omitempty"`
 	RecentRPM                  float64   `json:"recent_rpm,omitempty"`
@@ -419,6 +465,8 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		EffectiveCostUSD:           t.EffectiveCostUSD,
 		CostUsedUSD:                t.CostUsedUSD(),
 		CostLimitUSD:               t.CostLimitUSD(),
+		DailyCostUsedUSD:           t.DailyCostUsedUSD(),
+		DailyCostLimitUSD:          t.DailyCostLimitUSD(),
 		PeakRPM:                    t.PeakRPM,
 		AvgRPM:                     t.AvgRPM,
 		RecentRPM:                  t.RecentRPM,

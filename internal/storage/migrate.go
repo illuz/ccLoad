@@ -129,6 +129,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsCostMultiplier(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels cost_multiplier: %w", err)
 			}
+			if err := ensureChannelsModelFixedPriceEnabled(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels model_fixed_price_enabled: %w", err)
+			}
 			if err := ensureChannelsProxyURL(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels proxy_url: %w", err)
 			}
@@ -145,6 +148,15 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := ensureAPIKeysDisabled(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate api_keys disabled: %w", err)
+			}
+		}
+
+		if tb.Name() == "channel_models" {
+			if err := ensureChannelModelsRedirectField(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channel_models redirect_model: %w", err)
+			}
+			if err := ensureChannelModelsColumns(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channel_models fixed_cost_per_request: %w", err)
 			}
 		}
 

@@ -31,12 +31,15 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 			"gpt-4o",
 			"claude-3-5-sonnet-latest",
 		},
-		AllowedChannelIDs: []int64{7, 9},
-		CostUsedMicroUSD:  10,
-		CostLimitMicroUSD: 100,
-		MaxConcurrency:    1,
-		SuccessCount:      1,
-		FailureCount:      2,
+		AllowedChannelIDs:      []int64{7, 9},
+		CostUsedMicroUSD:       10,
+		CostLimitMicroUSD:      100,
+		DailyCostUsedMicroUSD:  5,
+		DailyCostLimitMicroUSD: 20,
+		DailyCostDayKey:        model.CurrentLocalDayKey(),
+		MaxConcurrency:         1,
+		SuccessCount:           1,
+		FailureCount:           2,
 	}
 
 	if err := ss.UpsertAuthTokenAllFields(ctx, token); err != nil {
@@ -50,7 +53,7 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 	if got.Token != token.Token || got.PlainToken != "plain" || got.Description != "d" || !got.IsActive {
 		t.Fatalf("unexpected token: %+v", got)
 	}
-	if got.CostLimitMicroUSD != 100 || got.CostUsedMicroUSD != 10 {
+	if got.CostLimitMicroUSD != 100 || got.CostUsedMicroUSD != 10 || got.DailyCostLimitMicroUSD != 20 || got.DailyCostUsedMicroUSD != 5 {
 		t.Fatalf("unexpected cost fields: %+v", got)
 	}
 	if len(got.AllowedModels) != 2 {

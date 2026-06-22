@@ -40,6 +40,95 @@ var ErrChannelRPMExceeded = errors.New("channel rpm limit exceeded")
 // ErrChannelConcurrencyExceeded 表示渠道并发限制已达到
 var ErrChannelConcurrencyExceeded = errors.New("channel concurrency limit exceeded")
 
+func summarizeNoAvailableUpstream(
+	ctx context.Context,
+	s *Server,
+	originalModel string,
+	clientProtocol protocol.Protocol,
+	tokenHash string,
+) (message string, apiKeyHint string) {
+	message = "no available upstream (all cooled or none)"
+
+	rawCands, rawErr := s.getEnabledChannelsByModelAndProtocol(ctx, originalModel, string(clientProtocol))
+	if rawErr != nil {
+		return message + "; diag=query_failed", ""
+	}
+	if len(rawCands) == 0 {
+		return message + "; diag=no_matching_channel", "(no-matching-channel)"
+	}
+
+	if tokenHash != "" {
+		filtered, restricted := s.authService.FilterAllowedChannels(tokenHash, rawCands)
+		if restricted && len(filtered) == 0 {
+			names := make([]string, 0, len(rawCands))
+			for _, cfg := range rawCands {
+				if cfg != nil {
+					names = append(names, cfg.Name)
+				}
+			}
+			return message + "; diag=token_filtered; matched=" + strings.Join(names, ","), "(token-filtered)"
+		}
+	}
+
+	names := make([]string, 0, len(rawCands))
+	disabledCount := 0
+	coolingCount := 0
+	totalKeyCount := 0
+	diagAPIKey := ""
+	for _, cfg := range rawCands {
+		if cfg == nil {
+			continue
+		}
+		names = append(names, cfg.Name)
+		keys, keyErr := s.getAPIKeys(ctx, cfg.ID)
+		if keyErr != nil {
+			continue
+		}
+		for _, key := range keys {
+			if key == nil {
+				continue
+			}
+			totalKeyCount++
+			if key.Disabled {
+				disabledCount++
+				if diagAPIKey == "" && key.APIKey != "" {
+					diagAPIKey = key.APIKey
+				}
+				continue
+			}
+			if key.IsCoolingDown(time.Now()) {
+				coolingCount++
+				if diagAPIKey == "" && key.APIKey != "" {
+					diagAPIKey = key.APIKey
+				}
+			}
+		}
+	}
+
+	reason := "all_cooled_or_none"
+	switch {
+	case totalKeyCount > 0 && disabledCount == totalKeyCount:
+		reason = "all_keys_disabled"
+	case totalKeyCount > 0 && coolingCount == totalKeyCount:
+		reason = "all_keys_cooled"
+	case totalKeyCount == 0:
+		reason = "no_keys_configured"
+	}
+
+	if diagAPIKey == "" {
+		switch len(rawCands) {
+		case 0:
+			diagAPIKey = "(no-matching-channel)"
+		case 1:
+			diagAPIKey = "(no-usable-key)"
+		default:
+			diagAPIKey = "(multiple-candidate-keys)"
+		}
+	}
+
+	return fmt.Sprintf("%s; diag=%s; matched=%s", message, reason, strings.Join(names, ",")), diagAPIKey
+}
+
 // ============================================================================
 // 并发控制
 // ============================================================================
@@ -244,6 +333,10 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		return
 	}
 
+	// 从context提取tokenID（用于统计和日志，2025-12新增tokenID）
+	tokenID, _ := c.Get("token_id")
+	tokenIDInt64, _ := tokenID.(int64)
+
 	// 注册活跃请求（内存状态，用于前端实时显示）
 	activeID := s.activeRequests.Register(startTime, originalModel, c.ClientIP(), isStreaming)
 	defer s.activeRequests.Remove(activeID)
@@ -267,13 +360,16 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	}
 
 	if len(cands) == 0 {
+		diagMessage, diagAPIKey := summarizeNoAvailableUpstream(ctx, s, originalModel, clientProtocol, tokenHashStr)
 		s.AddLogAsync(&model.LogEntry{
 			Time:        model.JSONTime{Time: time.Now()},
 			Model:       originalModel,
 			LogSource:   model.LogSourceProxy,
 			StatusCode:  503,
-			Message:     "no available upstream (all cooled or none)",
+			Message:     diagMessage,
 			IsStreaming: isStreaming,
+			APIKeyUsed:  diagAPIKey,
+			AuthTokenID: tokenIDInt64,
 			ClientIP:    c.ClientIP(),
 		})
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available upstream (all cooled or none)"})
@@ -292,10 +388,6 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 			}
 		}
 	}
-
-	// 从context提取tokenID（用于统计和日志，2025-12新增tokenID）
-	tokenID, _ := c.Get("token_id")
-	tokenIDInt64, _ := tokenID.(int64)
 
 	reqCtx := &proxyRequestContext{
 		originalModel:  originalModel,
@@ -393,6 +485,20 @@ func (s *Server) enforceTokenLimits(c *gin.Context, tokenHash, originalModel str
 					"message": fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", used, limit),
 					"type":    "insufficient_quota",
 					"code":    "cost_limit_exceeded",
+				},
+			})
+			return false
+		}
+
+		dailyUsedMicro, dailyLimitMicro, dailyExceeded := s.authService.IsDailyCostLimitExceeded(tokenHash)
+		if dailyExceeded {
+			used := util.MicroUSDToUSD(dailyUsedMicro)
+			limit := util.MicroUSDToUSD(dailyLimitMicro)
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": gin.H{
+					"message": fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", used, limit),
+					"type":    "insufficient_quota",
+					"code":    "daily_cost_limit_exceeded",
 				},
 			})
 			return false

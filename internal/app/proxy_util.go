@@ -669,6 +669,7 @@ func isAnthropicBillingHeaderSystemBlock(raw json.RawMessage) bool {
 type logEntryParams struct {
 	RequestModel   string // 客户端请求的原始模型名称
 	ActualModel    string // 实际转发到上游的模型名称（可能经过重定向）
+	Channel        *model.Config
 	ChannelID      int64
 	StatusCode     int
 	Duration       float64
@@ -766,13 +767,7 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		entry.Cache1hInputTokens = res.Cache1hInputTokens
 		entry.ServiceTier = res.ServiceTier
 
-		// 使用实际转发的模型计算成本（重定向时价格可能不同）；
-		// 始终调用以支持按次计费图像模型（tokens=0 时返回固定成本）。
-		costModel := p.ActualModel
-		if costModel == "" {
-			costModel = p.RequestModel
-		}
-		entry.Cost = computeRequestCost(costModel, res.ServiceTier, res) + res.ToolCostUSD
+		entry.Cost = computeRequestCost(p.Channel, p.RequestModel, p.ActualModel, res.ServiceTier, res) + res.ToolCostUSD
 	} else {
 		entry.Message = "unknown"
 	}
@@ -797,24 +792,38 @@ func appendRetryStrategyToMessage(message, strategy string) string {
 // fast 模式专用模型走 CalculateFastModeCost（已含 fast 倍率）。
 // OpenAI service_tier 是价格倍率，不改变按 token 数选择的长上下文分档；
 // 非 OpenAI 白名单模型即使响应携带 service_tier 也不加倍率。
-func computeRequestCost(model string, serviceTier string, res *fwResult) float64 {
+func computeRequestCost(cfg *model.Config, requestModel string, actualModel string, serviceTier string, res *fwResult) float64 {
 	if res == nil {
 		return 0
 	}
-	if serviceTier == "fast" && util.IsFastModeModel(model) {
+	if cfg != nil && cfg.ModelFixedPriceEnabled {
+		if fixedCost, ok := cfg.GetFixedCostPerRequest(requestModel); ok {
+			return fixedCost
+		}
+		if actualModel != "" {
+			if fixedCost, ok := cfg.GetFixedCostPerRequest(actualModel); ok {
+				return fixedCost
+			}
+		}
+	}
+	costModel := actualModel
+	if costModel == "" {
+		costModel = requestModel
+	}
+	if serviceTier == "fast" && util.IsFastModeModel(costModel) {
 		return util.CalculateFastModeCost(
 			res.InputTokens, res.OutputTokens,
 			res.CacheReadInputTokens, res.Cache5mInputTokens, res.Cache1hInputTokens,
 		)
 	}
 	return util.CalculateCostDetailed(
-		model,
+		costModel,
 		res.InputTokens,
 		res.OutputTokens,
 		res.CacheReadInputTokens,
 		res.Cache5mInputTokens,
 		res.Cache1hInputTokens,
-	) * util.OpenAIServiceTierMultiplier(model, serviceTier)
+	) * util.OpenAIServiceTierMultiplier(costModel, serviceTier)
 }
 
 // truncateErr 截断错误信息到512字符（防止日志过长）

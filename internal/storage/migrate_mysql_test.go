@@ -245,7 +245,7 @@ func TestMySQL(t *testing.T) {
 		}
 
 		// 验证 auth_tokens 表的新列
-		authTokenCols := []string{"plain_token", "allowed_models", "cost_used_microusd", "cost_limit_microusd"}
+		authTokenCols := []string{"plain_token", "allowed_models", "cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key"}
 		for _, col := range authTokenCols {
 			var columnName string
 			err := env.db.QueryRow(

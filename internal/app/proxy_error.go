@@ -106,6 +106,7 @@ func (s *Server) logProxyResult(
 	s.AddLogAsync(buildLogEntry(logEntryParams{
 		RequestModel:   reqCtx.originalModel,
 		ActualModel:    actualModel,
+		Channel:        cfg,
 		ChannelID:      cfg.ID,
 		StatusCode:     statusCode,
 		Duration:       duration,
@@ -130,7 +131,7 @@ func (s *Server) updateTokenStatsForProxy(
 	res *fwResult,
 	actualModel string,
 ) {
-	s.updateTokenStatsAsync(reqCtx.tokenHash, cfg.CostMultiplier, isSuccess, duration, reqCtx.isStreaming, res, actualModel)
+	s.updateTokenStatsAsync(reqCtx.tokenHash, cfg, reqCtx.originalModel, cfg.CostMultiplier, isSuccess, duration, reqCtx.isStreaming, res, actualModel)
 }
 
 // handleNetworkError 处理网络错误
@@ -275,13 +276,15 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 // updateTokenStatsAsync 异步更新Token统计（DRY原则：消除重复代码）
 // 参数:
 //   - tokenHash: Token哈希值
+//   - cfg: 渠道配置（用于按次计费）
+//   - requestModel: 客户端请求模型（按次计费优先匹配）
 //   - costMultiplier: 渠道成本倍率（0=免费，<0 视为 1），影响 AddCostToCache 的累加口径
 //   - isSuccess: 请求是否成功
 //   - duration: 请求耗时
 //   - isStreaming: 是否流式请求
 //   - res: 转发结果（成功时用于提取token数量，失败时传nil）
 //   - actualModel: 实际模型名称（用于计费）
-func (s *Server) updateTokenStatsAsync(tokenHash string, costMultiplier float64, isSuccess bool, duration float64, isStreaming bool, res *fwResult, actualModel string) {
+func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requestModel string, costMultiplier float64, isSuccess bool, duration float64, isStreaming bool, res *fwResult, actualModel string) {
 	if tokenHash == "" || s.tokenStatsCh == nil {
 		return
 	}
@@ -298,12 +301,16 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, costMultiplier float64,
 		completionTokens = int64(res.OutputTokens)
 		cacheReadTokens = int64(res.CacheReadInputTokens)
 		cacheCreationTokens = int64(res.CacheCreationInputTokens)
-		costUSD = computeRequestCost(actualModel, res.ServiceTier, res)
+		costUSD = computeRequestCost(cfg, requestModel, actualModel, res.ServiceTier, res)
 
 		// 财务安全检查：费用为0但有token消耗时告警（可能是定价缺失）
 		if costUSD == 0.0 && (res.InputTokens > 0 || res.OutputTokens > 0) {
+			warnModel := actualModel
+			if warnModel == "" {
+				warnModel = requestModel
+			}
 			log.Printf("[WARN] 计费 cost=0 但有 token 消耗（可能定价缺失） model=%s in=%d out=%d cache_r=%d cache_5m=%d cache_1h=%d",
-				actualModel, res.InputTokens, res.OutputTokens, res.CacheReadInputTokens, res.Cache5mInputTokens, res.Cache1hInputTokens)
+				warnModel, res.InputTokens, res.OutputTokens, res.CacheReadInputTokens, res.Cache5mInputTokens, res.Cache1hInputTokens)
 		}
 		// 注意：费用缓存更新已移至 applyTokenStatsUpdate，并先于 DB 落盘以避免限额 fail-open。
 	}

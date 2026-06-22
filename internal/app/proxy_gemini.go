@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -145,31 +144,66 @@ func (s *Server) inferModelsChannelTypeFromToken(ctx context.Context, c *gin.Con
 	return fallback
 }
 
+func (s *Server) tokenHasVisibleProtocol(ctx context.Context, c *gin.Context, protocol string) bool {
+	if s.authService == nil {
+		return false
+	}
+	tokenHash := c.GetString("token_hash")
+	if tokenHash == "" {
+		return false
+	}
+	allowedChannelSet, hasRestriction := s.authService.getAllowedChannelSet(tokenHash)
+	if !hasRestriction || len(allowedChannelSet) == 0 {
+		return false
+	}
+	channels, err := s.getEnabledChannelsByExposedProtocol(ctx, protocol)
+	if err != nil {
+		return false
+	}
+	for _, cfg := range channels {
+		if cfg == nil {
+			continue
+		}
+		if _, ok := allowedChannelSet[cfg.ID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // handleListOpenAIModels 处理 GET /v1/models 请求，根据请求类型返回对应渠道的模型列表
 func (s *Server) handleListOpenAIModels(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	channelType := detectModelsChannelType(c)
-	if !hasExplicitModelsProtocolHint(c) {
+	hasExplicitHint := hasExplicitModelsProtocolHint(c)
+	if !hasExplicitHint {
 		channelType = s.inferModelsChannelTypeFromToken(ctx, c, channelType)
 	}
 	models, err := s.getModelsByExposedProtocol(ctx, channelType)
 	if err != nil {
-		log.Printf("[MODELS] path=%q detected_type=%q ua=%q anthropic_version=%q token_hash_present=%v load_error=%v",
-			c.Request.URL.Path, channelType, c.GetHeader("User-Agent"), c.GetHeader("anthropic-version"), c.GetString("token_hash") != "", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load models"})
 		return
 	}
-	beforeFilter := len(models)
 	models = s.filterVisibleModelsForRequest(c, channelType, models)
-	log.Printf("[MODELS] path=%q detected_type=%q ua=%q anthropic_version=%q token_hash_present=%v models_before=%d models_after=%d sample=%v",
-		c.Request.URL.Path, channelType, c.GetHeader("User-Agent"), c.GetHeader("anthropic-version"), c.GetString("token_hash") != "",
-		beforeFilter, len(models), func() []string {
-			if len(models) <= 8 {
-				return models
+	if !hasExplicitHint && channelType == "openai" && len(models) == 0 {
+		for _, fallbackProtocol := range []string{"anthropic", "codex", "gemini"} {
+			if !s.tokenHasVisibleProtocol(ctx, c, fallbackProtocol) {
+				continue
 			}
-			return models[:8]
-		}())
+			fallbackModels, fallbackErr := s.getModelsByExposedProtocol(ctx, fallbackProtocol)
+			if fallbackErr != nil {
+				continue
+			}
+			filteredFallbackModels := s.filterVisibleModelsForRequest(c, fallbackProtocol, fallbackModels)
+			if len(filteredFallbackModels) == 0 {
+				continue
+			}
+			channelType = fallbackProtocol
+			models = filteredFallbackModels
+			break
+		}
+	}
 	sort.Strings(models)
 
 	if channelType == "anthropic" {
