@@ -29,6 +29,117 @@ async function loadChannels(type = 'all') {
   }
 }
 
+function channelMatchesStatusSnapshot(channel, status = 'all') {
+  if (!status || status === 'all') return true;
+  const enabled = channel?.enabled === true;
+  const isCooldown = Number(channel?.cooldown_remaining_ms || 0) > 0;
+  if (status === 'enabled') return enabled;
+  if (status === 'disabled') return !enabled;
+  if (status === 'cooldown') return isCooldown;
+  return true;
+}
+
+function recomputeLocalChannelFilterOptions(type = filters.channelType, status = filters.status) {
+  const scopedChannels = (Array.isArray(channels) ? channels : []).filter((channel) => {
+    const channelType = String(channel?.channel_type || '').trim().toLowerCase();
+    if (type && type !== 'all' && channelType !== String(type).trim().toLowerCase()) return false;
+    return channelMatchesStatusSnapshot(channel, status);
+  });
+
+  const nameSet = new Set();
+  const modelSet = new Set();
+  scopedChannels.forEach((channel) => {
+    const name = String(channel?.name || '').trim();
+    if (name) nameSet.add(name);
+    (Array.isArray(channel?.models) ? channel.models : []).forEach((entry) => {
+      const model = String(entry?.model || entry || '').trim();
+      if (model) modelSet.add(model);
+    });
+  });
+
+  allAvailableChannelNames = Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+  allAvailableModels = Array.from(modelSet).sort((a, b) => a.localeCompare(b));
+  if (typeof updateModelOptions === 'function') updateModelOptions();
+  if (typeof updateChannelNameOptions === 'function') updateChannelNameOptions();
+}
+
+function normalizeLocalChannel(channel = {}) {
+  return {
+    cooldown_remaining_ms: 0,
+    key_cooldowns: [],
+    ...channel,
+    channel_type: String(channel?.channel_type || 'anthropic').trim().toLowerCase(),
+    models: Array.isArray(channel?.models) ? channel.models : [],
+    enabled: channel?.enabled !== false
+  };
+}
+
+function upsertChannelLocal(channel, options = {}) {
+  if (!channel || !Number(channel.id)) return null;
+  const normalized = normalizeLocalChannel(channel);
+  const type = options.type || filters.channelType || 'all';
+  const matchesType = type === 'all' || normalized.channel_type === String(type).trim().toLowerCase();
+  const index = (Array.isArray(channels) ? channels : []).findIndex((item) => Number(item?.id) === Number(normalized.id));
+
+  if (!matchesType) {
+    if (index >= 0) channels.splice(index, 1);
+  } else if (index >= 0) {
+    channels[index] = { ...channels[index], ...normalized };
+  } else {
+    channels.push(normalized);
+  }
+
+  channelsTotalCount = channels.length;
+  if (typeof syncSelectedChannelsWithLoadedChannels === 'function') {
+    syncSelectedChannelsWithLoadedChannels();
+  }
+  recomputeLocalChannelFilterOptions(type, filters.status);
+  if (typeof filterChannels === 'function') filterChannels();
+  return normalized;
+}
+
+function removeChannelsLocal(channelIDs = [], options = {}) {
+  const ids = new Set((Array.isArray(channelIDs) ? channelIDs : [channelIDs]).map((id) => Number(id)).filter((id) => id > 0));
+  if (ids.size === 0) return;
+  channels = (Array.isArray(channels) ? channels : []).filter((channel) => !ids.has(Number(channel?.id)));
+  channelsTotalCount = channels.length;
+  ids.forEach((id) => selectedChannelIds.delete(normalizeSelectedChannelID(id)));
+  if (typeof syncSelectedChannelsWithLoadedChannels === 'function') {
+    syncSelectedChannelsWithLoadedChannels();
+  }
+  recomputeLocalChannelFilterOptions(options.type || filters.channelType, filters.status);
+  if (typeof filterChannels === 'function') filterChannels();
+}
+
+function setChannelsEnabledLocal(channelIDs = [], enabled) {
+  const ids = new Set((Array.isArray(channelIDs) ? channelIDs : [channelIDs]).map((id) => Number(id)).filter((id) => id > 0));
+  if (ids.size === 0) return () => {};
+
+  const snapshots = [];
+  (Array.isArray(channels) ? channels : []).forEach((channel) => {
+    if (!ids.has(Number(channel?.id))) return;
+    snapshots.push({
+      channel,
+      enabled: channel.enabled,
+      cooldown_remaining_ms: channel.cooldown_remaining_ms
+    });
+    channel.enabled = enabled;
+    if (enabled) channel.cooldown_remaining_ms = 0;
+  });
+
+  recomputeLocalChannelFilterOptions(filters.channelType, filters.status);
+  if (typeof filterChannels === 'function') filterChannels();
+
+  return () => {
+    snapshots.forEach((snapshot) => {
+      snapshot.channel.enabled = snapshot.enabled;
+      snapshot.channel.cooldown_remaining_ms = snapshot.cooldown_remaining_ms;
+    });
+    recomputeLocalChannelFilterOptions(filters.channelType, filters.status);
+    if (typeof filterChannels === 'function') filterChannels();
+  };
+}
+
 // CRUD 操作后同时刷新列表分页与筛选下拉全集
 async function reloadChannelsList(type = filters.channelType, status = filters.status) {
   await Promise.all([

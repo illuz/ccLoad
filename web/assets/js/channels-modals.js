@@ -185,6 +185,39 @@ function syncChannelModelTableRows() {
   container.dataset.visibleRows = String(rows);
 }
 
+function isChannelModelFixedPriceEnabled() {
+  return document.getElementById('channelModelFixedPriceEnabled')?.checked === true;
+}
+
+function getRedirectTableColspan() {
+  return isChannelModelFixedPriceEnabled() ? 5 : 4;
+}
+
+function formatFixedCostPerRequestValue(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return String(value).trim();
+}
+
+function syncModelFixedPriceVisibility() {
+  const enabled = isChannelModelFixedPriceEnabled();
+  const header = document.getElementById('modelFixedPriceHeader');
+  if (header) header.hidden = !enabled;
+
+  document.querySelectorAll('#redirectTableBody .redirect-col-fixed-price').forEach((cell) => {
+    cell.hidden = !enabled;
+  });
+
+  document.querySelectorAll('#redirectTableBody .redirect-fixed-price-input').forEach((input) => {
+    input.disabled = !enabled;
+  });
+
+  const emptyCell = document.querySelector('#redirectTableBody .redirect-empty-cell');
+  if (emptyCell) {
+    emptyCell.colSpan = getRedirectTableColspan();
+  }
+}
+
 async function syncScheduledCheckVisibility() {
   const scheduledCheckWrapper = document.getElementById('channelScheduledCheckEnabledWrapper');
   const scheduledCheckModelWrapper = document.getElementById('channelScheduledCheckModelWrapper');
@@ -329,10 +362,17 @@ async function handleChannelSaveSuccess({ isNewChannel, newChannelType, savedCha
   }
   if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
 
+  const savedChannel = response && response.data
+    ? { ...response.data, id: Number(response.data.id || savedChannelId) || 0 }
+    : null;
+  if (savedChannel && typeof upsertChannelLocal === 'function') {
+    upsertChannelLocal(savedChannel, { type: nextType });
+  }
+
   if (typeof reloadChannelsList === 'function') {
-    await reloadChannelsList(nextType, filters.status);
+    void reloadChannelsList(nextType, filters.status);
   } else if (typeof loadChannels === 'function') {
-    await loadChannels(nextType);
+    void loadChannels(nextType);
   }
 }
 
@@ -408,6 +448,16 @@ function initChannelEditorActions() {
     scheduledCheckCheckbox.dataset.bound = '1';
   }
 
+  const fixedPriceCheckbox = document.getElementById('channelModelFixedPriceEnabled');
+  if (fixedPriceCheckbox && !fixedPriceCheckbox.dataset.bound) {
+    fixedPriceCheckbox.addEventListener('change', () => {
+      syncModelFixedPriceVisibility();
+      renderRedirectTable();
+      markChannelFormDirty();
+    });
+    fixedPriceCheckbox.dataset.bound = '1';
+  }
+
   const channelTypeRadios = document.getElementById('channelTypeRadios');
   if (channelTypeRadios && !channelTypeRadios.dataset.protocolTransformsBound) {
     channelTypeRadios.addEventListener('change', (event) => {
@@ -432,6 +482,7 @@ async function showAddModal() {
   document.getElementById('channelEnabled').checked = true;
   document.getElementById('channelScheduledCheckEnabled').checked = false;
   document.getElementById('channelScheduledCheckModel').value = '';
+  document.getElementById('channelModelFixedPriceEnabled').checked = false;
   document.querySelector('input[name="channelType"][value="anthropic"]').checked = true;
   renderProtocolTransformOptions('anthropic', []);
   renderProtocolTransformModeOptions('upstream');
@@ -443,6 +494,7 @@ async function showAddModal() {
   const modelFilterInput = document.getElementById('modelFilterInput');
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
+  syncModelFixedPriceVisibility();
   syncScheduledCheckModelState();
 
   inlineURLTableData = [''];
@@ -527,17 +579,20 @@ async function editChannel(id) {
   document.getElementById('channelEnabled').checked = channel.enabled;
   document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
   document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
+  document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
     model: m.model || '',
-    redirect_model: m.redirect_model || ''
+    redirect_model: m.redirect_model || '',
+    fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request)
   }));
   selectedModelIndices.clear();
   currentModelFilter = '';
   const modelFilterInput = document.getElementById('modelFilterInput');
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
+  syncModelFixedPriceVisibility();
   syncScheduledCheckModelState();
 
   invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
@@ -718,7 +773,8 @@ async function saveChannel(event) {
     .filter(r => r.model && r.model.trim())
     .map(r => ({
       model: r.model.trim(),
-      redirect_model: (r.redirect_model || '').trim()
+      redirect_model: (r.redirect_model || '').trim(),
+      fixed_cost_per_request: Math.max(0, parseFloat(r.fixed_cost_per_request) || 0)
     }));
   const seenModels = new Set();
   const duplicateModels = [];
@@ -760,6 +816,7 @@ async function saveChannel(event) {
       const v = parseFloat(document.getElementById('channelCostMultiplier').value);
       return Number.isFinite(v) && v >= 0 ? v : 1;
     })(),
+    model_fixed_price_enabled: document.getElementById('channelModelFixedPriceEnabled').checked,
     models: models,
     enabled: document.getElementById('channelEnabled').checked,
     scheduled_check_enabled: document.getElementById('channelScheduledCheckEnabled').checked,
@@ -849,7 +906,10 @@ async function confirmDelete() {
     }
     if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
     clearChannelsCache();
-    await reloadChannelsList();
+    if (typeof removeChannelsLocal === 'function') {
+      removeChannelsLocal(channelIDs);
+    }
+    void reloadChannelsList();
     if (window.showSuccess) {
       if (type === 'batch') {
         const data = resp.data || {};
@@ -928,8 +988,12 @@ function renderLocalChannelsAfterEnabledChange() {
 }
 
 async function toggleChannel(id, enabled) {
-  const rollbackLocalChange = setLocalChannelEnabled(id, enabled);
-  renderLocalChannelsAfterEnabledChange();
+  const rollbackLocalChange = typeof setChannelsEnabledLocal === 'function'
+    ? setChannelsEnabledLocal([id], enabled)
+    : setLocalChannelEnabled(id, enabled);
+  if (typeof setChannelsEnabledLocal !== 'function') {
+    renderLocalChannelsAfterEnabledChange();
+  }
 
   try {
     const resp = await fetchAPIWithAuth(`/admin/channels/${id}`, {
@@ -938,7 +1002,11 @@ async function toggleChannel(id, enabled) {
       body: JSON.stringify({ enabled })
     });
     if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+    if (resp.data && typeof upsertChannelLocal === 'function') {
+      upsertChannelLocal(resp.data);
+    }
     clearChannelsCache();
+    void reloadChannelsList();
     if (window.showSuccess) window.showSuccess(enabled ? window.t('channels.channelEnabled') : window.t('channels.channelDisabled'));
   } catch (e) {
     rollbackLocalChange();
@@ -1130,7 +1198,10 @@ async function batchSetSelectedChannelsEnabled(enabled) {
     selectedChannelIds.clear();
     if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
     clearChannelsCache();
-    await reloadChannelsList();
+    if (typeof setChannelsEnabledLocal === 'function') {
+      setChannelsEnabledLocal(channelIDs, enabled);
+    }
+    void reloadChannelsList();
 
     if (window.showSuccess) {
       window.showSuccess(window.t('channels.batchEnabledSummary', {
@@ -1424,17 +1495,20 @@ async function copyChannel(id, name) {
   document.getElementById('channelEnabled').checked = true;
   document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
   document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
+  document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
     model: m.model || '',
-    redirect_model: m.redirect_model || ''
+    redirect_model: m.redirect_model || '',
+    fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request)
   }));
   selectedModelIndices.clear();
   currentModelFilter = '';
   const modelFilterInput = document.getElementById('modelFilterInput');
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
+  syncModelFixedPriceVisibility();
   syncScheduledCheckModelState();
 
   resetChannelFormDirty();
@@ -1572,7 +1646,7 @@ function confirmModelImport() {
   newModels.forEach(entry => {
     const modelKey = entry.model.toLowerCase();
     if (!existingModels.has(modelKey)) {
-      redirectTableData.push({ model: entry.model, redirect_model: entry.redirect_model });
+      redirectTableData.push({ model: entry.model, redirect_model: entry.redirect_model, fixed_cost_per_request: '' });
       existingModels.add(modelKey);
       addedCount++;
     }
@@ -1649,6 +1723,8 @@ function createRedirectRow(redirect, index) {
     toPlaceholder: modelName || window.t('channels.leaveEmptyNoRedirect'),
     mobileLabelModel: window.t('channels.modal.modelName'),
     mobileLabelTarget: window.t('channels.modal.redirectTarget'),
+    mobileLabelFixedPrice: window.t('channels.perRequestPrice'),
+    fixedCostPerRequest: formatFixedCostPerRequestValue(redirect.fixed_cost_per_request),
     mobileLabelActions: window.t('common.actions')
   };
 
@@ -1696,6 +1772,13 @@ function initRedirectTableEventDelegation() {
     if (toInput) {
       const index = parseInt(toInput.dataset.index, 10);
       updateRedirectRow(index, 'redirect_model', toInput.value);
+      return;
+    }
+
+    const fixedPriceInput = e.target.closest('.redirect-fixed-price-input');
+    if (fixedPriceInput) {
+      const index = parseInt(fixedPriceInput.dataset.index, 10);
+      updateRedirectRow(index, 'fixed_cost_per_request', fixedPriceInput.value);
     }
   });
 
@@ -1762,6 +1845,7 @@ function renderRedirectTable() {
 
   // 初始化事件委托（仅一次）
   initRedirectTableEventDelegation();
+  syncModelFixedPriceVisibility();
 
   if (redirectTableData.length === 0) {
     const emptyRow = TemplateEngine.render('tpl-redirect-empty', {
@@ -1772,8 +1856,9 @@ function renderRedirectTable() {
       tbody.appendChild(emptyRow);
     } else {
       // 降级：模板不存在时使用简单HTML
-      tbody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--neutral-500);">${window.t('channels.noModelConfig')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${getRedirectTableColspan()}" style="padding: 20px; text-align: center; color: var(--neutral-500);">${window.t('channels.noModelConfig')}</td></tr>`;
     }
+    syncModelFixedPriceVisibility();
     return;
   }
 
@@ -1781,7 +1866,8 @@ function renderRedirectTable() {
   const visibleIndices = getVisibleModelIndices();
 
   if (visibleIndices.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--neutral-500);">${window.t('channels.noMatchingModels')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${getRedirectTableColspan()}" style="padding: 20px; text-align: center; color: var(--neutral-500);">${window.t('channels.noMatchingModels')}</td></tr>`;
+    syncModelFixedPriceVisibility();
     return;
   }
 
@@ -1794,6 +1880,7 @@ function renderRedirectTable() {
 
   tbody.innerHTML = '';
   tbody.appendChild(fragment);
+  syncModelFixedPriceVisibility();
 
   // 更新全选复选框和批量删除按钮状态
   updateSelectAllModelsCheckbox();
@@ -1988,7 +2075,8 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
     existingModelKeys.add(modelKey);
     rows.push({
       model,
-      redirect_model: (row?.redirect_model || '').trim()
+      redirect_model: (row?.redirect_model || '').trim(),
+      fixed_cost_per_request: formatFixedCostPerRequestValue(row?.fixed_cost_per_request)
     });
   });
 
@@ -2006,7 +2094,8 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
       : modelName;
     rows.push({
       model: modelName,
-      redirect_model: fetchedRedirect
+      redirect_model: fetchedRedirect,
+      fixed_cost_per_request: ''
     });
     added++;
   }
@@ -2019,7 +2108,8 @@ function areModelRowsEqual(left, right) {
   return (left || []).every((row, index) => {
     const other = right[index] || {};
     return (row.model || '') === (other.model || '') &&
-      (row.redirect_model || '') === (other.redirect_model || '');
+      (row.redirect_model || '') === (other.redirect_model || '') &&
+      formatFixedCostPerRequestValue(row.fixed_cost_per_request) === formatFixedCostPerRequestValue(other.fixed_cost_per_request);
   });
 }
 
@@ -2070,7 +2160,8 @@ async function fetchModelsFromAPI() {
 
     const previousRows = redirectTableData.map(row => ({
       model: row.model || '',
-      redirect_model: row.redirect_model || ''
+      redirect_model: row.redirect_model || '',
+      fixed_cost_per_request: formatFixedCostPerRequestValue(row.fixed_cost_per_request)
     }));
     const replacement = mergeModelRowsWithFetchedModels(redirectTableData, data.models);
     if (replacement.rows.length === 0) {
@@ -2147,7 +2238,7 @@ function addCommonModels() {
   for (const modelName of commonModels) {
     const modelKey = modelName.toLowerCase();
     if (!existingModels.has(modelKey)) {
-      redirectTableData.push({ model: modelName, redirect_model: '' });
+      redirectTableData.push({ model: modelName, redirect_model: '', fixed_cost_per_request: '' });
       existingModels.add(modelKey);
       addedCount++;
     }

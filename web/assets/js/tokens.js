@@ -667,6 +667,8 @@
           <col class="tokens-colgroup-rpm">
           <col class="tokens-colgroup-token-usage">
           <col class="tokens-colgroup-cost">
+          <col class="tokens-colgroup-cost">
+          <col class="tokens-colgroup-cost">
           <col class="tokens-colgroup-concurrency">
           <col class="tokens-colgroup-stream">
           <col class="tokens-colgroup-non-stream">
@@ -687,6 +689,8 @@
             <th class="tokens-table-head-center" title="${t('tokens.table.rpmTitle')}">${t('tokens.table.rpm')}</th>
             <th class="tokens-table-head-center">${t('tokens.table.tokenUsage')}</th>
             <th class="tokens-table-head-center">${t('tokens.table.totalCost')}</th>
+            <th class="tokens-table-head-center">${t('tokens.table.dailyCost')}</th>
+            <th class="tokens-table-head-center">${t('tokens.table.dailyLimit')}</th>
             <th class="tokens-table-head-center">${t('tokens.table.concurrency')}</th>
             <th class="tokens-table-head-center">${t('tokens.table.streamAvg')}</th>
             <th class="tokens-table-head-center">${t('tokens.table.nonStreamAvg')}</th>
@@ -877,10 +881,14 @@
       const rpmHtml = buildRpmHtml(token);
       const tokensHtml = buildTokensHtml(token);
       const costHtml = buildCostHtml(token.total_cost_usd, token.effective_cost_usd);
+      const dailyCostHtml = buildSingleCostHtml(token.daily_cost_used_usd);
+      const dailyLimitHtml = buildLimitCostHtml(token.daily_cost_limit_usd);
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
       const costCellClass = token.total_cost_usd > 0 ? '' : 'mobile-empty-cell';
+      const dailyCostCellClass = token.daily_cost_used_usd > 0 ? '' : 'mobile-empty-cell';
+      const dailyLimitCellClass = token.daily_cost_limit_usd > 0 ? '' : 'mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : 'mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : 'mobile-empty-cell';
 
@@ -913,6 +921,10 @@
         tokensHtml: tokensHtml,
         costHtml: costHtml,
         costCellClass: costCellClass,
+        dailyCostHtml: dailyCostHtml,
+        dailyCostCellClass: dailyCostCellClass,
+        dailyLimitHtml: dailyLimitHtml,
+        dailyLimitCellClass: dailyLimitCellClass,
         concurrencyHtml: concurrencyHtml,
         streamAvgHtml: streamAvgHtml,
         streamCellClass: streamCellClass,
@@ -930,6 +942,8 @@
         mobileLabelRpm: t('tokens.table.rpm'),
         mobileLabelTokenUsage: t('tokens.table.tokenUsage'),
         mobileLabelCost: t('tokens.table.totalCost'),
+        mobileLabelDailyCost: t('tokens.table.dailyCost'),
+        mobileLabelDailyLimit: t('tokens.table.dailyLimit'),
         mobileLabelConcurrency: t('tokens.table.concurrency'),
         mobileLabelStream: t('tokens.table.streamAvg'),
         mobileLabelNonStream: t('tokens.table.nonStreamAvg'),
@@ -1190,10 +1204,14 @@
       const rpmHtml = buildRpmHtml(token);
       const tokensHtml = buildTokensHtml(token);
       const costHtml = buildCostHtml(token.total_cost_usd, token.effective_cost_usd);
+      const dailyCostHtml = buildSingleCostHtml(token.daily_cost_used_usd);
+      const dailyLimitHtml = buildLimitCostHtml(token.daily_cost_limit_usd);
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
       const costCellClass = token.total_cost_usd > 0 ? '' : ' mobile-empty-cell';
+      const dailyCostCellClass = token.daily_cost_used_usd > 0 ? '' : ' mobile-empty-cell';
+      const dailyLimitCellClass = token.daily_cost_limit_usd > 0 ? '' : ' mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : ' mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : ' mobile-empty-cell';
 
@@ -1222,6 +1240,8 @@
           <td class="tokens-col-rpm token-mobile-foldable" data-mobile-label="${t('tokens.table.rpm')}">${rpmHtml}</td>
           <td class="tokens-col-token-usage token-mobile-foldable" data-mobile-label="${t('tokens.table.tokenUsage')}">${tokensHtml}</td>
           <td class="tokens-col-cost token-mobile-foldable${costCellClass}" data-mobile-label="${t('tokens.table.totalCost')}">${costHtml}</td>
+          <td class="tokens-col-cost token-mobile-foldable${dailyCostCellClass}" data-mobile-label="${t('tokens.table.dailyCost')}">${dailyCostHtml}</td>
+          <td class="tokens-col-cost token-mobile-foldable${dailyLimitCellClass}" data-mobile-label="${t('tokens.table.dailyLimit')}">${dailyLimitHtml}</td>
           <td class="tokens-col-concurrency token-mobile-foldable" data-mobile-label="${t('tokens.table.concurrency')}">${concurrencyHtml}</td>
           <td class="tokens-col-stream token-mobile-foldable${streamCellClass}" data-mobile-label="${t('tokens.table.streamAvg')}">${streamAvgHtml}</td>
           <td class="tokens-col-non-stream token-mobile-foldable${nonStreamCellClass}" data-mobile-label="${t('tokens.table.nonStreamAvg')}">${nonStreamAvgHtml}</td>
@@ -1301,10 +1321,41 @@
           body: JSON.stringify({ description, expires_at: expiresAt, is_active: isActive, cost_limit_usd: costLimitUSD, max_concurrency: maxConcurrency })
         });
 
+        upsertTokenLocal({
+          id: data.id,
+          token: data.token,
+          plain_token: data.token,
+          description,
+          created_at: data.created_at || new Date().toISOString(),
+          expires_at: expiresAt,
+          is_active: isActive,
+          allowed_models: Array.isArray(data.allowed_models) ? data.allowed_models : [],
+          allowed_channel_ids: Array.isArray(data.allowed_channel_ids) ? data.allowed_channel_ids : [],
+          max_concurrency: maxConcurrency,
+          cost_limit_usd: costLimitUSD,
+          success_count: 0,
+          failure_count: 0,
+          stream_avg_ttfb: 0,
+          non_stream_avg_rt: 0,
+          stream_count: 0,
+          non_stream_count: 0,
+          prompt_tokens_total: 0,
+          completion_tokens_total: 0,
+          cache_read_tokens_total: 0,
+          cache_creation_tokens_total: 0,
+          total_cost_usd: 0,
+          effective_cost_usd: 0,
+          cost_used_usd: 0,
+          group_id: Number(data.group_id) || 0,
+          inherit_quota: !!data.inherit_quota,
+          inherit_channels: !!data.inherit_channels,
+          inherit_models: !!data.inherit_models
+        });
+        renderTokens();
         closeCreateModal();
         document.getElementById('newTokenValue').value = data.token;
         document.getElementById('tokenResultModal').style.display = 'block';
-        await loadTokens();
+        void loadTokens();
         window.showNotification(t('tokens.msg.createSuccess'), 'success');
       } catch (error) {
         console.error('Failed to create token:', error);
@@ -1571,7 +1622,7 @@
         }
       }
       try {
-        await fetchDataWithAuth(`${API_BASE}/auth-tokens/${id}`, {
+        const savedToken = await fetchDataWithAuth(`${API_BASE}/auth-tokens/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json'
@@ -1592,8 +1643,10 @@
             max_concurrency: maxConcurrency      // 2026-04新增：并发上限
           })
         });
+        upsertTokenLocal(savedToken);
+        renderTokens();
         closeEditModal();
-        await loadTokens();
+        void loadTokens();
         window.showNotification(t('tokens.msg.updateSuccess'), 'success');
       } catch (error) {
         console.error('Failed to update token:', error);
@@ -1608,7 +1661,9 @@
         await fetchDataWithAuth(`${API_BASE}/auth-tokens/${id}`, {
           method: 'DELETE'
         });
-        await loadTokens();
+        removeTokenLocal(id);
+        renderTokens();
+        void loadTokens();
         window.showNotification(t('tokens.msg.deleteSuccess'), 'success');
       } catch (error) {
         console.error('Failed to delete token:', error);
@@ -1876,6 +1931,70 @@
       }).join('');
     }
 
+    function sortAuthTokenGroups(groups = []) {
+      return groups.sort((a, b) => {
+        const nameA = String(a?.name || '');
+        const nameB = String(b?.name || '');
+        const nameCmp = nameA.localeCompare(nameB);
+        if (nameCmp !== 0) return nameCmp;
+        return Number(a?.id || 0) - Number(b?.id || 0);
+      });
+    }
+
+    function upsertAuthTokenGroupLocal(group) {
+      if (!group) return null;
+      const normalized = { ...group };
+      const groupID = Number(normalized.id || 0);
+      if (groupID <= 0) return normalized;
+      const index = authTokenGroups.findIndex((item) => Number(item?.id || 0) === groupID);
+      if (index >= 0) authTokenGroups[index] = { ...authTokenGroups[index], ...normalized };
+      else authTokenGroups.push(normalized);
+      sortAuthTokenGroups(authTokenGroups);
+      return normalized;
+    }
+
+    function removeAuthTokenGroupLocal(groupID) {
+      const id = Number(groupID) || 0;
+      if (id <= 0) return;
+      authTokenGroups = authTokenGroups.filter((group) => Number(group?.id || 0) !== id);
+    }
+
+    function syncTokenGroupUI(selectedID = 0) {
+      renderTokenGroupList();
+      refreshEditGroupOptions(selectedID);
+      renderTokens();
+    }
+
+    function sortTokensByCreatedAtDesc(tokens = []) {
+      tokens.sort((a, b) => {
+        const timeA = Date.parse(a?.created_at || 0) || 0;
+        const timeB = Date.parse(b?.created_at || 0) || 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return Number(b?.id || 0) - Number(a?.id || 0);
+      });
+      return tokens;
+    }
+
+    function upsertTokenLocal(token) {
+      if (!token) return null;
+      const normalized = { ...token };
+      const tokenID = normalizeSelectedTokenID(normalized.id);
+      if (!tokenID) return normalized;
+      const index = allTokens.findIndex((item) => normalizeSelectedTokenID(item?.id) === tokenID);
+      if (index >= 0) allTokens[index] = { ...allTokens[index], ...normalized };
+      else allTokens.push(normalized);
+      sortTokensByCreatedAtDesc(allTokens);
+      syncSelectedTokensWithData();
+      return normalized;
+    }
+
+    function removeTokenLocal(id) {
+      const tokenID = normalizeSelectedTokenID(id);
+      if (!tokenID) return;
+      allTokens = allTokens.filter((item) => normalizeSelectedTokenID(item?.id) !== tokenID);
+      syncSelectedTokensWithData();
+    }
+
     async function loadTokenGroupRestrictionsSourceData() {
       if (allChannels.length === 0) {
         await loadChannelsData();
@@ -1924,14 +2043,25 @@
             allowed_models: []
           })
         });
-        await loadAuthTokenGroups();
-        renderTokenGroupList();
         const savedGroupID = resolveSavedTokenGroupID(savedGroup);
-        refreshEditGroupOptions(savedGroupID);
-        await loadTokens();
+        upsertAuthTokenGroupLocal({
+          name: defaultName,
+          description: '',
+          color: getDefaultTokenGroupColor(),
+          cost_limit_usd: 0,
+          max_concurrency: 0,
+          allowed_channel_ids: [],
+          allowed_models: [],
+          token_count: 0,
+          ...savedGroup,
+          id: savedGroupID || savedGroup?.id
+        });
+        syncTokenGroupUI(savedGroupID);
         if (savedGroupID > 0) {
           editTokenGroupInModal(savedGroupID);
         }
+        void loadAuthTokenGroups().then(() => syncTokenGroupUI(savedGroupID)).catch(() => {});
+        void loadTokens();
         window.showNotification(t('tokens.msg.groupCreateSuccess'), 'success');
       } catch (error) {
         console.error('Failed to create token group draft:', error);
@@ -1972,16 +2102,26 @@
             allowed_models: tokenGroupAllowedModels
           })
         });
-        await loadAuthTokenGroups();
-        renderTokenGroupList();
         const savedGroupID = resolveSavedTokenGroupID(savedGroup, id);
-        refreshEditGroupOptions(savedGroupID || Number(document.getElementById('editTokenGroup')?.value) || 0);
-        await loadTokens();
+        upsertAuthTokenGroupLocal({
+          id: savedGroupID || id || savedGroup?.id,
+          name,
+          description,
+          color,
+          cost_limit_usd: costLimitUSD,
+          max_concurrency: maxConcurrencyResult.value,
+          allowed_channel_ids: tokenGroupAllowedChannelIDs.slice(),
+          allowed_models: tokenGroupAllowedModels.slice(),
+          ...savedGroup
+        });
+        syncTokenGroupUI(savedGroupID || Number(document.getElementById('editTokenGroup')?.value) || 0);
         if (savedGroupID > 0) {
           editTokenGroupInModal(savedGroupID);
         } else {
           resetTokenGroupForm();
         }
+        void loadAuthTokenGroups().then(() => syncTokenGroupUI(savedGroupID || id || 0)).catch(() => {});
+        void loadTokens();
         window.showNotification(t(id ? 'tokens.msg.groupUpdateSuccess' : 'tokens.msg.groupCreateSuccess'), 'success');
       } catch (error) {
         console.error('Failed to save token group:', error);
@@ -2011,9 +2151,13 @@
       if (!confirm(t('tokens.msg.deleteGroupConfirm'))) return;
       try {
         await fetchDataWithAuth(`${API_BASE}/auth-token-groups/${groupID}`, { method: 'DELETE' });
-        await loadAuthTokenGroups();
-        renderTokenGroupList();
-        await loadTokens();
+        removeAuthTokenGroupLocal(groupID);
+        syncTokenGroupUI(0);
+        if (Number(document.getElementById('tokenGroupEditId')?.value) === Number(groupID)) {
+          resetTokenGroupForm();
+        }
+        void loadAuthTokenGroups().then(() => syncTokenGroupUI(0)).catch(() => {});
+        void loadTokens();
         window.showNotification(t('tokens.msg.groupDeleteSuccess'), 'success');
       } catch (error) {
         console.error('Failed to delete token group:', error);
