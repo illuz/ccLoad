@@ -16,6 +16,14 @@ if [[ -z "$PM2_BIN" ]]; then
   exit 1
 fi
 
+install_binary_atomically() {
+  local src="$1"
+  local dst="$2"
+  local tmp="${dst}.tmp.$$"
+  install -m 0755 "$src" "$tmp"
+  mv -f "$tmp" "$dst"
+}
+
 PM2_REAL="$(readlink -f "$PM2_BIN" 2>/dev/null || echo "$PM2_BIN")"
 if [[ "$PM2_REAL" == */lib/node_modules/pm2/bin/pm2 ]]; then
   NODE_HOME="${PM2_REAL%/lib/node_modules/pm2/bin/pm2}"
@@ -48,8 +56,7 @@ unset IFS
 LATEST_BACKUP="${sorted[-1]}"
 
 echo "==> Rolling back binary from: $LATEST_BACKUP"
-cp -a "$LATEST_BACKUP" "$BIN_PATH"
-chmod 0755 "$BIN_PATH"
+install_binary_atomically "$LATEST_BACKUP" "$BIN_PATH"
 
 if "$PM2_BIN" describe "$APP_NAME" >/dev/null 2>&1; then
   echo "==> Restarting existing PM2 app: $APP_NAME"

@@ -12,21 +12,25 @@ if [[ -z "$PM2_BIN" && -x "/root/.local/share/fnm/node-versions/v16.20.2/install
   PM2_BIN="/root/.local/share/fnm/node-versions/v16.20.2/installation/bin/pm2"
 fi
 GOTAGS="${GOTAGS:-sonic}"
-HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:8080/health}"
-HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
-HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
-HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
 BACKUP_PATH=""
 PM2_EXISTS_BEFORE=0
 DEPLOYED_BINARY=0
 OLD_BIN_PRESENT=0
+
+install_binary_atomically() {
+  local src="$1"
+  local dst="$2"
+  local tmp="${dst}.tmp.$$"
+  install -m 0755 "$src" "$tmp"
+  mv -f "$tmp" "$dst"
+}
 
 rollback() {
   set +e
 
   if [[ "$DEPLOYED_BINARY" -eq 1 ]]; then
     if [[ -n "$BACKUP_PATH" && -f "$BACKUP_PATH" ]]; then
-      cp -a "$BACKUP_PATH" "$BIN_PATH"
+      install_binary_atomically "$BACKUP_PATH" "$BIN_PATH"
       echo "==> Rolled back binary from backup"
     elif [[ "$OLD_BIN_PRESENT" -eq 0 && -f "$BIN_PATH" ]]; then
       rm -f "$BIN_PATH"
@@ -99,6 +103,19 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# Load runtime env so PORT/HEALTHCHECK_URL and other shell-compatible values
+# are available to this deploy script too.
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+PORT="${PORT:-8080}"
+HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:${PORT}/health}"
+HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
+HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
+HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
+
 mkdir -p "$LOG_DIR"
 
 cd "$SOURCE_DIR"
@@ -116,7 +133,7 @@ if [[ -f "$BIN_PATH" ]]; then
   OLD_BIN_PRESENT=1
   echo "    backup: $BACKUP_PATH"
 fi
-install -m 0755 "$SOURCE_DIR/ccload" "$BIN_PATH"
+install_binary_atomically "$SOURCE_DIR/ccload" "$BIN_PATH"
 DEPLOYED_BINARY=1
 
 if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
