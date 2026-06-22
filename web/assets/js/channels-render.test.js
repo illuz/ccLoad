@@ -412,11 +412,11 @@ test('buildProtocolTransformBadges 按完整协议集合渲染额外协议并去
 
   const html = buildProtocolTransformBadges('anthropic', ['gemini', 'openai', 'anthropic', 'codex', 'openai', 'unknown']);
 
-  assert.match(html, />OpenAI</);
-  assert.match(html, />Codex</);
-  assert.match(html, />Gemini</);
+  assert.match(html, />Op</);
+  assert.match(html, />Cx</);
+  assert.match(html, />Ge</);
   assert.doesNotMatch(html, />Anthropic</);
-  assert.equal((html.match(/>OpenAI</g) || []).length, 1);
+  assert.equal((html.match(/>Op</g) || []).length, 1);
   assert.match(html, /Protocol Transforms: OpenAI/);
 });
 
@@ -447,10 +447,10 @@ test('createChannelCard 会把额外协议标签传给渠道卡片模板且保�
     enabled: true
   });
 
-  assert.match(cardData.typeBadge, />Gemini</);
-  assert.match(cardData.protocolTransformBadges, />Claude</);
-  assert.match(cardData.protocolTransformBadges, />OpenAI</);
-  assert.doesNotMatch(cardData.protocolTransformBadges, />Gemini</);
+  assert.match(cardData.typeBadge, />Ge</);
+  assert.match(cardData.protocolTransformBadges, />Cl</);
+  assert.match(cardData.protocolTransformBadges, />Op</);
+  assert.doesNotMatch(cardData.protocolTransformBadges, />Ge</);
 });
 
 test('createChannelCard 会把最后成功状态传给渠道行模板', () => {

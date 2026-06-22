@@ -1142,8 +1142,8 @@
       align-items: center;
       gap: 4px;
       min-width: 0;
-      flex: 0 1 auto;
-      max-width: min(46%, 220px);
+      flex: 0 1 min(62%, 360px);
+      max-width: min(62%, 360px);
     }
 
     .ch-name-statuses {
@@ -1162,7 +1162,8 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       color: var(--neutral-900);
-      font-size: 13px;
+      font-size: 14px;
+      line-height: 1.35;
     }
 
     .ch-url-line {

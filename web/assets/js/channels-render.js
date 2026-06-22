@@ -357,24 +357,28 @@ function getChannelTypeConfig(channelType) {
   const configs = {
     'anthropic': {
       text: 'Claude',
+      shortText: 'Cl',
       color: '#8b5cf6',
       bgColor: '#f3e8ff',
       borderColor: '#c4b5fd'
     },
     'codex': {
       text: 'Codex',
+      shortText: 'Cx',
       color: '#059669',
       bgColor: '#d1fae5',
       borderColor: '#6ee7b7'
     },
     'openai': {
       text: 'OpenAI',
+      shortText: 'Op',
       color: '#10b981',
       bgColor: '#d1fae5',
       borderColor: '#6ee7b7'
     },
     'gemini': {
       text: 'Gemini',
+      shortText: 'Ge',
       color: '#2563eb',
       bgColor: '#dbeafe',
       borderColor: '#93c5fd'
@@ -411,25 +415,25 @@ function buildChannelTypeBadge(channelType) {
     color: config.color,
     borderColor: config.borderColor
   });
-  return `<span style="${badgeStyle}">${config.text}</span>`;
+  return `<span title="${config.text}" aria-label="${config.text}" style="${badgeStyle}">${config.shortText || config.text}</span>`;
 }
 
 function getProtocolTransformBadgeLabel(protocol) {
   const labels = {
-    anthropic: ['channels.protocolBadgeAnthropic', 'Claude'],
-    codex: ['channels.protocolTransformCodex', 'Codex'],
-    openai: ['channels.protocolTransformOpenAI', 'OpenAI'],
-    gemini: ['channels.protocolTransformGemini', 'Gemini']
+    anthropic: ['channels.protocolBadgeAnthropic', 'Claude', 'Cl'],
+    codex: ['channels.protocolTransformCodex', 'Codex', 'Cx'],
+    openai: ['channels.protocolTransformOpenAI', 'OpenAI', 'Op'],
+    gemini: ['channels.protocolTransformGemini', 'Gemini', 'Ge']
   };
-  const [translationKey, fallback] = labels[protocol] || [];
+  const [translationKey, fallback, shortFallback] = labels[protocol] || [];
   if (!translationKey) return protocol;
   if (window.t) {
     const translated = window.t(translationKey);
     if (translated && translated !== translationKey) {
-      return translated;
+      return shortFallback || translated;
     }
   }
-  return fallback;
+  return shortFallback || fallback;
 }
 
 function normalizeProtocolTransformsForDisplay(channelType, protocolTransforms) {
@@ -452,7 +456,15 @@ function buildProtocolTransformBadges(channelType, protocolTransforms) {
     borderStyle: 'dashed'
   });
 
-  return `<span style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: 6px; vertical-align: middle;">${transforms.map((protocol) => `<span title="${titlePrefix}: ${getProtocolTransformBadgeLabel(protocol)}" style="${protocolBadgeStyle}">${getProtocolTransformBadgeLabel(protocol)}</span>`).join('')}</span>`;
+  return `<span style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: 6px; vertical-align: middle;">${transforms.map((protocol) => {
+    const fullLabel = {
+      anthropic: 'Claude',
+      codex: 'Codex',
+      openai: 'OpenAI',
+      gemini: 'Gemini'
+    }[protocol] || protocol;
+    return `<span title="${titlePrefix}: ${fullLabel}" aria-label="${titlePrefix}: ${fullLabel}" style="${protocolBadgeStyle}">${getProtocolTransformBadgeLabel(protocol)}</span>`;
+  }).join('')}</span>`;
 }
 
 /**
