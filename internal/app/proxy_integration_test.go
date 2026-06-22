@@ -2649,7 +2649,66 @@ func TestProxy_UnsupportedStructuredAnthropicTransformRequestReturns400(t *testi
 	}
 }
 
-func TestProxy_UnsupportedAnthropicSystemRoleFallsBackToNextChannel(t *testing.T) {
+func TestProxy_AnthropicMessageSystemRoleTransformsToOpenAI(t *testing.T) {
+	t.Parallel()
+
+	upstreamBodies := make(chan []byte, 1)
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		upstreamBodies <- body
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl_1","object":"chat.completion","created":0,"model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`))
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "glm-transform", channelType: "openai", models: "glm-5.2", apiKey: "sk-glm", priority: 100},
+	}, map[int]string{0: upstream.URL})
+
+	configs, err := env.store.ListConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListConfigs failed: %v", err)
+	}
+	cfg := configs[0]
+	cfg.ProtocolTransforms = []string{"anthropic"}
+	cfg.ProtocolTransformMode = model.ProtocolTransformModeLocal
+	if _, err := env.store.UpdateConfig(context.Background(), cfg.ID, cfg); err != nil {
+		t.Fatalf("UpdateConfig failed: %v", err)
+	}
+	env.server.InvalidateChannelListCache()
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/messages", map[string]any{
+		"model":  "glm-5.2",
+		"system": "top-level system",
+		"messages": []map[string]any{{
+			"role":    "system",
+			"content": "message system",
+		}, {
+			"role":    "user",
+			"content": "hi",
+		}},
+	}, map[string]string{"anthropic-version": "2023-06-01"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var upstreamBody []byte
+	select {
+	case upstreamBody = <-upstreamBodies:
+	default:
+		t.Fatal("upstream was not called")
+	}
+	body := string(upstreamBody)
+	if !strings.Contains(body, `"role":"system"`) || !strings.Contains(body, "top-level system") || !strings.Contains(body, "message system") {
+		t.Fatalf("expected both system prompts in translated OpenAI request, got %s", body)
+	}
+	if !strings.Contains(w.Body.String(), `"type":"message"`) || !strings.Contains(w.Body.String(), `"text":"ok"`) {
+		t.Fatalf("expected translated Anthropic response, got %s", w.Body.String())
+	}
+}
+
+func TestProxy_UnsupportedAnthropicUnknownRoleFallsBackToNextChannel(t *testing.T) {
 	t.Parallel()
 
 	var ch1Calls atomic.Int32
@@ -2691,13 +2750,13 @@ func TestProxy_UnsupportedAnthropicSystemRoleFallsBackToNextChannel(t *testing.T
 	env.server.InvalidateChannelListCache()
 
 	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/messages", map[string]any{
-		"model": "glm-5.2",
+		"model":  "glm-5.2",
 		"system": "be terse",
 		"messages": []map[string]any{{
-			"role": "system",
-			"content": "duplicate system role triggers unsupported transform",
+			"role":    "moderator",
+			"content": "unsupported role triggers fallback",
 		}, {
-			"role": "user",
+			"role":    "user",
 			"content": "hi",
 		}},
 	}, map[string]string{"anthropic-version": "2023-06-01"})

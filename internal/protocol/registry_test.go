@@ -840,6 +840,24 @@ func TestRegistry_TranslateRequest_AnthropicToOpenAI(t *testing.T) {
 	}
 }
 
+func TestRegistry_TranslateRequest_AnthropicToOpenAI_MessageSystemRole(t *testing.T) {
+	reg := protocol.NewRegistry()
+	builtin.Register(reg)
+
+	raw := []byte(`{"model":"glm-5.2","system":"top-level system","messages":[{"role":"system","content":"message system"},{"role":"user","content":"hello"}]}`)
+	got, err := reg.TranslateRequest(protocol.Anthropic, protocol.OpenAI, "glm-5.2", raw, false)
+	if err != nil {
+		t.Fatalf("TranslateRequest failed: %v", err)
+	}
+	body := string(got)
+	if !strings.Contains(body, `"role":"system"`) || !strings.Contains(body, `top-level system`) || !strings.Contains(body, `message system`) {
+		t.Fatalf("expected top-level and message system prompts converted to OpenAI system messages, got %s", got)
+	}
+	if !strings.Contains(body, `"role":"user"`) || !strings.Contains(body, `hello`) {
+		t.Fatalf("expected user message preserved, got %s", got)
+	}
+}
+
 func TestRegistry_TranslateResponseNonStream_OpenAIToAnthropic(t *testing.T) {
 	reg := protocol.NewRegistry()
 	builtin.Register(reg)

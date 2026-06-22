@@ -110,6 +110,11 @@ func normalizeAnthropicConversation(req anthropicMessagesRequest) (conversation,
 			parts = dropReasoningParts(parts)
 		}
 		switch role {
+		case "system", "developer":
+			if len(parts) == 0 {
+				continue
+			}
+			conv.Turns = append(conv.Turns, conversationTurn{Role: "system", Parts: parts})
 		case "user", "assistant":
 			if len(parts) == 0 {
 				continue
