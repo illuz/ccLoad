@@ -123,6 +123,16 @@ func TestStaticFileServing(t *testing.T) {
 		}
 	})
 
+	t.Run("web_root_returns_it_works", func(t *testing.T) {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("/web/ status=%d, want %d", w.Code, http.StatusOK)
+		}
+		if body := w.Body.String(); body != "it works" {
+			t.Fatalf("/web/ body=%q, want %q", body, "it works")
+		}
+	})
+
 	t.Run("path_traversal_forbidden", func(t *testing.T) {
 		req := newRequest(http.MethodGet, "/web/index.html", nil)
 		req.URL.Path = "/web/../x"

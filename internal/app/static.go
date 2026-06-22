@@ -95,9 +95,10 @@ func serveStaticFileFrom(c *gin.Context, fileSystem fs.FS) {
 		return
 	}
 
-	// 空路径时默认返回 index.html
+	// /web 与 /web/ 不再暴露目录首页，返回极简探活文本
 	if reqPath == "." || reqPath == "" {
-		reqPath = "index.html"
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte("it works"))
+		return
 	}
 
 	// 检查文件是否存在

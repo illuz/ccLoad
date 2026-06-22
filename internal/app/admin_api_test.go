@@ -1159,15 +1159,16 @@ func TestPublicSummaryRequiresLogin(t *testing.T) {
 	}
 }
 
-func TestHomeEntrancesReturn404(t *testing.T) {
+func TestRootEntranceReturnsItWorks(t *testing.T) {
 	server := newInMemoryServer(t)
 	r := gin.New()
 	server.SetupRoutes(r)
 
-	for _, path := range []string{"/", "/web", "/web/"} {
-		w := serveHTTP(t, r, newRequest(http.MethodGet, path, nil))
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("%s 应返回 404，实际: %d", path, w.Code)
-		}
+	root := serveHTTP(t, r, newRequest(http.MethodGet, "/", nil))
+	if root.Code != http.StatusOK {
+		t.Fatalf("/ 应返回 200，实际: %d", root.Code)
+	}
+	if root.Body.String() != "it works" {
+		t.Fatalf("/ body=%q, want %q", root.Body.String(), "it works")
 	}
 }

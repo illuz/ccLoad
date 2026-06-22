@@ -818,15 +818,9 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	// - CSS/JS：长缓存（1年），通过版本号查询参数刷新
 	setupStaticFiles(r)
 
-	// 首页直接 404，仅保留显式登录入口 /web/login.html
+	// 首页返回极简探活文本，仅保留显式登录入口 /web/login.html
 	r.GET("/", func(c *gin.Context) {
-		c.Status(http.StatusNotFound)
-	})
-	r.GET("/web", func(c *gin.Context) {
-		c.Status(http.StatusNotFound)
-	})
-	r.GET("/web/", func(c *gin.Context) {
-		c.Status(http.StatusNotFound)
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte("it works"))
 	})
 }
 
