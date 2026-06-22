@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="${APP_NAME:-ccload}"
 SOURCE_DIR="${SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-RUNTIME_DIR="${RUNTIME_DIR:-/root/docker-compose/ccload-native}"
+RUNTIME_DIR="${RUNTIME_DIR:-/root/workspace/ccload-runtime}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/ccload}"
 ENV_FILE="${ENV_FILE:-$RUNTIME_DIR/.env}"
 LOG_DIR="${LOG_DIR:-$RUNTIME_DIR/logs}"
@@ -49,18 +49,17 @@ if [[ -f "$BIN_PATH" ]]; then
 fi
 install -m 0755 "$SOURCE_DIR/ccload" "$BIN_PATH"
 
-echo "==> Starting/restarting PM2 app: $APP_NAME"
+echo "==> Starting PM2 app: $APP_NAME"
 if "$PM2_BIN" describe "$APP_NAME" >/dev/null 2>&1; then
-  "$PM2_BIN" restart "$APP_NAME" --update-env
-else
-  "$PM2_BIN" start "$BIN_PATH" \
-    --name "$APP_NAME" \
-    --cwd "$RUNTIME_DIR" \
-    --interpreter none \
-    --time \
-    --output "$LOG_DIR/ccload.log" \
-    --error "$LOG_DIR/ccload.error.log"
+  "$PM2_BIN" delete "$APP_NAME" >/dev/null 2>&1 || true
 fi
+"$PM2_BIN" start "$BIN_PATH" \
+  --name "$APP_NAME" \
+  --cwd "$RUNTIME_DIR" \
+  --interpreter none \
+  --time \
+  --output "$LOG_DIR/ccload.log" \
+  --error "$LOG_DIR/ccload.error.log"
 
 echo "==> Saving PM2 process list"
 "$PM2_BIN" save
