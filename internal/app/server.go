@@ -733,12 +733,12 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	// 健康检查（公开访问，无需认证，K8s liveness/readiness probe）
 	r.GET("/health", s.HandleHealth)
 
-	// 公开访问的API（首页仪表盘数据）
-	// [SECURITY NOTE] /public/* 端点故意不做认证，用于首页展示。
-	// 如需隐藏运营数据，可添加 s.authService.RequireTokenAuth() 中间件。
+	// 公开访问的API
+	// - /public/summary: 需要后台登录态，避免未登录页面先看到运营数据
+	// - 其他 public 端点：保留公开，供前端加载静态配置/版本信息
 	public := r.Group("/public", ZstdMiddleware())
 	{
-		public.GET("/summary", s.HandlePublicSummary)
+		public.GET("/summary", s.authService.RequireTokenAuth(), s.HandlePublicSummary)
 		public.GET("/channel-types", s.HandleGetChannelTypes)
 		public.GET("/version", s.HandlePublicVersion)
 	}
@@ -818,9 +818,15 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	// - CSS/JS：长缓存（1年），通过版本号查询参数刷新
 	setupStaticFiles(r)
 
-	// 默认首页重定向
+	// 首页直接 404，仅保留显式登录入口 /web/login.html
 	r.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/web/index.html")
+		c.Status(http.StatusNotFound)
+	})
+	r.GET("/web", func(c *gin.Context) {
+		c.Status(http.StatusNotFound)
+	})
+	r.GET("/web/", func(c *gin.Context) {
+		c.Status(http.StatusNotFound)
 	})
 }
 

@@ -959,7 +959,7 @@ export CCLOAD_SQLITE_LOG_DAYS=7  # 恢复最近 7 天日志（可选）
 
 - 未设置 `CCLOAD_PASS`：程序启动失败并退出（安全第一）
 - 未配置 API 访问令牌：所有 `/v1/*` 与 `/v1beta/*` API 返回 `401 Unauthorized`，去Web界面 `/web/tokens.html` 配置令牌
-- 公开端点：`GET /health`（健康检查）和 `GET /public/summary`（统计摘要）无需认证，其他都要授权
+- 公开端点：仅 `GET /health`（健康检查）无需认证；`GET /public/summary`（统计摘要）现在需要管理员登录，其它后台页面/API 也都需要授权
 
 ### Docker 镜像
 
@@ -1096,14 +1096,14 @@ curl -X POST http://localhost:8080/login \
 # {
 #   "status": "success",
 #   "token": "abc123...",  # 64字符十六进制Token
-#   "expiresIn": 86400     # 24小时（秒）
+#   "expiresIn": 2592000   # 30天（秒）
 # }
 
 # 2. 使用Token访问管理API
 curl http://localhost:8080/admin/channels \
   -H "Authorization: Bearer <your_token>"
 
-# 3. 登出（可选，Token会在24小时后自动过期）
+# 3. 登出（可选，Token会在30天后自动过期）
 curl -X POST http://localhost:8080/logout \
   -H "Authorization: Bearer <your_token>"
 ```
@@ -1156,7 +1156,7 @@ docker inspect ccload --format='{{.State.Health.Status}}'
 ```bash
 # 测试服务健康状态（轻量级健康检查，<5ms）
 curl -s http://localhost:8080/health
-# 或查看统计摘要（返回业务数据，50-200ms）
+# 或查看统计摘要（需要管理员登录 Token）
 curl -s http://localhost:8080/public/summary
 # 检查环境变量配置
 env | grep CCLOAD

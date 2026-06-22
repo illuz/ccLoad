@@ -1134,3 +1134,40 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Fatalf("期望 status='ok'，实际: %v", resp.Data.Status)
 	}
 }
+
+func TestPublicSummaryRequiresLogin(t *testing.T) {
+	server := newInMemoryServer(t)
+	r := gin.New()
+	server.SetupRoutes(r)
+
+	unauth := serveHTTP(t, r, newRequest(http.MethodGet, "/public/summary?range=today", nil))
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("未登录应返回 401，实际: %d", unauth.Code)
+	}
+
+	token := "test-admin-token"
+	tokenHash := model.HashToken(token)
+	server.authService.tokensMux.Lock()
+	server.authService.validTokens[tokenHash] = time.Now().Add(1 * time.Hour)
+	server.authService.tokensMux.Unlock()
+
+	req := newRequest(http.MethodGet, "/public/summary?range=today", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	ok := serveHTTP(t, r, req)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("已登录应返回 200，实际: %d, body=%s", ok.Code, ok.Body.String())
+	}
+}
+
+func TestHomeEntrancesReturn404(t *testing.T) {
+	server := newInMemoryServer(t)
+	r := gin.New()
+	server.SetupRoutes(r)
+
+	for _, path := range []string{"/", "/web", "/web/"} {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s 应返回 404，实际: %d", path, w.Code)
+		}
+	}
+}

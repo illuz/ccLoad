@@ -82,7 +82,7 @@ const (
 	TokenRandomBytes = 32
 
 	// TokenExpiry Token有效期
-	TokenExpiry = 24 * time.Hour
+	TokenExpiry = 30 * 24 * time.Hour
 
 	// TokenCleanupInterval Token清理间隔
 	TokenCleanupInterval = 1 * time.Hour

@@ -248,7 +248,7 @@ func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
 			if strings.HasPrefix(authHeader, prefix) {
 				token := strings.TrimPrefix(authHeader, prefix)
 
-				// 检查动态Token（登录生成的24小时Token）
+				// 检查动态Token（登录生成的长期会话Token）
 				if s.isValidToken(token) {
 					c.Next()
 					return

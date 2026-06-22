@@ -232,6 +232,8 @@
     return token && (!expiry || Date.now() <= parseInt(expiry));
   }
 
+  window.isLoggedIn = isLoggedIn;
+
   // GitHub仓库地址
   const GITHUB_REPO_URL = 'https://github.com/caidaoli/ccLoad';
   const GITHUB_RELEASES_URL = 'https://github.com/caidaoli/ccLoad/releases';
@@ -1303,9 +1305,22 @@
 
   window.CCPartialRouter = CCPartialRouter;
 
+  function hasActiveLogin() {
+    if (typeof window.isLoggedIn === 'function') {
+      return !!window.isLoggedIn();
+    }
+    if (typeof localStorage === 'undefined') {
+      return false;
+    }
+    const token = localStorage.getItem('ccload_token');
+    const expiry = localStorage.getItem('ccload_token_expiry');
+    return !!(token && (!expiry || Date.now() <= parseInt(expiry)));
+  }
+
   function initPageBootstrap(options = {}) {
     const run = typeof options.run === 'function' ? options.run : () => {};
     const topbarKey = options.topbarKey || getCurrentPageKey();
+    const requireAuth = options.requireAuth !== false;
     const shouldAutoExecute = !(
       window.CCPartialRouter
       && typeof window.CCPartialRouter.isPartialNavigationActive === 'function'
@@ -1330,6 +1345,11 @@
     }
 
     const execute = async () => {
+      if (requireAuth && !hasActiveLogin()) {
+        fallbackToDocumentNavigation(window.getLoginUrl ? window.getLoginUrl() : '/web/login.html', 'page auth required');
+        return;
+      }
+
       if (topbarKey && window.CCPageLifecycle) {
         await window.CCPageLifecycle.mount(topbarKey, { partial: false, source: 'initial' });
         return;

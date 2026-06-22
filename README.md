@@ -909,7 +909,7 @@ Base priority order: A > B > C > D
 
 - `CCLOAD_PASS` not set: Program fails to start and exits (secure default)
 - No API access tokens configured: All `/v1/*` and `/v1beta/*` APIs return `401 Unauthorized`. Configure tokens via Web interface `/web/tokens.html`
-- Public endpoints: `GET /health` (health check) and `GET /public/summary` (stats summary) require no auth, all others require auth token
+- Public endpoints: `GET /health` (health check) is public; `GET /public/summary` requires admin login, all other admin pages/API require auth token
 
 ### Docker Images
 
@@ -1040,14 +1040,14 @@ curl -X POST http://localhost:8080/login \
 # {
 #   "status": "success",
 #   "token": "abc123...",  # 64-char hex token
-#   "expiresIn": 86400     # 24 hours (seconds)
+#   "expiresIn": 2592000   # 30 days (seconds)
 # }
 
 # 2. Use token to access admin API
 curl http://localhost:8080/admin/channels \
   -H "Authorization: Bearer <your_token>"
 
-# 3. Logout (optional, token auto-expires after 24 hours)
+# 3. Logout (optional, token auto-expires after 30 days)
 curl -X POST http://localhost:8080/logout \
   -H "Authorization: Bearer <your_token>"
 ```
@@ -1085,7 +1085,7 @@ docker inspect ccload --format='{{.State.Health.Status}}'
 ```bash
 # Test service health (lightweight health check, <5ms)
 curl -s http://localhost:8080/health
-# Or view stats summary (returns business data, 50-200ms)
+# Or view stats summary (requires admin login token)
 curl -s http://localhost:8080/public/summary
 # Check environment variable config
 env | grep CCLOAD

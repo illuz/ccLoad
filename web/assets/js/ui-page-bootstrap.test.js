@@ -29,6 +29,10 @@ function extractCommonUiHelpers(source) {
 function loadUiCommonHelpers({ readyState = 'loading' } = {}) {
   const listeners = new Map();
   const body = { dataset: {} };
+  const localStorageState = new Map([
+    ['ccload_token', 'test-token'],
+    ['ccload_token_expiry', String(Date.now() + 60_000)]
+  ]);
   const sandbox = {
     console,
     document: {
@@ -39,16 +43,29 @@ function loadUiCommonHelpers({ readyState = 'loading' } = {}) {
       }
     },
     window: {},
+    localStorage: {
+      getItem(key) {
+        return localStorageState.has(key) ? localStorageState.get(key) : null;
+      },
+      setItem(key, value) {
+        localStorageState.set(key, String(value));
+      },
+      removeItem(key) {
+        localStorageState.delete(key);
+      }
+    },
     setTimeout,
     clearTimeout
   };
 
   vm.createContext(sandbox);
+  sandbox.window.localStorage = sandbox.localStorage;
   vm.runInContext(extractCommonUiHelpers(uiSource), sandbox);
   return {
     body,
     listeners,
-    window: sandbox.window
+    window: sandbox.window,
+    localStorage: sandbox.localStorage
   };
 }
 
@@ -105,6 +122,35 @@ test('ui.js 的共享页面 bootstrap helper 在 DOM 已就绪时立即执行', 
 
   await Promise.resolve();
   assert.deepEqual(calls, ['translate', 'topbar:stats', 'run']);
+});
+
+test('ui.js 的共享页面 bootstrap helper 会在未登录时跳转登录页', async () => {
+  const { window, localStorage } = loadUiCommonHelpers({ readyState: 'complete' });
+  const redirects = [];
+  const calls = [];
+
+  localStorage.removeItem('ccload_token');
+  localStorage.removeItem('ccload_token_expiry');
+  window.getLoginUrl = () => '/web/login.html?redirect=%2Fweb%2Fstats.html';
+  window.location = {
+    href: '',
+    assign(url) { redirects.push(url); }
+  };
+
+  window.initTopbar = () => {
+    calls.push('topbar');
+  };
+
+  window.initPageBootstrap({
+    topbarKey: 'stats',
+    run: () => {
+      calls.push('run');
+    }
+  });
+
+  await Promise.resolve();
+  assert.deepEqual(calls, []);
+  assert.deepEqual(redirects, ['/web/login.html?redirect=%2Fweb%2Fstats.html']);
 });
 
 test('关键页面通过共享 bootstrap helper 初始化，而不是各自直接绑定 DOMContentLoaded 样板', () => {
