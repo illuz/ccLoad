@@ -221,13 +221,14 @@
       <form id="channelForm" class="channel-editor-form">
         <div class="channel-editor-body">
         <div class="form-group channel-editor-group channel-editor-group--primary">
-          <div class="channel-editor-primary-row">
+          <div class="channel-editor-primary-row channel-editor-primary-row--single">
             <div class="channel-editor-primary-field channel-editor-primary-field--name">
               <label class="form-label channel-editor-inline-label" data-i18n="channels.channelName">渠道名称
                 *</label>
               <input type="text" id="channelName" class="form-input channel-editor-input" required>
             </div>
-
+          </div>
+          <div class="channel-editor-primary-row channel-editor-primary-row--single">
             <div class="channel-editor-primary-field channel-editor-primary-field--type">
               <label class="form-label channel-editor-inline-label channel-editor-inline-label--muted"
                 data-i18n="channels.modal.upstreamProtocol">上游协议</label>
@@ -236,7 +237,7 @@
               </div>
             </div>
           </div>
-          <div class="channel-editor-primary-row">
+          <div class="channel-editor-primary-row channel-editor-primary-row--dual">
             <div class="channel-editor-primary-field channel-editor-primary-field--transforms">
               <div class="channel-editor-inline-group">
                 <label class="form-label channel-editor-inline-label"
@@ -438,6 +439,10 @@
             </label>
             <div class="channel-editor-section-actions channel-editor-section-actions--models">
               <div class="channel-editor-action-row">
+                <label class="form-label channel-editor-inline-toggle-label">
+                  <input type="checkbox" id="channelModelFixedPriceEnabled">
+                  <span data-i18n="channels.modelFixedPriceEnabled">按次计费</span>
+                </label>
                 <button type="button" class="btn btn-secondary btn-sm" data-action="add-common-models"
                   data-i18n-title="channels.addCommonModelsTitle" title="添加当前渠道类型的常用模型">
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -506,6 +511,7 @@
                       data-input-action="filter-models-by-keyword">
                   </th>
                   <th style="width: 42%;" data-i18n="channels.redirectTarget">重定向目标（可选）</th>
+                  <th id="modelFixedPriceHeader" style="width: 120px;" data-i18n="channels.perRequestPrice" hidden>按次价格</th>
                   <th style="width: 60px;"></th>
                 </tr>
               </thead>
@@ -1170,6 +1176,10 @@
         <input type="text" class="redirect-to-input modal-inline-input" data-index="{{index}}" value="{{to}}"
           placeholder="{{toPlaceholder}}">
       </td>
+      <td class="redirect-col-fixed-price" data-mobile-label="{{mobileLabelFixedPrice}}" hidden>
+        <input type="number" class="redirect-fixed-price-input modal-inline-input" data-index="{{index}}" value="{{fixedCostPerRequest}}"
+          min="0" step="0.000001" placeholder="0">
+      </td>
       <td class="redirect-col-actions" data-mobile-label="{{mobileLabelActions}}">
         <button type="button" class="redirect-delete-btn" data-index="{{index}}"
           data-i18n-title="channels.deleteThisModel" title="删除此模型">
@@ -1186,7 +1196,7 @@
   <!-- 重定向规则空状态模板 -->
   <template id="tpl-redirect-empty">
     <tr>
-      <td colspan="4" class="redirect-empty-cell">
+      <td colspan="5" class="redirect-empty-cell">
         {{message}}
       </td>
     </tr>

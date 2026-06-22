@@ -309,15 +309,25 @@
     }
 
     .channel-editor-group--primary {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, max-content);
-      column-gap: 20px;
-      row-gap: 2px;
-      align-items: start;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
     .channel-editor-group--primary .channel-editor-primary-row {
-      display: contents;
+      min-width: 0;
+    }
+
+    .channel-editor-primary-row--single {
+      display: block;
+    }
+
+    .channel-editor-primary-row--dual {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, max-content);
+      column-gap: 20px;
+      row-gap: 8px;
+      align-items: start;
     }
 
     .channel-editor-primary-field {
@@ -517,6 +527,15 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
+    }
+
+    .channel-editor-inline-toggle-label {
+      margin: 0 4px 0 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
 
     .channel-editor-checkbox-label[hidden] {
@@ -3010,7 +3029,7 @@
         border-top: 1px solid var(--neutral-200);
       }
 
-      #channelModal .channel-editor-checkbox-label {
+      #channelModal .channel-editor-footer > .channel-editor-checkbox-label {
         grid-column: 1;
         grid-row: 1;
         width: auto;
