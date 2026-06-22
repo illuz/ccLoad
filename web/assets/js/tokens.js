@@ -1080,6 +1080,13 @@
       return `$${value.toFixed(decimals)}`;
     }
 
+    function formatCostDisplay(costUsd) {
+      const value = Number(costUsd) || 0;
+      if (value <= 0) return '$0';
+      const decimals = value >= 1 ? 2 : 4;
+      return `$${value.toFixed(decimals).replace(/\.?0+$/, '')}`;
+    }
+
     function buildCostMetricRow(label, value, options = {}) {
       const toneClass = options.tone ? ` token-cost-summary__value--${options.tone}` : '';
       const hintHtml = options.hint ? `<span class="token-cost-summary__hint">${escapeHtml(options.hint)}</span>` : '';
@@ -1094,25 +1101,23 @@
 
     function buildCostSummaryHtml(token) {
       const totalCostUsd = Number(token?.total_cost_usd) || 0;
-      const effectiveCostUsd = Number(token?.effective_cost_usd) || 0;
       const dailyCostUsd = Number(token?.daily_cost_used_usd) || 0;
       const dailyLimitUsd = Number(token?.daily_cost_limit_usd) || 0;
 
       const rows = [];
-
-      let totalValue = formatCostValue(totalCostUsd, 4);
-      let totalHint = '';
-      if (effectiveCostUsd > 0 && Math.abs(effectiveCostUsd - totalCostUsd) > 0.0000001) {
-        totalHint = `${t('tokens.effectiveCostHint')} ${formatCostValue(effectiveCostUsd, 4)}`;
-      }
-      rows.push(buildCostMetricRow(t('tokens.table.totalCost'), totalValue, { tone: totalCostUsd > 0 ? 'warning' : '', hint: totalHint }));
-
-      rows.push(buildCostMetricRow(t('tokens.table.dailyCost'), formatCostValue(dailyCostUsd, 4), { tone: dailyCostUsd > 0 ? 'primary' : '' }));
-
       rows.push(buildCostMetricRow(
-        t('tokens.table.dailyLimit'),
-        dailyLimitUsd > 0 ? formatCostValue(dailyLimitUsd, 2) : '∞',
-        { tone: dailyLimitUsd > 0 ? '' : 'muted' }
+        t('tokens.table.totalCost'),
+        formatCostDisplay(totalCostUsd),
+        { tone: totalCostUsd > 0 ? 'warning' : 'muted' }
+      ));
+
+      const dailyValue = dailyLimitUsd > 0
+        ? `${formatCostDisplay(dailyCostUsd)}/${formatCostDisplay(dailyLimitUsd)}`
+        : formatCostDisplay(dailyCostUsd);
+      rows.push(buildCostMetricRow(
+        t('tokens.table.dailyCost'),
+        dailyValue,
+        { tone: dailyCostUsd > 0 ? 'primary' : 'muted' }
       ));
 
       return `<div class="token-cost-summary">${rows.join('')}</div>`;
