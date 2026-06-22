@@ -2649,6 +2649,70 @@ func TestProxy_UnsupportedStructuredAnthropicTransformRequestReturns400(t *testi
 	}
 }
 
+func TestProxy_UnsupportedAnthropicSystemRoleFallsBackToNextChannel(t *testing.T) {
+	t.Parallel()
+
+	var ch1Calls atomic.Int32
+	upstreamCh1 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ch1Calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"unexpected":true}`))
+	}))
+	defer upstreamCh1.Close()
+
+	var ch2Calls atomic.Int32
+	upstreamCh2 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ch2Calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"from-ch2","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstreamCh2.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "glm-transform", channelType: "openai", models: "glm-5.2", apiKey: "sk-glm", priority: 100},
+		{name: "fallback", channelType: "anthropic", models: "glm-5.2", apiKey: "sk-fallback", priority: 50},
+	}, map[int]string{0: upstreamCh1.URL, 1: upstreamCh2.URL})
+
+	configs, err := env.store.ListConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListConfigs failed: %v", err)
+	}
+	for _, cfg := range configs {
+		if cfg.Name == "glm-transform" {
+			cfg.ProtocolTransforms = []string{"anthropic"}
+			cfg.ProtocolTransformMode = model.ProtocolTransformModeLocal
+			if _, err := env.store.UpdateConfig(context.Background(), cfg.ID, cfg); err != nil {
+				t.Fatalf("UpdateConfig failed: %v", err)
+			}
+		}
+	}
+	env.server.InvalidateChannelListCache()
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/messages", map[string]any{
+		"model": "glm-5.2",
+		"system": "be terse",
+		"messages": []map[string]any{{
+			"role": "system",
+			"content": "duplicate system role triggers unsupported transform",
+		}, {
+			"role": "user",
+			"content": "hi",
+		}},
+	}, map[string]string{"anthropic-version": "2023-06-01"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after retrying next channel, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := ch1Calls.Load(); got != 0 {
+		t.Fatalf("first channel upstream calls=%d, want 0 because transform should fail before upstream", got)
+	}
+	if got := ch2Calls.Load(); got != 1 {
+		t.Fatalf("second channel upstream calls=%d, want 1", got)
+	}
+}
+
 func TestProxy_UnsupportedStructuredCodexTransformRequestReturns400(t *testing.T) {
 	t.Parallel()
 

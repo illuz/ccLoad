@@ -1472,6 +1472,16 @@ func (s *Server) forwardAttempt(
 
 	res, duration, err := s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
 		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer)
+	if err != nil && errors.Is(err, protocol.ErrUnsupportedRequestShape) {
+		channelID := cfg.ID
+		return &proxyResult{
+			status:     http.StatusBadRequest,
+			body:       []byte(err.Error()),
+			channelID:  &channelID,
+			succeeded:  false,
+			nextAction: cooldown.ActionRetryChannel,
+		}, cooldown.ActionRetryChannel, nil
+	}
 
 	// 传递 debug 数据到 proxyRequestContext（用于日志记录）
 	if res != nil && res.DebugData != nil {

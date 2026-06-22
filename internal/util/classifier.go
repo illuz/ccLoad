@@ -803,9 +803,10 @@ func ClassifyError(err error) (statusCode int, errorLevel ErrorLevel, shouldRetr
 		return http.StatusBadGateway, ErrorLevelChannel, true
 	}
 
-	// 快速路径1.5：协议转换明确声明为客户端请求结构不支持
+	// 快速路径1.5：协议转换明确声明为当前渠道不支持该请求结构。
+	// 对客户端仍返回 400，但路由层应继续尝试下一个可用渠道。
 	if errors.Is(err, protocol.ErrUnsupportedRequestShape) {
-		return http.StatusBadRequest, ErrorLevelClient, false
+		return http.StatusBadRequest, ErrorLevelChannel, true
 	}
 
 	// 快速路径2：处理客户端主动取消
