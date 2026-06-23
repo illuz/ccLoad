@@ -142,31 +142,24 @@
         document.getElementById(`type-${type}-cache-read`).textContent = formatNumber(cacheReadTokens);
       }
 
-      // 渲染两个饼图：今日令牌消费费用 + 今日渠道消费占用
-      renderTokenCostPie(`type-${type}-pie-token`, data && data.cost_by_token);
+      // 渲染两个饼图：今日 API 令牌消费对比 + 今日渠道消费占用
+      renderTokenCostPie(`type-${type}-pie-token`, data && data.by_token);
       renderChannelCostPie(`type-${type}-pie-channel`, data && data.by_channel);
     }
 
-    // 渲染「今日令牌消费费用」饼图
-    function renderTokenCostPie(containerId, breakdown) {
+    // 渲染「今日 API 令牌消费对比」饼图
+    function renderTokenCostPie(containerId, byToken) {
       const items = [];
-      if (breakdown) {
-        const labelInput = t('index.pies.tokenInput');
-        const labelOutput = t('index.pies.tokenOutput');
-        const labelCacheRead = t('index.pies.tokenCacheRead');
-        const labelCacheCreate = t('index.pies.tokenCacheCreate');
-        if (breakdown.input > 0) items.push({ name: labelInput, value: breakdown.input });
-        if (breakdown.output > 0) items.push({ name: labelOutput, value: breakdown.output });
-        if (breakdown.cache_read > 0) items.push({ name: labelCacheRead, value: breakdown.cache_read });
-        if (breakdown.cache_create > 0) items.push({ name: labelCacheCreate, value: breakdown.cache_create });
+      if (Array.isArray(byToken)) {
+        for (const entry of byToken) {
+          const cost = Number(entry && entry.cost) || 0;
+          if (cost > 0) {
+            const name = (entry && entry.name && String(entry.name).trim()) || `#${entry.auth_token_id || ''}` || t('index.pies.other');
+            items.push({ name, value: cost });
+          }
+        }
       }
-      const colorMap = {
-        [t('index.pies.tokenInput')]: '#3b82f6',
-        [t('index.pies.tokenOutput')]: '#10b981',
-        [t('index.pies.tokenCacheRead')]: '#f59e0b',
-        [t('index.pies.tokenCacheCreate')]: '#8b5cf6'
-      };
-      renderPie(containerId, items, '$', colorMap);
+      renderPie(containerId, items, '$', null);
     }
 
     // 渲染「今日渠道消费占用」饼图
@@ -275,7 +268,7 @@
       if (!statsData || !statsData.by_type) return;
       const types = ['anthropic', 'codex', 'openai', 'gemini'];
       for (const t of types) {
-        renderTokenCostPie(`type-${t}-pie-token`, statsData.by_type[t] && statsData.by_type[t].cost_by_token);
+        renderTokenCostPie(`type-${t}-pie-token`, statsData.by_type[t] && statsData.by_type[t].by_token);
         renderChannelCostPie(`type-${t}-pie-channel`, statsData.by_type[t] && statsData.by_type[t].by_channel);
       }
     });

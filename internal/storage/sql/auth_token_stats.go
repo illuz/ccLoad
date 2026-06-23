@@ -160,3 +160,41 @@ func (s *SQLStore) FillAuthTokenRPMStats(ctx context.Context, stats map[int64]*m
 
 	return nil
 }
+
+// GetCostByChannelAndToken 聚合指定时间范围内 (channel_id, auth_token_id) 维度的 effective_cost
+// 跳过 auth_token_id=0 的日志（未携带令牌的请求不计入令牌消费对比）
+// [FIX] 与 /public/summary 保持一致：排除 499（客户端取消）避免污染成本统计
+func (s *SQLStore) GetCostByChannelAndToken(ctx context.Context, startTime, endTime time.Time) ([]model.CostByChannelTokenRow, error) {
+	sinceMs := startTime.UnixMilli()
+	untilMs := endTime.UnixMilli()
+
+	query := `
+		SELECT
+			channel_id,
+			auth_token_id,
+			SUM(COALESCE(cost, 0.0) * COALESCE(cost_multiplier, 1)) AS effective_cost
+		FROM logs
+		WHERE time >= ? AND time <= ?
+			AND channel_id > 0
+			AND auth_token_id > 0
+			AND status_code != 499
+		GROUP BY channel_id, auth_token_id
+	`
+	rows, err := s.db.QueryContext(ctx, query, sinceMs, untilMs)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]model.CostByChannelTokenRow, 0, 64)
+	for rows.Next() {
+		var row model.CostByChannelTokenRow
+		if err := rows.Scan(&row.ChannelID, &row.AuthTokenID, &row.EffectiveCost); err != nil {
+			return nil, err
+		}
+		if row.EffectiveCost > 0 {
+			result = append(result, row)
+		}
+	}
+	return result, rows.Err()
+}

@@ -129,3 +129,11 @@ type ChannelNameID struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 }
+
+// CostByChannelTokenRow (channel_id, auth_token_id) 维度的成本聚合行
+// 用于首页按渠道类型 + API 令牌拆分的饼图
+type CostByChannelTokenRow struct {
+	ChannelID     int64
+	AuthTokenID   int64
+	EffectiveCost float64
+}

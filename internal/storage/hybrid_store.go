@@ -757,6 +757,10 @@ func (h *HybridStore) FillAuthTokenRPMStats(ctx context.Context, stats map[int64
 	return h.sqlite.FillAuthTokenRPMStats(ctx, stats, startTime, endTime, isToday)
 }
 
+func (h *HybridStore) GetCostByChannelAndToken(ctx context.Context, startTime, endTime time.Time) ([]model.CostByChannelTokenRow, error) {
+	return h.sqlite.GetCostByChannelAndToken(ctx, startTime, endTime)
+}
+
 // === System Settings ===
 
 func (h *HybridStore) GetSetting(ctx context.Context, key string) (*model.SystemSetting, error) {

@@ -112,19 +112,23 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 	isToday := params.Range == "today" || params.Range == ""
 	ctx := c.Request.Context()
 
-	// [OPT] P1: 并行执行三个独立查询
+	// [OPT] P1: 并行执行独立查询
 	// 并行查询结果变量
 	var (
-		stats        []model.StatsEntry
-		rpmStats     *model.RPMStats
-		channelMetas map[int64]ChannelMeta
-		statsErr     error
-		rpmErr       error
-		typesErr     error
-		wg           sync.WaitGroup
+		stats         []model.StatsEntry
+		rpmStats      *model.RPMStats
+		channelMetas  map[int64]ChannelMeta
+		tokenCostRows []model.CostByChannelTokenRow
+		authTokens    []*model.AuthToken
+		statsErr      error
+		rpmErr        error
+		typesErr      error
+		tokenCostErr  error
+		authTokensErr error
+		wg            sync.WaitGroup
 	)
 
-	wg.Add(3)
+	wg.Add(5)
 
 	// 查询1: 基础统计（使用 Lite 版本跳过 fillStatsRPM）
 	go func() {
@@ -144,6 +148,18 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		channelMetas, typesErr = s.getChannelMetaMapCached(ctx)
 	}()
 
+	// 查询4: (channel_id, auth_token_id) 维度的成本聚合（用于按 API 令牌拆分的饼图）
+	go func() {
+		defer wg.Done()
+		tokenCostRows, tokenCostErr = s.store.GetCostByChannelAndToken(ctx, startTime, endTime)
+	}()
+
+	// 查询5: auth token 列表（用于把 auth_token_id 解析为描述/明文展示名）
+	go func() {
+		defer wg.Done()
+		authTokens, authTokensErr = s.store.ListAuthTokens(ctx)
+	}()
+
 	wg.Wait()
 
 	// 错误处理
@@ -157,6 +173,14 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 	}
 	if typesErr != nil {
 		RespondError(c, http.StatusInternalServerError, typesErr)
+		return
+	}
+	if tokenCostErr != nil {
+		RespondError(c, http.StatusInternalServerError, tokenCostErr)
+		return
+	}
+	if authTokensErr != nil {
+		RespondError(c, http.StatusInternalServerError, authTokensErr)
 		return
 	}
 
@@ -202,7 +226,6 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 				TotalRequests:   0,
 				SuccessRequests: 0,
 				ErrorRequests:   0,
-				CostByToken:     &TokenCostBreakdown{},
 			}
 			byChannelAgg[channelType] = make(map[int64]*channelAgg)
 		}
@@ -243,23 +266,6 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 			if stat.TotalCacheCreationInputTokens != nil {
 				ts.TotalCacheCreationTokens += *stat.TotalCacheCreationInputTokens
 			}
-		}
-
-		// 计算 per-token-type 成本：按模型单独调用 CalculateCostDetailed（每种 token 单独计入）
-		// 注：分档计价（如 Gemini >200K 翻倍）在拆分后会丢失整请求阈值，饼图用于展示占比，可接受
-		modelName := stat.Model
-		if stat.TotalInputTokens != nil && *stat.TotalInputTokens > 0 {
-			ts.CostByToken.Input += util.CalculateCostDetailed(modelName, int(*stat.TotalInputTokens), 0, 0, 0, 0)
-		}
-		if stat.TotalOutputTokens != nil && *stat.TotalOutputTokens > 0 {
-			ts.CostByToken.Output += util.CalculateCostDetailed(modelName, 0, int(*stat.TotalOutputTokens), 0, 0, 0)
-		}
-		if isCacheType && stat.TotalCacheReadInputTokens != nil && *stat.TotalCacheReadInputTokens > 0 {
-			ts.CostByToken.CacheRead += util.CalculateCostDetailed(modelName, 0, 0, int(*stat.TotalCacheReadInputTokens), 0, 0)
-		}
-		if isCacheType && stat.TotalCacheCreationInputTokens != nil && *stat.TotalCacheCreationInputTokens > 0 {
-			// StatsEntry 未区分 5m/1h，全部按 cache_5m 估算（与 prompt caching 倍率一致）
-			ts.CostByToken.CacheCreate += util.CalculateCostDetailed(modelName, 0, 0, 0, int(*stat.TotalCacheCreationInputTokens), 0)
 		}
 
 		// 按 channel 聚合 effective_cost（缺省回退到 total_cost）
@@ -306,6 +312,66 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		ts.ByChannel = entries
 	}
 
+	// 按 (channel_type, auth_token_id) 聚合 effective_cost，用于「今日 API 令牌消费对比」饼图
+	// auth_token_id → 展示名（描述优先，缺失则用明文令牌前缀，再缺失则用 #id）
+	tokenDisplayName := make(map[int64]string, len(authTokens))
+	for _, t := range authTokens {
+		name := t.Description
+		if name == "" && t.PlainToken != "" {
+			name = t.PlainToken
+		}
+		if name == "" {
+			name = "Token #" + strconv.FormatInt(t.ID, 10)
+		}
+		tokenDisplayName[t.ID] = name
+	}
+	type tokenAgg struct {
+		id   int64
+		name string
+		cost float64
+	}
+	byTokenAgg := make(map[string]map[int64]*tokenAgg)
+	for _, row := range tokenCostRows {
+		meta, ok := channelMetas[row.ChannelID]
+		if !ok || meta.Type == "" {
+			continue
+		}
+		channelType := meta.Type
+		if byTokenAgg[channelType] == nil {
+			byTokenAgg[channelType] = make(map[int64]*tokenAgg)
+		}
+		agg, exists := byTokenAgg[channelType][row.AuthTokenID]
+		if !exists {
+			agg = &tokenAgg{id: row.AuthTokenID, name: tokenDisplayName[row.AuthTokenID]}
+			byTokenAgg[channelType][row.AuthTokenID] = agg
+		}
+		agg.cost += row.EffectiveCost
+	}
+	const maxTokenEntries = 20
+	for channelType, agg := range byTokenAgg {
+		ts := typeStats[channelType]
+		if ts == nil || len(agg) == 0 {
+			continue
+		}
+		entries := make([]AuthTokenCostEntry, 0, len(agg))
+		for _, a := range agg {
+			if a.cost > 0 {
+				entries = append(entries, AuthTokenCostEntry{
+					AuthTokenID: a.id,
+					Name:        a.name,
+					Cost:        a.cost,
+				})
+			}
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Cost > entries[j].Cost
+		})
+		if len(entries) > maxTokenEntries {
+			entries = entries[:maxTokenEntries]
+		}
+		ts.ByToken = entries
+	}
+
 	response := gin.H{
 		"total_requests":   totalSuccess + totalError,
 		"success_requests": totalSuccess,
@@ -332,16 +398,15 @@ type TypeSummary struct {
 	TotalCacheCreationTokens int64                `json:"total_cache_creation_tokens,omitempty"` // Claude/Codex专用（prompt caching）
 	TotalCost                float64              `json:"total_cost,omitempty"`                  // 标准成本
 	EffectiveCost            *float64             `json:"effective_cost,omitempty"`              // 倍率后成本
-	CostByToken              *TokenCostBreakdown  `json:"cost_by_token,omitempty"`               // 按 token 类型拆分的成本占比（用于饼图）
+	ByToken                  []AuthTokenCostEntry `json:"by_token,omitempty"`                    // 该类型下各 API 令牌的 effective_cost 占用（用于饼图）
 	ByChannel                []ChannelCostEntry   `json:"by_channel,omitempty"`                  // 该类型下各渠道的 effective_cost 占用（用于饼图）
 }
 
-// TokenCostBreakdown 按 token 类型拆分的成本（美元）
-type TokenCostBreakdown struct {
-	Input       float64 `json:"input,omitempty"`
-	Output      float64 `json:"output,omitempty"`
-	CacheRead   float64 `json:"cache_read,omitempty"`
-	CacheCreate float64 `json:"cache_create,omitempty"`
+// AuthTokenCostEntry 单个 API 令牌的成本占用
+type AuthTokenCostEntry struct {
+	AuthTokenID int64   `json:"auth_token_id"`
+	Name        string  `json:"name"`
+	Cost        float64 `json:"cost"`
 }
 
 // ChannelCostEntry 单个渠道的成本占用
