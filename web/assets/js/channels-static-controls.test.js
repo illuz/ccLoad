@@ -30,6 +30,7 @@ test('channels 页固定控件不再使用静态 inline 事件', () => {
   assert.match(html, /data-action="show-add-modal"/);
   assert.match(html, /data-action="batch-enable-channels"/);
   assert.match(html, /data-action="batch-delete-channels"/);
+  assert.match(html, /data-action="add-inline-key"/);
   assert.match(html, /data-action="open-key-import-modal"/);
   assert.match(html, /data-action="close-key-export-modal"/);
   assert.match(html, /data-action="save-sort-order"/);

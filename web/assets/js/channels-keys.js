@@ -836,6 +836,20 @@ function confirmInlineKeyImport() {
   window.showNotification(msg, 'success');
 }
 
+function addInlineKey() {
+  if (inlineKeyTableData.length === 0 || inlineKeyTableData[inlineKeyTableData.length - 1].trim()) {
+    inlineKeyTableData.push('');
+    renderInlineKeyTable();
+    markChannelFormDirty();
+  }
+
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#inlineKeyTableBody .inline-key-input');
+    const lastInput = inputs[inputs.length - 1];
+    if (lastInput) lastInput.focus();
+  }, 0);
+}
+
 function openKeyImportModal() {
   document.getElementById('keyImportTextarea').value = '';
   document.getElementById('keyImportPreviewContent').classList.add('hidden');

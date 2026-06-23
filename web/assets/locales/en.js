@@ -195,6 +195,8 @@ window.I18N_LOCALES['en'] = {
   'channels.addUrl': 'Add',
   'channels.batchDeleteUrlsTitle': 'Batch delete selected URLs',
   'channels.virtualScrollEnabled': '· Virtual scroll enabled',
+  'channels.addKey': 'Add',
+  'channels.addKeyTitle': 'Add API Key',
   'channels.importKeys': 'Import',
   'channels.toggleKeyVisibility': 'Show/Hide API Key',
   'channels.batchDeleteKeysTitle': 'Batch delete selected Keys',

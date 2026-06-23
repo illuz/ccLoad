@@ -194,6 +194,8 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.addUrl': '添加',
   'channels.batchDeleteUrlsTitle': '批量删除选中的URL',
   'channels.virtualScrollEnabled': '· 虚拟滚动已启用',
+  'channels.addKey': '新增',
+  'channels.addKeyTitle': '新增 API Key',
   'channels.importKeys': '导入',
   'channels.toggleKeyVisibility': '显示/隐藏API Key',
   'channels.batchDeleteKeysTitle': '批量删除选中的Keys',
