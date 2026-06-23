@@ -91,13 +91,16 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 		t.Fatalf("BatchAddLogs failed: %v", err)
 	}
 
-	t.Run("getChannelTypesMapCached respects TTL", func(t *testing.T) {
-		m1, err := server.getChannelTypesMapCached(ctx)
+	t.Run("getChannelMetaMapCached respects TTL", func(t *testing.T) {
+		m1, err := server.getChannelMetaMapCached(ctx)
 		if err != nil {
-			t.Fatalf("getChannelTypesMapCached failed: %v", err)
+			t.Fatalf("getChannelMetaMapCached failed: %v", err)
 		}
-		if m1[anth.ID] != "anthropic" || m1[oai.ID] != "openai" {
+		if m1[anth.ID].Type != "anthropic" || m1[oai.ID].Type != "openai" {
 			t.Fatalf("unexpected types: %#v", m1)
+		}
+		if m1[anth.ID].Name != "anth" || m1[oai.ID].Name != "oai" {
+			t.Fatalf("unexpected names: %#v", m1)
 		}
 
 		cfg, err := store.GetConfig(ctx, anth.ID)
@@ -110,22 +113,22 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 		}
 
 		// TTL 未过期，应该返回旧值（缓存命中）
-		m2, err := server.getChannelTypesMapCached(ctx)
+		m2, err := server.getChannelMetaMapCached(ctx)
 		if err != nil {
-			t.Fatalf("getChannelTypesMapCached failed: %v", err)
+			t.Fatalf("getChannelMetaMapCached failed: %v", err)
 		}
-		if m2[anth.ID] != "anthropic" {
-			t.Fatalf("expected cached type anthropic, got %q", m2[anth.ID])
+		if m2[anth.ID].Type != "anthropic" {
+			t.Fatalf("expected cached type anthropic, got %q", m2[anth.ID].Type)
 		}
 
 		// 手动让缓存过期，强制刷新
-		server.channelTypesCacheTime = time.Now().Add(-2 * channelTypesCacheTTL)
-		m3, err := server.getChannelTypesMapCached(ctx)
+		server.channelMetaCacheTime = time.Now().Add(-2 * channelMetaCacheTTL)
+		m3, err := server.getChannelMetaMapCached(ctx)
 		if err != nil {
-			t.Fatalf("getChannelTypesMapCached failed: %v", err)
+			t.Fatalf("getChannelMetaMapCached failed: %v", err)
 		}
-		if m3[anth.ID] != "codex" {
-			t.Fatalf("expected refreshed type codex, got %q", m3[anth.ID])
+		if m3[anth.ID].Type != "codex" {
+			t.Fatalf("expected refreshed type codex, got %q", m3[anth.ID].Type)
 		}
 	})
 

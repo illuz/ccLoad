@@ -83,10 +83,10 @@ type Server struct {
 	isShuttingDown atomic.Bool        // shutdown标志，防止向已关闭channel写入
 	wg             sync.WaitGroup     // 等待所有后台goroutine结束
 
-	// [OPT] P3: 渠道类型缓存（TTL 30s）
-	channelTypesCache     map[int64]string
-	channelTypesCacheTime time.Time
-	channelTypesCacheMu   sync.RWMutex
+	// [OPT] P3: 渠道元信息缓存（名称+类型，TTL 60s）
+	channelMetaCache     map[int64]ChannelMeta
+	channelMetaCacheTime time.Time
+	channelMetaCacheMu   sync.RWMutex
 }
 
 // NewServer 创建并初始化一个新的 Server 实例
@@ -624,10 +624,10 @@ func (s *Server) InvalidateChannelListCache() {
 	if s.channelBalancer != nil {
 		s.channelBalancer.ResetAll()
 	}
-	// 一并失效渠道类型映射缓存，避免 admin CRUD 后 60s TTL 脏读（read-after-write 一致性）
-	s.channelTypesCacheMu.Lock()
-	s.channelTypesCache = nil
-	s.channelTypesCacheMu.Unlock()
+	// 一并失效渠道元信息缓存，避免 admin CRUD 后 60s TTL 脏读（read-after-write 一致性）
+	s.channelMetaCacheMu.Lock()
+	s.channelMetaCache = nil
+	s.channelMetaCacheMu.Unlock()
 }
 
 // InvalidateAPIKeysCache 使指定渠道的 API Keys 缓存失效
@@ -757,6 +757,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		// 渠道管理
 		admin.GET("/channels", s.HandleChannels)
 		admin.POST("/channels", s.HandleChannels)
+		admin.POST("/channels/quick-add", s.HandleQuickAddChannel)
 		admin.GET("/channels/filter-options", s.HandleChannelsFilterOptions)
 		admin.GET("/channels/export", s.HandleExportChannelsCSV)
 		admin.POST("/channels/import", s.HandleImportChannelsCSV)

@@ -16,6 +16,7 @@
   <script defer src="/web/assets/js/i18n.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/date-range-selector.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/ui.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/echarts.min.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/index.js?v=__VERSION__"></script>
 </head>
 <body class="page-index">
@@ -88,6 +89,17 @@
                   <span class="token-value token-cache" id="type-anthropic-cache-create">0</span>
                 </div>
               </div>
+              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
+              <div class="channel-pies">
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
+                  <div class="channel-pie-chart" id="type-anthropic-pie-token"></div>
+                </div>
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
+                  <div class="channel-pie-chart" id="type-anthropic-pie-channel"></div>
+                </div>
+              </div>
             </div>
 
             <!-- Codex -->
@@ -144,6 +156,17 @@
                   <span class="token-value token-cache" id="type-codex-cache-create">0</span>
                 </div>
               </div>
+              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
+              <div class="channel-pies">
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
+                  <div class="channel-pie-chart" id="type-codex-pie-token"></div>
+                </div>
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
+                  <div class="channel-pie-chart" id="type-codex-pie-channel"></div>
+                </div>
+              </div>
             </div>
 
             <!-- OpenAI -->
@@ -196,6 +219,17 @@
                   <span class="token-value token-cache" id="type-openai-cache-read">0</span>
                 </div>
               </div>
+              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
+              <div class="channel-pies">
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
+                  <div class="channel-pie-chart" id="type-openai-pie-token"></div>
+                </div>
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
+                  <div class="channel-pie-chart" id="type-openai-pie-channel"></div>
+                </div>
+              </div>
             </div>
 
             <!-- Gemini -->
@@ -246,6 +280,17 @@
                 <div class="token-item">
                   <span class="token-label" data-i18n="common.cacheRead">缓存读</span>
                   <span class="token-value token-cache" id="type-gemini-cache-read">0</span>
+                </div>
+              </div>
+              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
+              <div class="channel-pies">
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
+                  <div class="channel-pie-chart" id="type-gemini-pie-token"></div>
+                </div>
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
+                  <div class="channel-pie-chart" id="type-gemini-pie-channel"></div>
                 </div>
               </div>
             </div>

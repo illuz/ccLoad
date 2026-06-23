@@ -141,7 +141,149 @@
         const cacheReadTokens = data ? (data.total_cache_read_tokens || 0) : 0;
         document.getElementById(`type-${type}-cache-read`).textContent = formatNumber(cacheReadTokens);
       }
+
+      // 渲染两个饼图：今日令牌消费费用 + 今日渠道消费占用
+      renderTokenCostPie(`type-${type}-pie-token`, data && data.cost_by_token);
+      renderChannelCostPie(`type-${type}-pie-channel`, data && data.by_channel);
     }
+
+    // 渲染「今日令牌消费费用」饼图
+    function renderTokenCostPie(containerId, breakdown) {
+      const items = [];
+      if (breakdown) {
+        const labelInput = t('index.pies.tokenInput');
+        const labelOutput = t('index.pies.tokenOutput');
+        const labelCacheRead = t('index.pies.tokenCacheRead');
+        const labelCacheCreate = t('index.pies.tokenCacheCreate');
+        if (breakdown.input > 0) items.push({ name: labelInput, value: breakdown.input });
+        if (breakdown.output > 0) items.push({ name: labelOutput, value: breakdown.output });
+        if (breakdown.cache_read > 0) items.push({ name: labelCacheRead, value: breakdown.cache_read });
+        if (breakdown.cache_create > 0) items.push({ name: labelCacheCreate, value: breakdown.cache_create });
+      }
+      const colorMap = {
+        [t('index.pies.tokenInput')]: '#3b82f6',
+        [t('index.pies.tokenOutput')]: '#10b981',
+        [t('index.pies.tokenCacheRead')]: '#f59e0b',
+        [t('index.pies.tokenCacheCreate')]: '#8b5cf6'
+      };
+      renderPie(containerId, items, '$', colorMap);
+    }
+
+    // 渲染「今日渠道消费占用」饼图
+    function renderChannelCostPie(containerId, byChannel) {
+      const items = [];
+      if (Array.isArray(byChannel)) {
+        for (const entry of byChannel) {
+          const cost = Number(entry && entry.cost) || 0;
+          if (cost > 0) {
+            const name = (entry.channel_name || `#${entry.channel_id || ''}`).trim() || t('index.pies.other');
+            items.push({ name, value: cost });
+          }
+        }
+      }
+      renderPie(containerId, items, '$', null);
+    }
+
+    // 通用饼图渲染器（基于 echarts，复用 ui.js 的 getChartTheme）
+    const pieChartInstances = {};
+    function renderPie(containerId, items, unit, colorMap) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      if (typeof window.echarts === 'undefined') {
+        return;
+      }
+
+      if (!pieChartInstances[containerId]) {
+        pieChartInstances[containerId] = window.echarts.init(container);
+      }
+      const chart = pieChartInstances[containerId];
+      const theme = (typeof window.getChartTheme === 'function') ? window.getChartTheme() : null;
+      const mutedText = theme ? theme.mutedText : '#6b7280';
+      const tooltipBg = theme ? theme.tooltipBg : 'rgba(255, 255, 255, 0.98)';
+      const tooltipBorder = theme ? theme.tooltipBorder : 'rgba(17, 24, 39, 0.16)';
+      const tooltipText = theme ? theme.tooltipText : '#111827';
+      const surface = theme ? theme.surface : '#ffffff';
+
+      if (!items || items.length === 0) {
+        chart.clear();
+        chart.setOption({
+          title: {
+            text: t('index.pies.noData'),
+            left: 'center',
+            top: 'center',
+            textStyle: { color: mutedText, fontSize: 12 }
+          }
+        });
+        return;
+      }
+
+      const sorted = items.slice().sort((a, b) => b.value - a.value);
+      const total = sorted.reduce((s, i) => s + i.value, 0);
+      const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+        '#14b8a6', '#a855f7', '#eab308', '#22c55e', '#0ea5e9'];
+      const colors = sorted.map((it, idx) => (colorMap && colorMap[it.name]) || palette[idx % palette.length]);
+
+      chart.setOption({
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText, fontSize: 12 },
+          formatter: function (params) {
+            const v = params.value;
+            const formatted = unit === '$' ? `$${v.toFixed(4)}` : v.toLocaleString();
+            return `${params.name}<br/>${formatted} (${params.percent}%)`;
+          }
+        },
+        legend: {
+          type: 'scroll',
+          orient: 'vertical',
+          right: 4,
+          top: 'middle',
+          textStyle: { fontSize: 10, color: mutedText },
+          pageIconColor: mutedText,
+          pageTextStyle: { color: mutedText },
+          formatter: function (name) {
+            const item = sorted.find(d => d.name === name);
+            if (item && total > 0) {
+              return `${name} (${((item.value / total) * 100).toFixed(0)}%)`;
+            }
+            return name;
+          }
+        },
+        color: colors,
+        series: [{
+          type: 'pie',
+          radius: ['38%', '62%'],
+          center: ['32%', '50%'],
+          avoidLabelOverlap: true,
+          itemStyle: { borderRadius: 4, borderColor: surface, borderWidth: 2 },
+          label: { show: false },
+          emphasis: {
+            label: { show: true, fontSize: 11, fontWeight: 'bold', formatter: p => `${p.percent.toFixed(1)}%` },
+            itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0, 0, 0, 0.25)' }
+          },
+          data: sorted
+        }]
+      }, true);
+    }
+
+    // 主题切换时刷新饼图
+    window.addEventListener('ccload:themechange', () => {
+      if (!statsData || !statsData.by_type) return;
+      const types = ['anthropic', 'codex', 'openai', 'gemini'];
+      for (const t of types) {
+        renderTokenCostPie(`type-${t}-pie-token`, statsData.by_type[t] && statsData.by_type[t].cost_by_token);
+        renderChannelCostPie(`type-${t}-pie-channel`, statsData.by_type[t] && statsData.by_type[t].by_channel);
+      }
+    });
+
+    // 窗口尺寸变化时重绘饼图
+    window.addEventListener('resize', () => {
+      Object.values(pieChartInstances).forEach(c => { if (c) c.resize(); });
+    });
 
     // 通知系统统一由 ui.js 提供（showSuccess/showError/showNotification）
 

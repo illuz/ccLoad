@@ -969,6 +969,48 @@ body {
   color: var(--success-600);
 }
 
+/* ===== 渠道卡片内饼图（今日令牌消费费用 + 今日渠道消费占用） ===== */
+.channel-pies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--surface-border);
+}
+
+.channel-pie {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.channel-pie-title {
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  color: var(--neutral-500);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-pie-chart {
+  width: 100%;
+  height: 180px;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .channel-pies {
+    grid-template-columns: 1fr;
+  }
+  .channel-pie-chart {
+    height: 160px;
+  }
+}
+
 /* ===== 总览卡片 ===== */
 .summary-card {
   background: var(--surface-gradient);

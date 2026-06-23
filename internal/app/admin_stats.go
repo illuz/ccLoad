@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -112,10 +113,11 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// [OPT] P1: 并行执行三个独立查询
+	// 并行查询结果变量
 	var (
 		stats        []model.StatsEntry
 		rpmStats     *model.RPMStats
-		channelTypes map[int64]string
+		channelMetas map[int64]ChannelMeta
 		statsErr     error
 		rpmErr       error
 		typesErr     error
@@ -136,10 +138,10 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		rpmStats, rpmErr = s.statsCache.GetRPMStats(ctx, startTime, endTime, nil, isToday)
 	}()
 
-	// 查询3: 渠道类型映射（带缓存）
+	// 查询3: 渠道元信息映射（带缓存，含名称+类型）
 	go func() {
 		defer wg.Done()
-		channelTypes, typesErr = s.getChannelTypesMapCached(ctx)
+		channelMetas, typesErr = s.getChannelMetaMapCached(ctx)
 	}()
 
 	wg.Wait()
@@ -166,15 +168,23 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 
 	// 按渠道类型分组统计
 	typeStats := make(map[string]*TypeSummary)
+	// 临时累加器：按类型聚合 by-channel 数据，避免在 TypeSummary 上暴露内部状态
+	type channelAgg struct {
+		cost  float64
+		name  string
+	}
+	byChannelAgg := make(map[string]map[int64]*channelAgg)
 	totalSuccess := 0
 	totalError := 0
 
 	for _, stat := range stats {
-		// 获取渠道类型，跳过无法确定类型的记录（已删除的渠道）
+		// 获取渠道类型与名称，跳过无法确定类型的记录（已删除的渠道）
 		var channelType string
+		var channelName string
 		if stat.ChannelID != nil {
-			if ct, ok := channelTypes[int64(*stat.ChannelID)]; ok {
-				channelType = ct
+			if meta, ok := channelMetas[int64(*stat.ChannelID)]; ok {
+				channelType = meta.Type
+				channelName = meta.Name
 			}
 		}
 		if channelType == "" {
@@ -192,7 +202,9 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 				TotalRequests:   0,
 				SuccessRequests: 0,
 				ErrorRequests:   0,
+				CostByToken:     &TokenCostBreakdown{},
 			}
+			byChannelAgg[channelType] = make(map[int64]*channelAgg)
 		}
 
 		ts := typeStats[channelType]
@@ -223,7 +235,8 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		}
 
 		// Claude和Codex类型额外统计缓存（其他类型不支持prompt caching）
-		if channelType == "anthropic" || channelType == "codex" {
+		isCacheType := channelType == "anthropic" || channelType == "codex"
+		if isCacheType {
 			if stat.TotalCacheReadInputTokens != nil {
 				ts.TotalCacheReadTokens += *stat.TotalCacheReadInputTokens
 			}
@@ -231,6 +244,66 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 				ts.TotalCacheCreationTokens += *stat.TotalCacheCreationInputTokens
 			}
 		}
+
+		// 计算 per-token-type 成本：按模型单独调用 CalculateCostDetailed（每种 token 单独计入）
+		// 注：分档计价（如 Gemini >200K 翻倍）在拆分后会丢失整请求阈值，饼图用于展示占比，可接受
+		modelName := stat.Model
+		if stat.TotalInputTokens != nil && *stat.TotalInputTokens > 0 {
+			ts.CostByToken.Input += util.CalculateCostDetailed(modelName, int(*stat.TotalInputTokens), 0, 0, 0, 0)
+		}
+		if stat.TotalOutputTokens != nil && *stat.TotalOutputTokens > 0 {
+			ts.CostByToken.Output += util.CalculateCostDetailed(modelName, 0, int(*stat.TotalOutputTokens), 0, 0, 0)
+		}
+		if isCacheType && stat.TotalCacheReadInputTokens != nil && *stat.TotalCacheReadInputTokens > 0 {
+			ts.CostByToken.CacheRead += util.CalculateCostDetailed(modelName, 0, 0, int(*stat.TotalCacheReadInputTokens), 0, 0)
+		}
+		if isCacheType && stat.TotalCacheCreationInputTokens != nil && *stat.TotalCacheCreationInputTokens > 0 {
+			// StatsEntry 未区分 5m/1h，全部按 cache_5m 估算（与 prompt caching 倍率一致）
+			ts.CostByToken.CacheCreate += util.CalculateCostDetailed(modelName, 0, 0, 0, int(*stat.TotalCacheCreationInputTokens), 0)
+		}
+
+		// 按 channel 聚合 effective_cost（缺省回退到 total_cost）
+		if stat.ChannelID != nil {
+			chID := int64(*stat.ChannelID)
+			eff := 0.0
+			if stat.EffectiveCost != nil {
+				eff = *stat.EffectiveCost
+			} else if stat.TotalCost != nil {
+				eff = *stat.TotalCost
+			}
+			if eff > 0 {
+				agg, exists := byChannelAgg[channelType][chID]
+				if !exists {
+					agg = &channelAgg{name: channelName}
+					byChannelAgg[channelType][chID] = agg
+				}
+				agg.cost += eff
+			}
+		}
+	}
+
+	// 把 by-channel 聚合结果转为按成本降序的切片（截断到前 N 名避免响应体膨胀）
+	const maxChannelEntries = 20
+	for channelType, agg := range byChannelAgg {
+		ts := typeStats[channelType]
+		if ts == nil || len(agg) == 0 {
+			continue
+		}
+		entries := make([]ChannelCostEntry, 0, len(agg))
+		for chID, a := range agg {
+			entries = append(entries, ChannelCostEntry{
+				ChannelID:   chID,
+				ChannelName: a.name,
+				Cost:        a.cost,
+			})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Cost > entries[j].Cost
+		})
+		if len(entries) > maxChannelEntries {
+			entries = entries[:maxChannelEntries]
+		}
+		ts.ByChannel = entries
 	}
 
 	response := gin.H{
@@ -249,63 +322,86 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 
 // TypeSummary 按渠道类型的统计摘要
 type TypeSummary struct {
-	ChannelType              string   `json:"channel_type"`
-	TotalRequests            int      `json:"total_requests"`
-	SuccessRequests          int      `json:"success_requests"`
-	ErrorRequests            int      `json:"error_requests"`
-	TotalInputTokens         int64    `json:"total_input_tokens,omitempty"`          // 所有类型
-	TotalOutputTokens        int64    `json:"total_output_tokens,omitempty"`         // 所有类型
-	TotalCacheReadTokens     int64    `json:"total_cache_read_tokens,omitempty"`     // Claude/Codex专用（prompt caching）
-	TotalCacheCreationTokens int64    `json:"total_cache_creation_tokens,omitempty"` // Claude/Codex专用（prompt caching）
-	TotalCost                float64  `json:"total_cost,omitempty"`                  // 标准成本
-	EffectiveCost            *float64 `json:"effective_cost,omitempty"`              // 倍率后成本
+	ChannelType              string               `json:"channel_type"`
+	TotalRequests            int                  `json:"total_requests"`
+	SuccessRequests          int                  `json:"success_requests"`
+	ErrorRequests            int                  `json:"error_requests"`
+	TotalInputTokens         int64                `json:"total_input_tokens,omitempty"`          // 所有类型
+	TotalOutputTokens        int64                `json:"total_output_tokens,omitempty"`         // 所有类型
+	TotalCacheReadTokens     int64                `json:"total_cache_read_tokens,omitempty"`     // Claude/Codex专用（prompt caching）
+	TotalCacheCreationTokens int64                `json:"total_cache_creation_tokens,omitempty"` // Claude/Codex专用（prompt caching）
+	TotalCost                float64              `json:"total_cost,omitempty"`                  // 标准成本
+	EffectiveCost            *float64             `json:"effective_cost,omitempty"`              // 倍率后成本
+	CostByToken              *TokenCostBreakdown  `json:"cost_by_token,omitempty"`               // 按 token 类型拆分的成本占比（用于饼图）
+	ByChannel                []ChannelCostEntry   `json:"by_channel,omitempty"`                  // 该类型下各渠道的 effective_cost 占用（用于饼图）
 }
 
-// fetchChannelTypesMap 查询所有渠道的类型映射
-func (s *Server) fetchChannelTypesMap(ctx context.Context) (map[int64]string, error) {
+// TokenCostBreakdown 按 token 类型拆分的成本（美元）
+type TokenCostBreakdown struct {
+	Input       float64 `json:"input,omitempty"`
+	Output      float64 `json:"output,omitempty"`
+	CacheRead   float64 `json:"cache_read,omitempty"`
+	CacheCreate float64 `json:"cache_create,omitempty"`
+}
+
+// ChannelCostEntry 单个渠道的成本占用
+type ChannelCostEntry struct {
+	ChannelID   int64   `json:"channel_id"`
+	ChannelName string  `json:"channel_name"`
+	Cost        float64 `json:"cost"`
+}
+
+// ChannelMeta 渠道元信息（名称+类型）
+type ChannelMeta struct {
+	Name string
+	Type string
+}
+
+// fetchChannelMetaMap 查询所有渠道的元信息映射（id -> {name, type}）
+func (s *Server) fetchChannelMetaMap(ctx context.Context) (map[int64]ChannelMeta, error) {
 	configs, err := s.store.ListConfigs(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	channelTypes := make(map[int64]string, len(configs))
+	m := make(map[int64]ChannelMeta, len(configs))
 	for _, cfg := range configs {
-		channelTypes[cfg.ID] = cfg.ChannelType
+		m[cfg.ID] = ChannelMeta{Name: cfg.Name, Type: cfg.ChannelType}
 	}
-	return channelTypes, nil
+	return m, nil
 }
 
-// getChannelTypesMapCached 带 TTL 缓存的渠道类型映射查询
-// [OPT] P3: 渠道类型变化频率极低，使用 60 秒缓存减少数据库查询
-const channelTypesCacheTTL = 60 * time.Second
+// getChannelMetaMapCached 带 TTL 缓存的渠道元信息映射查询
+// [OPT] P3: 渠道配置变化频率极低，使用 60 秒缓存减少数据库查询
+const channelMetaCacheTTL = 60 * time.Second
 
-func (s *Server) getChannelTypesMapCached(ctx context.Context) (map[int64]string, error) {
+func (s *Server) getChannelMetaMapCached(ctx context.Context) (map[int64]ChannelMeta, error) {
 	// 读锁检查缓存
-	s.channelTypesCacheMu.RLock()
-	if s.channelTypesCache != nil && time.Since(s.channelTypesCacheTime) < channelTypesCacheTTL {
-		result := s.channelTypesCache
-		s.channelTypesCacheMu.RUnlock()
+	s.channelMetaCacheMu.RLock()
+	if s.channelMetaCache != nil && time.Since(s.channelMetaCacheTime) < channelMetaCacheTTL {
+		result := s.channelMetaCache
+		s.channelMetaCacheMu.RUnlock()
 		return result, nil
 	}
-	s.channelTypesCacheMu.RUnlock()
+	s.channelMetaCacheMu.RUnlock()
 
 	// 写锁更新缓存
-	s.channelTypesCacheMu.Lock()
-	defer s.channelTypesCacheMu.Unlock()
+	s.channelMetaCacheMu.Lock()
+	defer s.channelMetaCacheMu.Unlock()
 
 	// 双重检查：可能其他 goroutine 已更新
-	if s.channelTypesCache != nil && time.Since(s.channelTypesCacheTime) < channelTypesCacheTTL {
-		return s.channelTypesCache, nil
+	if s.channelMetaCache != nil && time.Since(s.channelMetaCacheTime) < channelMetaCacheTTL {
+		return s.channelMetaCache, nil
 	}
 
-	channelTypes, err := s.fetchChannelTypesMap(ctx)
+	channelMetas, err := s.fetchChannelMetaMap(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	s.channelTypesCache = channelTypes
-	s.channelTypesCacheTime = time.Now()
-	return channelTypes, nil
+	s.channelMetaCache = channelMetas
+	s.channelMetaCacheTime = time.Now()
+	return channelMetas, nil
 }
 
 // HandleCooldownStats 获取当前冷却状态监控指标
