@@ -67,6 +67,9 @@ function initChannelsPageActions() {
       boundKey: 'channelsPageActionsBound',
       click: {
         'show-add-modal': () => showAddModal(),
+        'show-quick-add-modal': () => showQuickAddModal(),
+        'close-quick-add-modal': () => closeQuickAddModal(),
+        'confirm-quick-add': () => confirmQuickAdd(),
         'batch-enable-channels': () => batchEnableSelectedChannels(),
         'batch-disable-channels': () => batchDisableSelectedChannels(),
         'batch-delete-channels': () => batchDeleteSelectedChannels(),
@@ -102,6 +105,9 @@ window.initPageBootstrap({
     setupImportExport();
     setupKeyImportPreview();
     setupModelImportPreview();
+    if (typeof setupQuickAddPreview === 'function') {
+      setupQuickAddPreview();
+    }
     if (typeof initChannelFormDirtyTracking === 'function') {
       initChannelFormDirtyTracking();
     }

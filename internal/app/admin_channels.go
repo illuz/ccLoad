@@ -456,26 +456,18 @@ func (s *Server) HandleCheckDuplicateChannel(c *gin.Context) {
 	RespondJSON(c, http.StatusOK, CheckDuplicateResponse{Duplicates: duplicates})
 }
 
-// 创建新渠道
-func (s *Server) handleCreateChannel(c *gin.Context) {
-	var req ChannelRequest
-	if err := BindAndValidate(c, &req); err != nil {
-		RespondErrorMsg(c, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-
-	// 创建渠道（不包含API Key）
-	created, err := s.store.CreateConfig(c.Request.Context(), req.ToConfig())
+// createChannelFromRequest 是创建渠道的核心复用逻辑:校验后建渠道、批量建 Key、失效缓存。
+// 供 handleCreateChannel 和 quick-add 路径共用。req 必须已经通过 Validate()。
+func (s *Server) createChannelFromRequest(ctx context.Context, req ChannelRequest) (*model.Config, error) {
+	created, err := s.store.CreateConfig(ctx, req.ToConfig())
 	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
-		return
+		return nil, err
 	}
 
-	// 解析并创建API Keys
 	apiKeys := util.ParseAPIKeys(req.APIKey)
 	keyStrategy := strings.TrimSpace(req.KeyStrategy)
 	if keyStrategy == "" {
-		keyStrategy = model.KeyStrategySequential // 默认策略
+		keyStrategy = model.KeyStrategySequential
 	}
 
 	now := time.Now()
@@ -491,13 +483,28 @@ func (s *Server) handleCreateChannel(c *gin.Context) {
 		})
 	}
 	if len(keysToCreate) > 0 {
-		if err := s.store.CreateAPIKeysBatch(c.Request.Context(), keysToCreate); err != nil {
+		if err := s.store.CreateAPIKeysBatch(ctx, keysToCreate); err != nil {
 			log.Printf("[WARN] 批量创建API Key失败 (channel=%d): %v", created.ID, err)
 		}
 	}
 
-	// 新增渠道后，失效渠道列表缓存使选择器立即可见
 	s.InvalidateChannelListCache()
+	return created, nil
+}
+
+// 创建新渠道
+func (s *Server) handleCreateChannel(c *gin.Context) {
+	var req ChannelRequest
+	if err := BindAndValidate(c, &req); err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+
+	created, err := s.createChannelFromRequest(c.Request.Context(), req)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	RespondJSON(c, http.StatusCreated, created)
 }

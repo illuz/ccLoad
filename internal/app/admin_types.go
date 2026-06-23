@@ -483,3 +483,97 @@ type DuplicateChannelInfo struct {
 type CheckDuplicateResponse struct {
 	Duplicates []DuplicateChannelInfo `json:"duplicates"`
 }
+
+// QuickAddChannelRequest 快速添加渠道请求:粘贴 URL + Key(s),可选复制模型、加入分组
+type QuickAddChannelRequest struct {
+	URL                  string   `json:"url" binding:"required"`
+	APIKeys              []string `json:"api_keys" binding:"required,min=1"`
+	ChannelType          string   `json:"channel_type,omitempty"`           // 空则默认 anthropic
+	Name                 string   `json:"name,omitempty"`                    // 空则用 URL hostname
+	ModelSourceChannelID *int64   `json:"model_source_channel_id,omitempty"` // 复制模型源渠道(二选一)
+	Models               []string `json:"models,omitempty"`                  // 手动模型名(二选一)
+	GroupID              *int64   `json:"group_id,omitempty"`                 // 可选,追加到该分组
+}
+
+// Validate 实现 RequestValidator 接口
+func (r *QuickAddChannelRequest) Validate() error {
+	normalizedURL, err := validateChannelBaseURL(r.URL)
+	if err != nil {
+		return err
+	}
+	r.URL = normalizedURL
+
+	// ChannelType 标准化 + 白名单(空允许,默认 anthropic)
+	r.ChannelType = strings.TrimSpace(r.ChannelType)
+	if r.ChannelType != "" {
+		normalized := util.NormalizeChannelType(r.ChannelType)
+		if !util.IsValidChannelType(normalized) {
+			return fmt.Errorf("invalid channel_type: %q (allowed: anthropic, openai, gemini, codex)", r.ChannelType)
+		}
+		r.ChannelType = normalized
+	}
+
+	// APIKeys: trim、去空、去重
+	seen := make(map[string]struct{}, len(r.APIKeys))
+	cleaned := make([]string, 0, len(r.APIKeys))
+	for _, k := range r.APIKeys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if _, exists := seen[k]; exists {
+			continue
+		}
+		seen[k] = struct{}{}
+		cleaned = append(cleaned, k)
+	}
+	if len(cleaned) == 0 {
+		return fmt.Errorf("api_keys cannot be empty")
+	}
+	r.APIKeys = cleaned
+
+	// 模型来源二选一
+	if r.ModelSourceChannelID == nil && len(r.Models) == 0 {
+		return fmt.Errorf("either model_source_channel_id or models must be provided")
+	}
+	if r.ModelSourceChannelID != nil {
+		if *r.ModelSourceChannelID <= 0 {
+			return fmt.Errorf("model_source_channel_id must be > 0")
+		}
+		// 同时给了 Models 也允许,但以 source 为准(避免歧义,直接拒绝)
+		if len(r.Models) > 0 {
+			return fmt.Errorf("model_source_channel_id and models are mutually exclusive")
+		}
+	} else {
+		// 手动模型:trim、去空、去重
+		modelSeen := make(map[string]struct{}, len(r.Models))
+		modelCleaned := make([]string, 0, len(r.Models))
+		for _, m := range r.Models {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			if _, exists := modelSeen[m]; exists {
+				continue
+			}
+			modelSeen[m] = struct{}{}
+			modelCleaned = append(modelCleaned, m)
+		}
+		if len(modelCleaned) == 0 {
+			return fmt.Errorf("models cannot be empty")
+		}
+		r.Models = modelCleaned
+	}
+
+	// Name: 空则从 URL hostname 生成
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		if u, err := neturl.Parse(r.URL); err == nil && u.Host != "" {
+			r.Name = u.Host
+		} else {
+			return fmt.Errorf("name cannot be empty and could not be derived from url")
+		}
+	}
+
+	return nil
+}
