@@ -43,6 +43,10 @@ func (s *Server) sortChannelsByHealth(
 		return channels
 	}
 
+	if s == nil || s.healthCache == nil {
+		return s.balanceSamePriorityChannels(channels, keyCooldowns, now)
+	}
+
 	cfg := s.healthCache.Config()
 
 	scored := make([]channelWithScore, len(channels))
@@ -121,9 +125,13 @@ func (s *Server) balanceSamePriorityChannels(
 		return channels
 	}
 
-	// channelBalancer 在 Init() 中无条件初始化，nil 表示初始化错误
-	if s.channelBalancer == nil {
-		panic("channelBalancer is nil: server not properly initialized")
+	if s == nil || s.channelBalancer == nil {
+		result := make([]*modelpkg.Config, n)
+		copy(result, channels)
+		sort.SliceStable(result, func(i, j int) bool {
+			return result[i].Priority > result[j].Priority
+		})
+		return result
 	}
 
 	// 按优先级降序排序（优先级大的排前面），确保相同优先级渠道连续
@@ -161,9 +169,8 @@ func (s *Server) balanceScoredChannelsInPlace(
 		return
 	}
 
-	// channelBalancer 在 Init() 中无条件初始化，nil 表示初始化错误
-	if s.channelBalancer == nil {
-		panic("channelBalancer is nil: server not properly initialized")
+	if s == nil || s.channelBalancer == nil {
+		return
 	}
 
 	// 提取 Config 列表用于轮询选择
