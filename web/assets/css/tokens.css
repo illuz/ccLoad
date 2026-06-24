@@ -84,9 +84,6 @@
       --token-info-fg: var(--neutral-700);
       --token-info-border: var(--info-200);
       --token-inline-code-bg: rgba(15, 23, 42, 0.06);
-      --token-cost-summary-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.88));
-      --token-cost-summary-border: rgba(148, 163, 184, 0.22);
-      --token-cost-summary-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
       --token-cost-summary-label: var(--neutral-600);
       --token-cost-summary-value: var(--neutral-900);
       --token-cost-summary-hint: var(--neutral-500);
@@ -109,9 +106,6 @@
       --token-info-fg: rgba(226, 232, 240, 0.92);
       --token-info-border: rgba(56, 189, 248, 0.36);
       --token-inline-code-bg: rgba(148, 163, 184, 0.18);
-      --token-cost-summary-bg: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.94));
-      --token-cost-summary-border: rgba(148, 163, 184, 0.30);
-      --token-cost-summary-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 6px 18px rgba(0, 0, 0, 0.22);
       --token-cost-summary-label: rgba(226, 232, 240, 0.82);
       --token-cost-summary-value: rgba(248, 250, 252, 0.98);
       --token-cost-summary-hint: rgba(203, 213, 225, 0.72);
@@ -651,35 +645,40 @@
     .token-cost-summary {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      min-width: 160px;
-      padding: 10px 12px;
-      border: 1px solid var(--token-cost-summary-border);
-      border-radius: 14px;
-      background: var(--token-cost-summary-bg);
-      box-shadow: var(--token-cost-summary-shadow);
+      align-items: stretch;
+      width: max-content;
+      max-width: 100%;
+      margin: 0 auto;
+      gap: 2px;
+      line-height: 1.15;
     }
     .token-cost-summary__row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 4px 10px;
+      display: flex;
       align-items: center;
+      justify-content: flex-start;
+      width: auto;
+      gap: 6px;
+      min-width: 0;
+      line-height: 1.15;
       text-align: left;
     }
     .token-cost-summary__label {
       color: var(--token-cost-summary-label);
-      font-size: 11px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 500;
       line-height: 1.1;
-      letter-spacing: 0.01em;
+      white-space: nowrap;
+      text-align: left;
+      flex: 0 0 auto;
     }
     .token-cost-summary__value {
       color: var(--token-cost-summary-value);
-      font-size: 15px;
-      font-weight: 800;
-      line-height: 1.1;
-      white-space: nowrap;
+      margin-left: 0;
       text-align: right;
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
     .token-cost-summary__value--warning {
       color: var(--warning-700);
@@ -689,12 +688,6 @@
     }
     .token-cost-summary__value--muted {
       color: var(--token-cost-summary-hint);
-    }
-    .token-cost .cost-stack {
-      align-items: center;
-      text-align: center;
-      font-size: 15px;
-      font-weight: 700;
     }
     .tokens-table .metric-value {
       margin-bottom: 0;
@@ -1663,19 +1656,8 @@
         text-align: right;
       }
       .tokens-table .tokens-col-cost > .token-cost-summary {
+        width: auto;
         min-width: 0;
-        width: min(100%, 260px);
-        padding: 8px 10px;
-      }
-      .tokens-table .tokens-col-cost > .token-cost-summary .token-cost-summary__row {
-        grid-template-columns: minmax(0, 1fr) auto;
-      }
-      .tokens-table .tokens-col-cost > .token-cost-summary .token-cost-summary__label,
-      .tokens-table .tokens-col-cost > .token-cost-summary .token-cost-summary__hint {
-        text-align: left;
-      }
-      .tokens-table .tokens-col-cost > .token-cost-summary .token-cost-summary__value {
-        text-align: right;
       }
       .tokens-table .tokens-col-token-usage > .token-usage-metrics {
         justify-content: flex-end;

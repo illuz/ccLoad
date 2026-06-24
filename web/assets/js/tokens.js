@@ -1089,12 +1089,10 @@
 
     function buildCostMetricRow(label, value, options = {}) {
       const toneClass = options.tone ? ` token-cost-summary__value--${options.tone}` : '';
-      const hintHtml = options.hint ? `<span class="token-cost-summary__hint">${escapeHtml(options.hint)}</span>` : '';
       return `
         <div class="token-cost-summary__row">
           <span class="token-cost-summary__label">${escapeHtml(label)}</span>
           <span class="token-cost-summary__value${toneClass}">${escapeHtml(value)}</span>
-          ${hintHtml}
         </div>
       `;
     }
