@@ -146,6 +146,36 @@ func TestAuthToken_MarshalJSON_ExposesCostFields(t *testing.T) {
 	}
 }
 
+func TestAuthToken_MarshalJSON_ExposesEffectiveDailyCostLimit(t *testing.T) {
+	t.Parallel()
+
+	token := AuthToken{
+		DailyCostLimitMicroUSD:          800_000,
+		EffectiveSet:                    true,
+		EffectiveDailyCostLimitMicroUSD: 1_500_000,
+	}
+
+	b, err := json.Marshal(token)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	var got struct {
+		DailyCostLimitUSD          float64 `json:"daily_cost_limit_usd"`
+		EffectiveDailyCostLimitUSD float64 `json:"effective_daily_cost_limit_usd"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if math.Abs(got.DailyCostLimitUSD-0.8) > 1e-9 {
+		t.Fatalf("daily_cost_limit_usd = %#v, want 0.8", got.DailyCostLimitUSD)
+	}
+	if math.Abs(got.EffectiveDailyCostLimitUSD-1.5) > 1e-9 {
+		t.Fatalf("effective_daily_cost_limit_usd = %#v, want 1.5", got.EffectiveDailyCostLimitUSD)
+	}
+}
+
 func TestAuthTokenGroup_DailyCostConversionsAndValidation(t *testing.T) {
 	t.Parallel()
 

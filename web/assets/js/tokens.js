@@ -929,7 +929,7 @@
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
-      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || token.daily_cost_limit_usd > 0 ? '' : 'mobile-empty-cell';
+      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 ? '' : 'mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : 'mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : 'mobile-empty-cell';
 
@@ -1148,7 +1148,7 @@
     function buildCostSummaryHtml(token) {
       const totalCostUsd = Number(token?.total_cost_usd) || 0;
       const dailyCostUsd = Number(token?.daily_cost_used_usd) || 0;
-      const dailyLimitUsd = Number(token?.daily_cost_limit_usd) || 0;
+      const dailyLimitUsd = getTokenEffectiveDailyCostLimit(token);
 
       const rows = [];
       rows.push(buildCostMetricRow(
@@ -1182,6 +1182,13 @@
         return token.effective_max_concurrency;
       }
       return token ? token.max_concurrency : 0;
+    }
+
+    function getTokenEffectiveDailyCostLimit(token) {
+      if (token && token.effective_daily_cost_limit_usd !== undefined) {
+        return Number(token.effective_daily_cost_limit_usd) || 0;
+      }
+      return Number(token?.daily_cost_limit_usd) || 0;
     }
 
     function buildTokenGroupBadgeHtml(token) {
@@ -1273,7 +1280,7 @@
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count);
-      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || token.daily_cost_limit_usd > 0 ? '' : ' mobile-empty-cell';
+      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 ? '' : ' mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : ' mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : ' mobile-empty-cell';
 
@@ -1511,8 +1518,9 @@
       const dailyCostUsedDisplay = document.getElementById('editDailyCostUsedDisplay');
       editRawCostLimitUSD = token.cost_limit_usd || 0;
       costLimitInput.value = editRawCostLimitUSD;
+      editRawDailyCostLimitUSD = token.daily_cost_limit_usd || 0;
       if (dailyCostLimitInput) {
-        dailyCostLimitInput.value = token.daily_cost_limit_usd || 0;
+        dailyCostLimitInput.value = editRawDailyCostLimitUSD;
       }
 
       // 显示已消耗费用
@@ -1654,15 +1662,15 @@
       const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
       if (editInheritQuota && group) {
         if (costLimitInput) costLimitInput.value = group.cost_limit_usd || 0;
+        if (dailyCostLimitInput) dailyCostLimitInput.value = group.daily_cost_limit_usd || 0;
         if (maxConcurrencyInput) maxConcurrencyInput.value = group.max_concurrency || 0;
       } else {
         if (costLimitInput) costLimitInput.value = editRawCostLimitUSD || 0;
+        if (dailyCostLimitInput) dailyCostLimitInput.value = editRawDailyCostLimitUSD || 0;
         if (maxConcurrencyInput) maxConcurrencyInput.value = editRawMaxConcurrency || 0;
       }
       if (costLimitInput) costLimitInput.disabled = editInheritQuota && hasGroup;
-      if (dailyCostLimitInput) {
-        dailyCostLimitInput.value = editRawDailyCostLimitUSD || 0;
-      }
+      if (dailyCostLimitInput) dailyCostLimitInput.disabled = editInheritQuota && hasGroup;
       if (maxConcurrencyInput) maxConcurrencyInput.disabled = editInheritQuota && hasGroup;
 
       editAllowedChannelIDs = (editInheritChannels && group)
