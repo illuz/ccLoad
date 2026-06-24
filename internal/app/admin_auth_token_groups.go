@@ -38,6 +38,7 @@ type authTokenGroupRequest struct {
 	AllowedModels     []string `json:"allowed_models"`
 	AllowedChannelIDs []int64  `json:"allowed_channel_ids"`
 	CostLimitUSD      *float64 `json:"cost_limit_usd"`
+	DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"`
 	MaxConcurrency    *int     `json:"max_concurrency"`
 }
 
@@ -76,6 +77,9 @@ func buildAuthTokenGroupFromRequest(req authTokenGroupRequest, existing *model.A
 	if req.CostLimitUSD != nil {
 		group.SetCostLimitUSD(*req.CostLimitUSD)
 	}
+	if req.DailyCostLimitUSD != nil {
+		group.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
+	}
 	if req.MaxConcurrency != nil {
 		group.MaxConcurrency = *req.MaxConcurrency
 	}
@@ -96,6 +100,10 @@ func (s *Server) HandleCreateAuthTokenGroup(c *gin.Context) {
 	}
 	if req.CostLimitUSD != nil && *req.CostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
+		return
+	}
+	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {
@@ -144,6 +152,10 @@ func (s *Server) HandleUpdateAuthTokenGroup(c *gin.Context) {
 	}
 	if req.CostLimitUSD != nil && *req.CostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
+		return
+	}
+	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.MaxConcurrency != nil && *req.MaxConcurrency < 0 {

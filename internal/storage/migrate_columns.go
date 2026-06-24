@@ -420,6 +420,12 @@ func ensureAuthTokenGroupsColor(ctx context.Context, db *sql.DB, dialect Dialect
 		"TEXT NOT NULL DEFAULT '#64748b'")
 }
 
+func ensureAuthTokenGroupsDailyCostLimit(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_token_groups", "daily_cost_limit_microusd",
+		"BIGINT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
 func ensureChannelsProtocolTransformMode(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "protocol_transform_mode",
 		"VARCHAR(32) NOT NULL DEFAULT 'local'",

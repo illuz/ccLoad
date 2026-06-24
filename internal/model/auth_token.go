@@ -64,16 +64,17 @@ type AuthToken struct {
 	MaxConcurrency int `json:"max_concurrency"` // 最大并发请求数，0表示无限制
 
 	// 分组与继承（2026-06新增）
-	GroupID                    int64    `json:"group_id"`             // 所属分组ID，0表示未分组
-	GroupName                  string   `json:"group_name,omitempty"` // 所属分组名称（仅响应展示）
-	InheritQuota               bool     `json:"inherit_quota"`        // 是否继承分组配额（费用上限+并发上限）
-	InheritChannels            bool     `json:"inherit_channels"`     // 是否继承分组渠道限制
-	InheritModels              bool     `json:"inherit_models"`       // 是否继承分组模型限制
-	EffectiveSet               bool     `json:"-"`                    // 是否已计算有效限制（仅响应/运行时）
-	EffectiveCostLimitMicroUSD int64    `json:"-"`                    // 有效费用上限（微美元）
-	EffectiveAllowedModels     []string `json:"-"`                    // 有效模型限制
-	EffectiveAllowedChannelIDs []int64  `json:"-"`                    // 有效渠道限制
-	EffectiveMaxConcurrency    int      `json:"-"`                    // 有效并发上限
+	GroupID                         int64    `json:"group_id"`             // 所属分组ID，0表示未分组
+	GroupName                       string   `json:"group_name,omitempty"` // 所属分组名称（仅响应展示）
+	InheritQuota                    bool     `json:"inherit_quota"`        // 是否继承分组配额（费用上限+并发上限）
+	InheritChannels                 bool     `json:"inherit_channels"`     // 是否继承分组渠道限制
+	InheritModels                   bool     `json:"inherit_models"`       // 是否继承分组模型限制
+	EffectiveSet                    bool     `json:"-"`                    // 是否已计算有效限制（仅响应/运行时）
+	EffectiveCostLimitMicroUSD      int64    `json:"-"`                    // 有效费用上限（微美元）
+	EffectiveDailyCostLimitMicroUSD int64    `json:"-"`                    // 有效当日费用上限（微美元）
+	EffectiveAllowedModels          []string `json:"-"`                    // 有效模型限制
+	EffectiveAllowedChannelIDs      []int64  `json:"-"`                    // 有效渠道限制
+	EffectiveMaxConcurrency         int      `json:"-"`                    // 有效并发上限
 }
 
 // AuthTokenGroup 表示 API 访问令牌分组。
@@ -81,17 +82,18 @@ type AuthToken struct {
 // 分组限制是“每个令牌的模板”，不是共享额度池：令牌选择继承后，会把这里的
 // 配额/渠道/模型限制作为该令牌的有效限制；令牌自身的用量统计仍然独立累计。
 type AuthTokenGroup struct {
-	ID                int64     `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Color             string    `json:"color"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	CostLimitMicroUSD int64     `json:"-"`
-	MaxConcurrency    int       `json:"max_concurrency"`
-	AllowedModels     []string  `json:"allowed_models,omitempty"`
-	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
-	TokenCount        int       `json:"token_count,omitempty"`
+	ID                     int64     `json:"id"`
+	Name                   string    `json:"name"`
+	Description            string    `json:"description"`
+	Color                  string    `json:"color"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+	CostLimitMicroUSD      int64     `json:"-"`
+	DailyCostLimitMicroUSD int64     `json:"-"`
+	MaxConcurrency         int       `json:"max_concurrency"`
+	AllowedModels          []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs      []int64   `json:"allowed_channel_ids,omitempty"`
+	TokenCount             int       `json:"token_count,omitempty"`
 }
 
 const DefaultAuthTokenGroupColor = "#64748b"
@@ -278,6 +280,14 @@ func (t *AuthToken) EffectiveCostLimitUSDValue() float64 {
 	return util.MicroUSDToUSD(t.EffectiveCostLimitMicroUSD)
 }
 
+// EffectiveDailyCostLimitUSDValue 返回已计算的有效当日费用上限（美元）。
+func (t *AuthToken) EffectiveDailyCostLimitUSDValue() float64 {
+	if !t.EffectiveSet {
+		return t.DailyCostLimitUSD()
+	}
+	return util.MicroUSDToUSD(t.EffectiveDailyCostLimitMicroUSD)
+}
+
 // ApplyGroupEffective 根据分组与继承开关计算令牌的有效限制。
 // 只写入 Effective* 展示/运行时字段，不覆盖令牌自身配置，避免用户取消继承时丢失自定义值。
 func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
@@ -288,6 +298,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 	t.GroupName = ""
 	t.EffectiveSet = true
 	t.EffectiveCostLimitMicroUSD = t.CostLimitMicroUSD
+	t.EffectiveDailyCostLimitMicroUSD = t.DailyCostLimitMicroUSD
 	t.EffectiveMaxConcurrency = t.MaxConcurrency
 	t.EffectiveAllowedModels = cloneStringSlice(t.AllowedModels)
 	t.EffectiveAllowedChannelIDs = cloneInt64Slice(t.AllowedChannelIDs)
@@ -299,6 +310,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 	t.GroupName = group.Name
 	if t.InheritQuota {
 		t.EffectiveCostLimitMicroUSD = group.CostLimitMicroUSD
+		t.EffectiveDailyCostLimitMicroUSD = group.DailyCostLimitMicroUSD
 		t.EffectiveMaxConcurrency = group.MaxConcurrency
 	}
 	if t.InheritChannels {
@@ -316,6 +328,7 @@ func (t *AuthToken) ApplyEffectiveValuesToRawForRuntime() {
 		return
 	}
 	t.CostLimitMicroUSD = t.EffectiveCostLimitMicroUSD
+	t.DailyCostLimitMicroUSD = t.EffectiveDailyCostLimitMicroUSD
 	t.MaxConcurrency = t.EffectiveMaxConcurrency
 	t.AllowedModels = cloneStringSlice(t.EffectiveAllowedModels)
 	t.AllowedChannelIDs = cloneInt64Slice(t.EffectiveAllowedChannelIDs)
@@ -361,6 +374,14 @@ func (g *AuthTokenGroup) CostLimitUSD() float64 {
 	return util.MicroUSDToUSD(g.CostLimitMicroUSD)
 }
 
+// DailyCostLimitUSD 返回分组当日费用上限（美元）。
+func (g *AuthTokenGroup) DailyCostLimitUSD() float64 {
+	if g == nil {
+		return 0
+	}
+	return util.MicroUSDToUSD(g.DailyCostLimitMicroUSD)
+}
+
 // SetCostLimitUSD 设置分组费用上限（从美元转换为微美元）。
 func (g *AuthTokenGroup) SetCostLimitUSD(usd float64) {
 	if g == nil {
@@ -371,6 +392,18 @@ func (g *AuthTokenGroup) SetCostLimitUSD(usd float64) {
 		return
 	}
 	g.CostLimitMicroUSD = util.USDToMicroUSD(usd)
+}
+
+// SetDailyCostLimitUSD 设置分组当日费用上限（从美元转换为微美元）。
+func (g *AuthTokenGroup) SetDailyCostLimitUSD(usd float64) {
+	if g == nil {
+		return
+	}
+	if usd <= 0 {
+		g.DailyCostLimitMicroUSD = 0
+		return
+	}
+	g.DailyCostLimitMicroUSD = util.USDToMicroUSD(usd)
 }
 
 // ValidateUsageLimits enforces invariants for group-level limit templates.
@@ -385,8 +418,14 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	if g.CostLimitMicroUSD < 0 {
 		return errors.New("cost_limit_usd must be >= 0")
 	}
+	if g.DailyCostLimitMicroUSD < 0 {
+		return errors.New("daily_cost_limit_usd must be >= 0")
+	}
 	if g.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
+	}
+	if (g.CostLimitMicroUSD > 0 || g.DailyCostLimitMicroUSD > 0) && g.MaxConcurrency <= 0 {
+		return errors.New("cost-limited auth token group requires max_concurrency > 0")
 	}
 	return nil
 }
@@ -429,6 +468,7 @@ type authTokenJSON struct {
 	InheritChannels            bool      `json:"inherit_channels"`
 	InheritModels              bool      `json:"inherit_models"`
 	EffectiveCostLimitUSD      float64   `json:"effective_cost_limit_usd"`
+	EffectiveDailyCostLimitUSD float64   `json:"effective_daily_cost_limit_usd"`
 	EffectiveAllowedModels     []string  `json:"effective_allowed_models,omitempty"`
 	EffectiveAllowedChannelIDs []int64   `json:"effective_allowed_channel_ids,omitempty"`
 	EffectiveMaxConcurrency    int       `json:"effective_max_concurrency"`
@@ -473,6 +513,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		InheritChannels:            t.InheritChannels,
 		InheritModels:              t.InheritModels,
 		EffectiveCostLimitUSD:      t.EffectiveCostLimitUSDValue(),
+		EffectiveDailyCostLimitUSD: t.EffectiveDailyCostLimitUSDValue(),
 		EffectiveAllowedModels:     effectiveStringSlice(t.EffectiveSet, t.EffectiveAllowedModels, t.AllowedModels),
 		EffectiveAllowedChannelIDs: effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
 		EffectiveMaxConcurrency:    effectiveInt(t.EffectiveSet, t.EffectiveMaxConcurrency, t.MaxConcurrency),
@@ -508,6 +549,7 @@ type authTokenGroupJSON struct {
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	CostLimitUSD      float64   `json:"cost_limit_usd"`
+	DailyCostLimitUSD float64   `json:"daily_cost_limit_usd"`
 	MaxConcurrency    int       `json:"max_concurrency"`
 	AllowedModels     []string  `json:"allowed_models,omitempty"`
 	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
@@ -524,6 +566,7 @@ func (g AuthTokenGroup) MarshalJSON() ([]byte, error) {
 		CreatedAt:         g.CreatedAt,
 		UpdatedAt:         g.UpdatedAt,
 		CostLimitUSD:      g.CostLimitUSD(),
+		DailyCostLimitUSD: g.DailyCostLimitUSD(),
 		MaxConcurrency:    g.MaxConcurrency,
 		AllowedModels:     g.AllowedModels,
 		AllowedChannelIDs: g.AllowedChannelIDs,

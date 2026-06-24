@@ -1971,6 +1971,7 @@
         tokenGroupName: '',
         tokenGroupDescription: '',
         tokenGroupCostLimitUSD: '0',
+        tokenGroupDailyCostLimitUSD: '0',
         tokenGroupMaxConcurrency: '0'
       };
       Object.entries(fields).forEach(([id, value]) => {
@@ -2112,6 +2113,7 @@
       document.getElementById('tokenGroupName').value = group.name || '';
       document.getElementById('tokenGroupDescription').value = group.description || '';
       document.getElementById('tokenGroupCostLimitUSD').value = group.cost_limit_usd || 0;
+      document.getElementById('tokenGroupDailyCostLimitUSD').value = group.daily_cost_limit_usd || 0;
       document.getElementById('tokenGroupMaxConcurrency').value = group.max_concurrency || 0;
       setTokenGroupColorValue(group.color);
       tokenGroupAllowedChannelIDs = (group.allowed_channel_ids || []).map((id) => Number(id)).filter((id) => id > 0);
@@ -2141,6 +2143,7 @@
             description: '',
             color: getDefaultTokenGroupColor(),
             cost_limit_usd: 0,
+            daily_cost_limit_usd: 0,
             max_concurrency: 0,
             allowed_channel_ids: [],
             allowed_models: []
@@ -2152,6 +2155,7 @@
           description: '',
           color: getDefaultTokenGroupColor(),
           cost_limit_usd: 0,
+          daily_cost_limit_usd: 0,
           max_concurrency: 0,
           allowed_channel_ids: [],
           allowed_models: [],
@@ -2178,6 +2182,7 @@
       const description = (document.getElementById('tokenGroupDescription')?.value || '').trim();
       const color = getTokenGroupColor(document.getElementById('tokenGroupColor')?.value);
       const costLimitUSD = parseFloat(document.getElementById('tokenGroupCostLimitUSD')?.value) || 0;
+      const dailyCostLimitUSD = parseFloat(document.getElementById('tokenGroupDailyCostLimitUSD')?.value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenGroupMaxConcurrency')?.value);
       if (!name) {
         window.showNotification(t('tokens.msg.enterGroupName'), 'error');
@@ -2185,6 +2190,10 @@
       }
       if (costLimitUSD < 0) {
         window.showNotification(t('tokens.msg.costLimitNegative'), 'error');
+        return;
+      }
+      if (dailyCostLimitUSD < 0) {
+        window.showNotification(t('tokens.msg.dailyCostLimitNegative'), 'error');
         return;
       }
       if (maxConcurrencyResult.error) {
@@ -2200,6 +2209,7 @@
             description,
             color,
             cost_limit_usd: costLimitUSD,
+            daily_cost_limit_usd: dailyCostLimitUSD,
             max_concurrency: maxConcurrencyResult.value,
             allowed_channel_ids: tokenGroupAllowedChannelIDs,
             allowed_models: tokenGroupAllowedModels
@@ -2212,6 +2222,7 @@
           description,
           color,
           cost_limit_usd: costLimitUSD,
+          daily_cost_limit_usd: dailyCostLimitUSD,
           max_concurrency: maxConcurrencyResult.value,
           allowed_channel_ids: tokenGroupAllowedChannelIDs.slice(),
           allowed_models: tokenGroupAllowedModels.slice(),

@@ -145,3 +145,56 @@ func TestAuthToken_MarshalJSON_ExposesCostFields(t *testing.T) {
 		t.Fatalf("max_concurrency = %#v, want 3", got.MaxConcurrency)
 	}
 }
+
+func TestAuthTokenGroup_DailyCostConversionsAndValidation(t *testing.T) {
+	t.Parallel()
+
+	group := &AuthTokenGroup{
+		Name:                   "Group A",
+		DailyCostLimitMicroUSD: 1_250_000,
+		MaxConcurrency:         3,
+	}
+	if got := group.DailyCostLimitUSD(); math.Abs(got-1.25) > 1e-9 {
+		t.Fatalf("DailyCostLimitUSD() = %v, want 1.25", got)
+	}
+
+	group.SetDailyCostLimitUSD(2.5)
+	if group.DailyCostLimitMicroUSD != 2_500_000 {
+		t.Fatalf("SetDailyCostLimitUSD(2.5) microUSD = %d, want 2500000", group.DailyCostLimitMicroUSD)
+	}
+
+	group.MaxConcurrency = 0
+	if err := group.ValidateUsageLimits(); err == nil || err.Error() != "cost-limited auth token group requires max_concurrency > 0" {
+		t.Fatalf("ValidateUsageLimits() error = %v, want cost-limited auth token group requires max_concurrency > 0", err)
+	}
+}
+
+func TestAuthTokenGroup_MarshalJSON_ExposesDailyCostLimit(t *testing.T) {
+	t.Parallel()
+
+	group := AuthTokenGroup{
+		ID:                     7,
+		Name:                   "Group B",
+		DailyCostLimitMicroUSD: 3_500_000,
+		MaxConcurrency:         9,
+	}
+
+	b, err := json.Marshal(group)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	var got struct {
+		DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
+		MaxConcurrency    int     `json:"max_concurrency"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if math.Abs(got.DailyCostLimitUSD-3.5) > 1e-9 {
+		t.Fatalf("daily_cost_limit_usd = %#v, want 3.5", got.DailyCostLimitUSD)
+	}
+	if got.MaxConcurrency != 9 {
+		t.Fatalf("max_concurrency = %#v, want 9", got.MaxConcurrency)
+	}
+}
