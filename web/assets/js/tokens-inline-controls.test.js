@@ -36,6 +36,7 @@ test('tokens 页静态控件改为 data-action/data-change-action/data-input-act
   assert.match(html, /data-action="show-create-modal"/);
   assert.match(html, /data-action="close-create-modal"/);
   assert.match(html, /data-action="create-token"/);
+  assert.match(html, /data-action="generate-create-token"/);
   assert.match(html, /data-change-action="toggle-custom-expiry"/);
   assert.match(html, /data-action="close-token-result-modal"/);
   assert.match(html, /data-action="copy-token-result"/);
@@ -53,17 +54,20 @@ test('tokens 页静态控件改为 data-action/data-change-action/data-input-act
   assert.match(html, /data-action="close-model-import-modal"/);
   assert.match(html, /data-input-action="update-model-import-preview"/);
   assert.match(html, /data-action="confirm-model-import"/);
+  assert.match(html, /id="tokenValue"[\s\S]*?data-action="generate-create-token"/);
+  assert.match(html, /data-i18n="tokens\.group"[\s\S]*?id="tokenGroup"/);
+  assert.doesNotMatch(html, /id="editTokenValue"[^>]*readonly/);
 });
 
 test('tokens 页费用和并发上限常驻说明 0 表示无限制', () => {
   assert.match(html, /data-i18n="tokens\.zeroUnlimitedHint">0 表示无限制<\/span>/);
-  assert.equal((html.match(/data-i18n="tokens\.zeroUnlimitedHint"/g) || []).length, 4);
+  assert.equal((html.match(/data-i18n="tokens\.zeroUnlimitedHint"/g) || []).length, 6);
   assert.match(html, /id="tokenCostLimitUSD"[\s\S]*?class="token-limit-hint token-limit-hint--inline"[\s\S]*?id="tokenMaxConcurrency"[\s\S]*?class="token-limit-hint token-limit-hint--inline"/);
   assert.match(html, /id="editCostLimitUSD"[\s\S]*?class="token-limit-hint token-limit-hint--inline"[\s\S]*?id="editMaxConcurrency"[\s\S]*?class="token-limit-hint token-limit-hint--inline"/);
 });
 
 test('tokens 页费用和并发上限输入框使用一致前缀槽位保持对齐', () => {
-  assert.equal((html.match(/class="token-limit-prefix-slot token-limit-prefix-slot--empty"/g) || []).length, 3);
+  assert.equal((html.match(/class="token-limit-prefix-slot token-limit-prefix-slot--empty"/g) || []).length, 4);
   assert.match(html, /id="tokenCostLimitUSD"[\s\S]*?id="tokenMaxConcurrency"/);
   assert.match(html, /token-cost-prefix token-limit-prefix-slot/);
   assert.match(html, /token-edit-cost-prefix token-limit-prefix-slot/);
@@ -80,6 +84,7 @@ test('tokens.js 通过委托处理页面控件和动态 allowed-model 行', () =
   assert.match(script, /window\.initDelegatedActions\(\{/);
   assert.match(script, /boundKey:\s*'tokensPageActionsBound'/);
   assert.match(script, /'show-create-modal':\s*\(\)\s*=> showCreateModal\(\)/);
+  assert.match(script, /'generate-create-token':\s*\(\)\s*=> generateCreateTokenValue\(\)/);
   assert.match(script, /'create-token':\s*\(\)\s*=> createToken\(\)/);
   assert.match(script, /'show-model-select-modal':\s*\(\)\s*=> showModelSelectModal\(\)/);
   assert.match(script, /'confirm-model-import':\s*\(\)\s*=> confirmModelImport\(\)/);
@@ -95,6 +100,16 @@ test('tokens.js 通过委托处理页面控件和动态 allowed-model 行', () =
   assert.doesNotMatch(script, /onchange="toggleAllowedModelSelection/);
   assert.doesNotMatch(script, /onclick="removeAllowedModel/);
   assert.match(script, /initPageActionDelegation\(\);/);
+});
+
+test('tokens 创建弹窗默认可随机生成 sk- 开头密钥并支持分组选择', () => {
+  assert.match(script, /function generateRandomTokenValue\(\)/);
+  assert.match(script, /return `sk-\$\{generateRandomHex\(24\)\}`;/);
+  assert.match(script, /async function showCreateModal\(\)/);
+  assert.match(script, /refreshCreateGroupOptions\(0\);/);
+  assert.match(script, /generateCreateTokenValue\(\);/);
+  assert.match(script, /plain_token:\s*plainToken,/);
+  assert.match(script, /group_id:\s*groupID/);
 });
 
 test('tokens.js 并发上限输入只接受非负整数且创建更新共用同一解析逻辑', () => {

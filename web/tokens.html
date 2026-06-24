@@ -129,6 +129,26 @@
           <input type="text" id="tokenDescription" class="form-input" data-i18n-placeholder="tokens.descriptionPlaceholder" placeholder="请输入令牌用途描述" required>
         </div>
 
+        <div class="form-group form-row-inline">
+          <label class="form-label form-row-inline__label" data-i18n="tokens.apiKeyLabel">API密钥</label>
+          <div class="form-row-inline__content token-create-token-control">
+            <div class="token-create-token-line">
+              <input type="text" id="tokenValue" class="form-input field-grow token-create-token-value" spellcheck="false"
+                data-i18n-placeholder="tokens.apiKeyPlaceholder" placeholder="留空则自动随机生成 sk- 开头密钥">
+              <button type="button" class="btn btn-secondary btn-sm token-create-token-btn" data-action="generate-create-token" data-i18n="tokens.randomGenerate">
+                随机生成
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group form-row-inline">
+          <label class="form-label form-row-inline__label" for="tokenGroup" data-i18n="tokens.group">分组</label>
+          <select id="tokenGroup" class="form-input field-grow">
+            <option value="0" data-i18n="tokens.ungrouped">未分组</option>
+          </select>
+        </div>
+
         <div class="form-group">
           <label class="form-label" data-i18n="tokens.expiryLabel">过期时间</label>
           <select id="tokenExpiry" class="form-input" data-expiry-select data-change-action="toggle-custom-expiry"></select>
@@ -241,7 +261,7 @@
               <label class="form-label form-row-inline__label" data-i18n="tokens.table.token">令牌</label>
               <div class="form-row-inline__content token-limit-control">
                 <div class="token-edit-token-line">
-                  <input type="text" id="editTokenValue" class="form-input field-grow token-edit-token-value" readonly spellcheck="false" data-i18n-placeholder="tokens.plainTokenPlaceholder" placeholder="历史令牌无明文，可在此重新设置">
+                  <input type="text" id="editTokenValue" class="form-input field-grow token-edit-token-value" spellcheck="false" data-i18n-placeholder="tokens.plainTokenPlaceholder" placeholder="历史令牌无明文，可在此重新设置">
                   <button type="button" class="btn-icon token-copy-icon-btn" data-action="copy-edit-token"
                     data-i18n-title="common.copy" data-i18n-aria-label="common.copy" title="复制" aria-label="复制">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4C2.9 15 2 14.1 2 13V4C2 2.9 2.9 2 4 2H13C14.1 2 15 2.9 15 4V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>

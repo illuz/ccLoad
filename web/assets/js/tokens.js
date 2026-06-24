@@ -136,6 +136,7 @@
         boundKey: 'tokensPageActionsBound',
         click: {
           'show-create-modal': () => showCreateModal(),
+          'generate-create-token': () => generateCreateTokenValue(),
           'show-token-group-manager': () => showTokenGroupManager(),
           'create-token-group-draft': () => createTokenGroupDraft(),
           'filter-tokens': () => applyTokenSearch(),
@@ -727,11 +728,18 @@
       return String(token.plain_token || '').trim();
     }
 
+    function formatGroupQuotaSummary(group) {
+      if (!group) return t('tokens.unlimited');
+      const costLimitUSD = Number(group.cost_limit_usd || 0);
+      if (costLimitUSD <= 0) return t('tokens.unlimited');
+      const maxConcurrency = Number(group.max_concurrency) || 0;
+      const concurrencyText = maxConcurrency > 0 ? String(maxConcurrency) : '∞';
+      return `$${costLimitUSD.toFixed(2)} / ${concurrencyText}`;
+    }
+
     function getGroupSummaryHtml(group) {
       if (!group || !group.id || group.__synthetic) return '';
-      const quota = Number(group.cost_limit_usd || 0) > 0
-        ? `$${Number(group.cost_limit_usd).toFixed(2)} / ${group.max_concurrency || 0}`
-        : t('tokens.unlimited');
+      const quota = formatGroupQuotaSummary(group);
       const channels = (group.allowed_channel_ids || []).length || t('tokens.unlimited');
       const models = (group.allowed_models || []).length || t('tokens.unlimited');
       return `
@@ -821,14 +829,31 @@
       return authTokenGroups.find(group => Number(group.id) === id) || null;
     }
 
+    function buildTokenGroupOptionsHtml(selectedID = 0) {
+      const current = String(Number(selectedID) || 0);
+      return [
+        `<option value="0"${current === '0' ? ' selected' : ''}>${escapeHtml(t('tokens.ungrouped'))}</option>`,
+        ...authTokenGroups.map((group) => {
+          const groupID = String(Number(group.id) || 0);
+          const selectedAttr = groupID === current ? ' selected' : '';
+          return `<option value="${escapeHtml(groupID)}"${selectedAttr}>${escapeHtml(group.name)}</option>`;
+        })
+      ].join('');
+    }
+
+    function refreshCreateGroupOptions(selectedID = 0) {
+      const select = document.getElementById('tokenGroup');
+      if (!select) return;
+      const current = String(Number(selectedID) || 0);
+      select.innerHTML = buildTokenGroupOptionsHtml(current);
+      select.value = current;
+    }
+
     function refreshEditGroupOptions(selectedID) {
       const select = document.getElementById('editTokenGroup');
       if (!select) return;
       const current = String(selectedID ?? select.value ?? '0');
-      select.innerHTML = [
-        `<option value="0">${escapeHtml(t('tokens.ungrouped'))}</option>`,
-        ...authTokenGroups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`)
-      ].join('');
+      select.innerHTML = buildTokenGroupOptionsHtml(current);
       select.value = current;
     }
 
@@ -846,6 +871,29 @@
         console.error('Failed to load token groups:', error);
         return [];
       }
+    }
+
+    function generateRandomHex(byteLength = 24) {
+      const size = Number(byteLength) > 0 ? Number(byteLength) : 24;
+      const cryptoProvider = window.crypto || globalThis.crypto;
+      if (cryptoProvider && typeof cryptoProvider.getRandomValues === 'function') {
+        const bytes = new Uint8Array(size);
+        cryptoProvider.getRandomValues(bytes);
+        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+      return Array.from({ length: size * 2 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    }
+
+    function generateRandomTokenValue() {
+      return `sk-${generateRandomHex(24)}`;
+    }
+
+    function generateCreateTokenValue() {
+      const input = document.getElementById('tokenValue');
+      if (!input) return '';
+      const nextValue = generateRandomTokenValue();
+      input.value = nextValue;
+      return nextValue;
     }
 
     // 格式化 Token 数量为 M 单位
@@ -1276,8 +1324,11 @@
       return { class: 'active', text: t('tokens.status.active') };
     }
 
-    function showCreateModal() {
+    async function showCreateModal() {
+      await ensureAuthTokenGroupsLoaded();
       document.getElementById('tokenDescription').value = '';
+      generateCreateTokenValue();
+      refreshCreateGroupOptions(0);
       document.getElementById('tokenExpiry').value = 'never';
       document.getElementById('tokenCostLimitUSD').value = 0;
       document.getElementById('tokenDailyCostLimitUSD').value = 0;
@@ -1294,6 +1345,8 @@
     async function createToken() {
       
       const description = document.getElementById('tokenDescription').value.trim();
+      const plainToken = document.getElementById('tokenValue').value.trim();
+      const groupID = Number(document.getElementById('tokenGroup')?.value) || 0;
       if (!description) {
         window.showNotification(t('tokens.msg.enterDescription'), 'error');
         return;
@@ -1336,13 +1389,25 @@
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ description, expires_at: expiresAt, is_active: isActive, cost_limit_usd: costLimitUSD, daily_cost_limit_usd: dailyCostLimitUSD, max_concurrency: maxConcurrency })
+          body: JSON.stringify({
+            description,
+            plain_token: plainToken,
+            expires_at: expiresAt,
+            is_active: isActive,
+            cost_limit_usd: costLimitUSD,
+            daily_cost_limit_usd: dailyCostLimitUSD,
+            max_concurrency: maxConcurrency,
+            group_id: groupID,
+            inherit_quota: groupID > 0,
+            inherit_channels: groupID > 0,
+            inherit_models: groupID > 0
+          })
         });
 
         upsertTokenLocal({
           id: data.id,
           token: data.token,
-          plain_token: data.token,
+          plain_token: data.plain_token || data.token,
           description,
           created_at: data.created_at || new Date().toISOString(),
           expires_at: expiresAt,
@@ -1366,7 +1431,8 @@
           effective_cost_usd: 0,
           cost_used_usd: 0,
           daily_cost_used_usd: 0,
-          group_id: Number(data.group_id) || 0,
+          group_id: Number(data.group_id) || groupID || 0,
+          group_name: getGroupByID(Number(data.group_id) || groupID || 0)?.name || '',
           inherit_quota: !!data.inherit_quota,
           inherit_channels: !!data.inherit_channels,
           inherit_models: !!data.inherit_models
@@ -1375,7 +1441,7 @@
         closeCreateModal();
         document.getElementById('newTokenValue').value = data.token;
         document.getElementById('tokenResultModal').style.display = 'block';
-        void loadTokens();
+        await loadTokens();
         window.showNotification(t('tokens.msg.createSuccess'), 'success');
       } catch (error) {
         console.error('Failed to create token:', error);
@@ -1424,8 +1490,7 @@
       if (!token) return;
       await ensureAuthTokenGroupsLoaded();
       document.getElementById('editTokenId').value = id;
-      token.token = token.plain_token || token.token;
-      document.getElementById('editTokenValue').value = token.token || '';
+      document.getElementById('editTokenValue').value = token.plain_token || '';
       document.getElementById('editTokenDescription').value = token.description;
       document.getElementById('editTokenActive').checked = token.is_active;
       refreshEditGroupOptions(token.group_id || 0);
@@ -1686,7 +1751,7 @@
         upsertTokenLocal(savedToken);
         renderTokens();
         closeEditModal();
-        void loadTokens();
+        await loadTokens();
         window.showNotification(t('tokens.msg.updateSuccess'), 'success');
       } catch (error) {
         console.error('Failed to update token:', error);
@@ -1703,7 +1768,7 @@
         });
         removeTokenLocal(id);
         renderTokens();
-        void loadTokens();
+        await loadTokens();
         window.showNotification(t('tokens.msg.deleteSuccess'), 'success');
       } catch (error) {
         console.error('Failed to delete token:', error);
@@ -1945,9 +2010,7 @@
       container.innerHTML = authTokenGroups.map(group => {
         const channelCount = (group.allowed_channel_ids || []).length;
         const modelCount = (group.allowed_models || []).length;
-        const quota = Number(group.cost_limit_usd || 0) > 0
-          ? `$${Number(group.cost_limit_usd).toFixed(2)} / ${group.max_concurrency || 0}`
-          : t('tokens.unlimited');
+        const quota = formatGroupQuotaSummary(group);
         const groupColor = getTokenGroupColor(group.color);
         return `
           <div class="token-group-list-item" data-action="edit-token-group" data-group-id="${group.id}">

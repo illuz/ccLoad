@@ -251,8 +251,8 @@ func TestMigrateSQLite_LegacyCostLimitedAuthTokenGetsDefaultMaxConcurrency(t *te
 	`).Scan(&limitedMaxConcurrency); err != nil {
 		t.Fatalf("query limited max_concurrency: %v", err)
 	}
-	if limitedMaxConcurrency != authTokenCostLimitDefaultMaxConcurrency {
-		t.Fatalf("limited max_concurrency=%d, want %d", limitedMaxConcurrency, authTokenCostLimitDefaultMaxConcurrency)
+	if limitedMaxConcurrency != 0 {
+		t.Fatalf("limited max_concurrency=%d, want 0", limitedMaxConcurrency)
 	}
 
 	var unlimitedMaxConcurrency int

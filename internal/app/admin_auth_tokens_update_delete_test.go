@@ -83,13 +83,13 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 	})
 
-	t.Run("cost limit requires max concurrency", func(t *testing.T) {
+	t.Run("cost limit allows unlimited concurrency", func(t *testing.T) {
 		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"cost_limit_usd":1.5}`)))
 		c.Params = gin.Params{{Key: "id", Value: "1"}}
 
 		server.HandleUpdateAuthToken(c)
-		if w.Code != http.StatusBadRequest {
-			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
 		}
 	})
 
@@ -103,7 +103,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			"allowed_channel_ids":  []int64{11, 22},
 			"cost_limit_usd":       1.5,
 			"daily_cost_limit_usd": 0.8,
-			"max_concurrency":      3,
+			"max_concurrency":      0,
 			"unknown_ignored":      "x",
 		}
 		c, w := newTestContext(t, newJSONRequest(t, http.MethodPut, "/admin/auth-tokens/1", body))
@@ -153,8 +153,8 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if len(resp.Data.AllowedChannelIDs) != 2 || resp.Data.AllowedChannelIDs[0] != 11 || resp.Data.AllowedChannelIDs[1] != 22 {
 			t.Fatalf("allowed_channel_ids=%v, want [11 22]", resp.Data.AllowedChannelIDs)
 		}
-		if resp.Data.MaxConcurrency != 3 {
-			t.Fatalf("max_concurrency=%d, want 3", resp.Data.MaxConcurrency)
+		if resp.Data.MaxConcurrency != 0 {
+			t.Fatalf("max_concurrency=%d, want 0", resp.Data.MaxConcurrency)
 		}
 
 		updated, err := store.GetAuthToken(ctx, token.ID)
@@ -182,12 +182,12 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if len(updated.AllowedChannelIDs) != 2 || updated.AllowedChannelIDs[0] != 11 || updated.AllowedChannelIDs[1] != 22 {
 			t.Fatalf("AllowedChannelIDs=%v, want [11 22]", updated.AllowedChannelIDs)
 		}
-		if updated.MaxConcurrency != 3 {
-			t.Fatalf("MaxConcurrency=%d, want 3", updated.MaxConcurrency)
+		if updated.MaxConcurrency != 0 {
+			t.Fatalf("MaxConcurrency=%d, want 0", updated.MaxConcurrency)
 		}
 	})
 
-	t.Run("cannot clear max concurrency while cost limited", func(t *testing.T) {
+	t.Run("can clear max concurrency while cost limited", func(t *testing.T) {
 		tokenLimited := &model.AuthToken{
 			Token:             model.HashToken("plain-token-limited"),
 			Description:       "limited",
@@ -203,8 +203,16 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(tokenLimited.ID, 10)}}
 
 		server.HandleUpdateAuthToken(c)
-		if w.Code != http.StatusBadRequest {
-			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		updated, err := store.GetAuthToken(ctx, tokenLimited.ID)
+		if err != nil {
+			t.Fatalf("GetAuthToken failed: %v", err)
+		}
+		if updated.MaxConcurrency != 0 {
+			t.Fatalf("MaxConcurrency=%d, want 0", updated.MaxConcurrency)
 		}
 	})
 

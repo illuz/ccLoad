@@ -487,10 +487,9 @@ func validateJSONColumn(ctx context.Context, db *sql.DB, table, col string, pars
 
 func validateAuthTokensMaxConcurrency(ctx context.Context, db *sql.DB) error {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, cost_limit_microusd, max_concurrency
+		SELECT id, max_concurrency
 		FROM auth_tokens
 		WHERE max_concurrency < 0
-		   OR (cost_limit_microusd > 0 AND max_concurrency <= 0)
 	`)
 	if err != nil {
 		return fmt.Errorf("query auth_tokens.max_concurrency: %w", err)
@@ -499,9 +498,8 @@ func validateAuthTokensMaxConcurrency(ctx context.Context, db *sql.DB) error {
 
 	if rows.Next() {
 		var id int64
-		var costLimitMicroUSD int64
 		var maxConcurrency int64
-		if err := rows.Scan(&id, &costLimitMicroUSD, &maxConcurrency); err != nil {
+		if err := rows.Scan(&id, &maxConcurrency); err != nil {
 			return fmt.Errorf("scan auth_tokens.max_concurrency: %w", err)
 		}
 		if maxConcurrency < 0 {
@@ -510,10 +508,6 @@ func validateAuthTokensMaxConcurrency(ctx context.Context, db *sql.DB) error {
 				id, maxConcurrency, id,
 			)
 		}
-		return fmt.Errorf(
-			"cost-limited auth token requires max_concurrency > 0: id=%d cost_limit_microusd=%d max_concurrency=%d (fix: set max_concurrency > 0 or clear cost_limit_microusd)",
-			id, costLimitMicroUSD, maxConcurrency,
-		)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -522,25 +516,7 @@ func validateAuthTokensMaxConcurrency(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-const authTokenCostLimitDefaultMaxConcurrency = 100
-
 func backfillAuthTokensCostLimitMaxConcurrency(ctx context.Context, db *sql.DB) error {
-	res, err := db.ExecContext(ctx, `
-		UPDATE auth_tokens
-		SET max_concurrency = ?
-		WHERE cost_limit_microusd > 0
-		  AND max_concurrency = 0
-	`, authTokenCostLimitDefaultMaxConcurrency)
-	if err != nil {
-		return fmt.Errorf("backfill auth_tokens max_concurrency for cost limits: %w", err)
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("backfill auth_tokens max_concurrency rows affected: %w", err)
-	}
-	if rows > 0 {
-		log.Printf("[MIGRATE] 已为 %d 个有限额 auth_token 设置默认 max_concurrency=%d", rows, authTokenCostLimitDefaultMaxConcurrency)
-	}
 	return nil
 }
 

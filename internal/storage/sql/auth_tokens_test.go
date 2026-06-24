@@ -209,7 +209,7 @@ func TestAuthToken_NegativeMaxConcurrency_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestAuthToken_ExistingCostLimitWithoutMaxConcurrencyBackfillsDefault(t *testing.T) {
+func TestAuthToken_ExistingCostLimitWithoutMaxConcurrencyIsPreserved(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -249,7 +249,7 @@ func TestAuthToken_ExistingCostLimitWithoutMaxConcurrencyBackfillsDefault(t *tes
 
 	store2, err := storage.CreateSQLiteStore(dbPath)
 	if err != nil {
-		t.Fatalf("expected reopen sqlite store to backfill max_concurrency, got %v", err)
+		t.Fatalf("expected reopen sqlite store to allow zero max_concurrency, got %v", err)
 	}
 	defer func() { _ = store2.Close() }()
 
@@ -257,12 +257,12 @@ func TestAuthToken_ExistingCostLimitWithoutMaxConcurrencyBackfillsDefault(t *tes
 	if err != nil {
 		t.Fatalf("GetAuthToken after migration: %v", err)
 	}
-	if got.MaxConcurrency != 100 {
-		t.Fatalf("MaxConcurrency=%d, want default backfill 100", got.MaxConcurrency)
+	if got.MaxConcurrency != 0 {
+		t.Fatalf("MaxConcurrency=%d, want preserved 0", got.MaxConcurrency)
 	}
 }
 
-func TestAuthToken_CostLimitRequiresMaxConcurrency(t *testing.T) {
+func TestAuthToken_CostLimitAllowsUnlimitedConcurrency(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t, "cost_limit_requires_max_concurrency.db")
@@ -275,17 +275,17 @@ func TestAuthToken_CostLimitRequiresMaxConcurrency(t *testing.T) {
 		CostLimitMicroUSD: 1000,
 		CreatedAt:         time.Now(),
 	}
-	if err := store.CreateAuthToken(ctx, token); err == nil {
-		t.Fatal("expected CreateAuthToken to reject cost limit without max_concurrency")
+	if err := store.CreateAuthToken(ctx, token); err != nil {
+		t.Fatalf("CreateAuthToken should allow cost limit without max_concurrency: %v", err)
 	}
 
 	token.CostLimitMicroUSD = 0
-	if err := store.CreateAuthToken(ctx, token); err != nil {
-		t.Fatalf("CreateAuthToken without limit failed: %v", err)
+	if err := store.UpdateAuthToken(ctx, token); err != nil {
+		t.Fatalf("UpdateAuthToken without limit failed: %v", err)
 	}
 	token.CostLimitMicroUSD = 1000
-	if err := store.UpdateAuthToken(ctx, token); err == nil {
-		t.Fatal("expected UpdateAuthToken to reject cost limit without max_concurrency")
+	if err := store.UpdateAuthToken(ctx, token); err != nil {
+		t.Fatalf("UpdateAuthToken should allow cost limit without max_concurrency: %v", err)
 	}
 }
 

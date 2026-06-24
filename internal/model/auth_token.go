@@ -350,9 +350,6 @@ func (t *AuthToken) ValidateUsageLimits() error {
 	if t.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
 	}
-	if (t.CostLimitMicroUSD > 0 || t.DailyCostLimitMicroUSD > 0) && t.MaxConcurrency <= 0 && !(t.GroupID > 0 && t.InheritQuota) {
-		return errors.New("cost-limited auth token requires max_concurrency > 0")
-	}
 	return nil
 }
 
@@ -390,9 +387,6 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	}
 	if g.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
-	}
-	if g.CostLimitMicroUSD > 0 && g.MaxConcurrency <= 0 {
-		return errors.New("cost-limited auth token group requires max_concurrency > 0")
 	}
 	return nil
 }

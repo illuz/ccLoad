@@ -68,6 +68,9 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	if !response.Success || len(response.Data.Token) == 0 {
 		t.Error("Token creation failed")
 	}
+	if got := response.Data.Token; len(got) < 4 || got[:3] != "sk-" {
+		t.Fatalf("token=%q, want sk- prefixed token", got)
+	}
 	if len(response.Data.AllowedChannelIDs) != 2 || response.Data.AllowedChannelIDs[0] != 3 || response.Data.AllowedChannelIDs[1] != 5 {
 		t.Fatalf("allowed_channel_ids=%v, want [3 5]", response.Data.AllowedChannelIDs)
 	}
@@ -111,18 +114,69 @@ func TestAdminAPI_CreateAuthToken_NegativeMaxConcurrency(t *testing.T) {
 	}
 }
 
-func TestAdminAPI_CreateAuthToken_CostLimitRequiresMaxConcurrency(t *testing.T) {
+func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	server := newInMemoryServer(t)
+	ctx := context.Background()
+
+	group := &model.AuthTokenGroup{Name: "Premium"}
+	if err := server.store.CreateAuthTokenGroup(ctx, group); err != nil {
+		t.Fatalf("CreateAuthTokenGroup failed: %v", err)
+	}
 
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
-		"description":    "limited token",
-		"cost_limit_usd": 1.0,
+		"description":          "manual token",
+		"plain_token":          "sk-manual-token-001",
+		"group_id":             group.ID,
+		"cost_limit_usd":       1.0,
+		"daily_cost_limit_usd": 0.5,
+		"max_concurrency":      0,
 	}))
 
 	server.HandleCreateAuthToken(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	type respData struct {
+		ID              int64  `json:"id"`
+		Token           string `json:"token"`
+		PlainToken      string `json:"plain_token"`
+		GroupID         int64  `json:"group_id"`
+		MaxConcurrency  int    `json:"max_concurrency"`
+		InheritQuota    bool   `json:"inherit_quota"`
+		InheritChannels bool   `json:"inherit_channels"`
+		InheritModels   bool   `json:"inherit_models"`
+	}
+	resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
+	if resp.Data.Token != "sk-manual-token-001" || resp.Data.PlainToken != "sk-manual-token-001" {
+		t.Fatalf("token/plain_token=%q/%q, want provided manual token", resp.Data.Token, resp.Data.PlainToken)
+	}
+	if resp.Data.GroupID != group.ID {
+		t.Fatalf("group_id=%d, want %d", resp.Data.GroupID, group.ID)
+	}
+	if resp.Data.MaxConcurrency != 0 {
+		t.Fatalf("max_concurrency=%d, want 0", resp.Data.MaxConcurrency)
+	}
+	if !resp.Data.InheritQuota || !resp.Data.InheritChannels || !resp.Data.InheritModels {
+		t.Fatalf("inherit flags=%v/%v/%v, want all true", resp.Data.InheritQuota, resp.Data.InheritChannels, resp.Data.InheritModels)
+	}
+
+	stored, err := server.store.GetAuthToken(ctx, resp.Data.ID)
+	if err != nil {
+		t.Fatalf("GetAuthToken failed: %v", err)
+	}
+	if stored.PlainToken != "sk-manual-token-001" {
+		t.Fatalf("stored plain_token=%q, want manual token", stored.PlainToken)
+	}
+	if stored.GroupID != group.ID {
+		t.Fatalf("stored group_id=%d, want %d", stored.GroupID, group.ID)
+	}
+	if stored.MaxConcurrency != 0 {
+		t.Fatalf("stored max_concurrency=%d, want 0", stored.MaxConcurrency)
+	}
+	if !stored.InheritQuota || !stored.InheritChannels || !stored.InheritModels {
+		t.Fatalf("stored inherit flags=%v/%v/%v, want all true", stored.InheritQuota, stored.InheritChannels, stored.InheritModels)
 	}
 }
 

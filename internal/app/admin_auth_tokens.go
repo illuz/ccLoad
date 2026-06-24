@@ -261,11 +261,31 @@ func applyAuthTokenGroupEffective(tokens []*model.AuthToken, groupByID map[int64
 	}
 }
 
+func generateRandomAuthTokenPlainText() (string, error) {
+	tokenBytes := make([]byte, 24)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	return "sk-" + hex.EncodeToString(tokenBytes), nil
+}
+
+func isDuplicateAuthTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate entry") ||
+		strings.Contains(msg, "unique constraint failed") ||
+		strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "duplicated")
+}
+
 // HandleCreateAuthToken 创建新的API访问令牌
 // POST /admin/auth-tokens
 func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	var req struct {
 		Description       string   `json:"description" binding:"required"`
+		PlainToken        *string  `json:"plain_token"`
 		ExpiresAt         *int64   `json:"expires_at"`           // Unix毫秒时间戳，nil表示永不过期
 		IsActive          *bool    `json:"is_active"`            // nil表示默认启用
 		AllowedModels     []string `json:"allowed_models"`       // 允许的模型列表，空表示无限制
@@ -300,14 +320,19 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		return
 	}
 
-	// 生成安全令牌(64字符十六进制)
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		log.Print("[ERROR] 生成令牌失败: " + err.Error())
-		RespondError(c, http.StatusInternalServerError, err)
-		return
+	tokenPlain := ""
+	if req.PlainToken != nil {
+		tokenPlain = strings.TrimSpace(*req.PlainToken)
 	}
-	tokenPlain := hex.EncodeToString(tokenBytes)
+	if tokenPlain == "" {
+		var err error
+		tokenPlain, err = generateRandomAuthTokenPlainText()
+		if err != nil {
+			log.Print("[ERROR] 生成令牌失败: " + err.Error())
+			RespondError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
 
 	// 计算SHA256哈希用于存储
 	tokenHash := model.HashToken(tokenPlain)
@@ -328,6 +353,11 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 	if req.GroupID != nil {
 		authToken.GroupID = *req.GroupID
+	}
+	if authToken.GroupID > 0 {
+		authToken.InheritQuota = true
+		authToken.InheritChannels = true
+		authToken.InheritModels = true
 	}
 	if req.InheritQuota != nil {
 		authToken.InheritQuota = *req.InheritQuota
@@ -368,6 +398,10 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 
 	if err := s.store.CreateAuthToken(ctx, authToken); err != nil {
+		if isDuplicateAuthTokenError(err) {
+			RespondErrorMsg(c, http.StatusConflict, "auth token already exists")
+			return
+		}
 		log.Print("[ERROR] 创建令牌失败: " + err.Error())
 		RespondError(c, http.StatusInternalServerError, err)
 		return
@@ -384,6 +418,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	RespondJSON(c, http.StatusOK, gin.H{
 		"id":                   authToken.ID,
 		"token":                tokenPlain, // 明文令牌，仅创建时返回
+		"plain_token":          tokenPlain,
 		"description":          authToken.Description,
 		"created_at":           authToken.CreatedAt,
 		"expires_at":           authToken.ExpiresAt,
@@ -517,6 +552,10 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 
 	if err := s.store.UpdateAuthToken(ctx, token); err != nil {
+		if isDuplicateAuthTokenError(err) {
+			RespondErrorMsg(c, http.StatusConflict, "auth token already exists")
+			return
+		}
 		log.Print("[ERROR] 更新令牌失败: " + err.Error())
 		RespondError(c, http.StatusInternalServerError, err)
 		return

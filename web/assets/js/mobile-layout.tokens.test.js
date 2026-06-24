@@ -102,10 +102,12 @@ test('tokens 页手机卡片将 token 用量压成紧凑二维指标块', () => 
 });
 
 test('tokens 页总费用使用调用统计同款 warning 两行成本组件', () => {
-  assert.match(tokensScript, /function\s+buildCostHtml[\s\S]*?buildCostStackHtml\(totalCostUsd,\s*effectiveCostUsd,\s*\{\s*tone:\s*'warning'\s*\}\)/);
+  assert.match(tokensScript, /function\s+buildCostSummaryHtml[\s\S]*?buildCostMetricRow\([\s\S]*?tokens\.table\.totalCost[\s\S]*?tone:\s*totalCostUsd > 0 \? 'warning' : 'muted'/);
+  assert.match(tokensScript, /buildCostMetricRow\([\s\S]*?tokens\.table\.dailyCost[\s\S]*?tone:\s*dailyCostUsd > 0 \? 'primary' : 'muted'/);
   assert.match(tokensCss, /\.token-cost\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
-  assert.match(tokensCss, /\.token-cost\s+\.cost-stack\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?text-align:\s*center;/);
-  assert.doesNotMatch(tokensCss, /\.token-cost-value\s*\{[^}]*color:\s*var\(--success-700\);/);
+  assert.match(tokensCss, /\.token-cost-summary\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+  assert.match(tokensCss, /\.token-cost-summary__value--warning\s*\{[\s\S]*?color:\s*var\(--warning-700\);/);
+  assert.doesNotMatch(tokensCss, /\.token-cost-summary__value\s*\{[^}]*color:\s*var\(--success-700\);/);
 });
 
 test('tokens 页调用次数和 token 用量指标退化为纯文字样式', () => {
@@ -192,9 +194,9 @@ test('tokens 编辑令牌弹窗手机端使用标准字号层级', () => {
 });
 
 test('tokens 编辑令牌弹窗显示当前 token 值', () => {
-  assert.match(tokensHtml, /id="editTokenValue"[^>]*readonly/);
+  assert.doesNotMatch(tokensHtml, /id="editTokenValue"[^>]*readonly/);
   assert.match(tokensHtml, /token-edit-field--token/);
-  assert.match(tokensScript, /document\.getElementById\('editTokenValue'\)\.value = token\.token \|\| '';/);
+  assert.match(tokensScript, /document\.getElementById\('editTokenValue'\)\.value = token\.plain_token \|\| '';/);
   assert.match(tokensScript, /document\.getElementById\('editTokenValue'\)\.value = '';/);
 });
 
