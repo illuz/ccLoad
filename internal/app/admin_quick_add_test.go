@@ -35,6 +35,9 @@ func TestHandleQuickAddChannel_ManualModels(t *testing.T) {
 	if resp.Data.Channel.Name != "codex.hiyo.top" {
 		t.Fatalf("name=%q, want codex.hiyo.top", resp.Data.Channel.Name)
 	}
+	if resp.Data.Channel.Priority != 299 {
+		t.Fatalf("priority=%d, want 299 (default)", resp.Data.Channel.Priority)
+	}
 	if len(resp.Data.Channel.ModelEntries) != 2 {
 		t.Fatalf("expected 2 models, got %d", len(resp.Data.Channel.ModelEntries))
 	}
@@ -104,16 +107,17 @@ func TestHandleQuickAddChannel_WithGroup(t *testing.T) {
 	server := newInMemoryServer(t)
 	ctx := context.Background()
 
-	// 建一个 auth token 分组
+	// 建一个 auth token 分组,里面已有 3 个渠道
 	group := &model.AuthTokenGroup{
 		Name:              "GPT",
 		Color:             model.DefaultAuthTokenGroupColor,
-		AllowedChannelIDs: []int64{99},
+		AllowedChannelIDs: []int64{101, 102, 103},
 	}
 	if err := server.store.CreateAuthTokenGroup(ctx, group); err != nil {
 		t.Fatalf("CreateAuthTokenGroup failed: %v", err)
 	}
 
+	// 第一次 quick-add
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/channels/quick-add", map[string]any{
 		"url":          "https://codex.hiyo.top",
 		"api_keys":     []string{"sk-aaa"},
@@ -122,35 +126,46 @@ func TestHandleQuickAddChannel_WithGroup(t *testing.T) {
 		"group_id":     group.ID,
 	}))
 	server.HandleQuickAddChannel(c)
-
 	if w.Code != http.StatusCreated {
-		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusCreated, w.Body.String())
+		t.Fatalf("first quick-add: status=%d, body=%s", w.Code, w.Body.String())
 	}
-	resp := mustParseAPIResponse[quickAddResponse](t, w.Body.Bytes())
-	if resp.Data.Group == nil {
-		t.Fatalf("group is nil in response")
+	firstNewID := mustParseAPIResponse[quickAddResponse](t, w.Body.Bytes()).Data.Channel.ID
+
+	// 第二次 quick-add,模拟用户连续加两个渠道
+	c2, w2 := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/channels/quick-add", map[string]any{
+		"url":          "https://codex2.hiyo.top",
+		"api_keys":     []string{"sk-bbb"},
+		"channel_type": "codex",
+		"models":       []string{"gpt-5-codex"},
+		"group_id":     group.ID,
+	}))
+	server.HandleQuickAddChannel(c2)
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("second quick-add: status=%d, body=%s", w2.Code, w2.Body.String())
 	}
-	newID := resp.Data.Channel.ID
-	found := false
-	for _, id := range resp.Data.Group.AllowedChannelIDs {
-		if id == newID {
-			found = true
-			break
+	secondNewID := mustParseAPIResponse[quickAddResponse](t, w2.Body.Bytes()).Data.Channel.ID
+
+	// 重新从数据库读,确认所有 ID 都保留:原有 3 个 + 新加 2 个
+	reloaded, err := server.store.GetAuthTokenGroup(ctx, group.ID)
+	if err != nil {
+		t.Fatalf("GetAuthTokenGroup reload failed: %v", err)
+	}
+	want := map[int64]bool{101: true, 102: true, 103: true, firstNewID: true, secondNewID: true}
+	if len(reloaded.AllowedChannelIDs) != len(want) {
+		t.Fatalf("AllowedChannelIDs=%v, want %d entries (existing 3 + new 2), got %d",
+			reloaded.AllowedChannelIDs, len(want), len(reloaded.AllowedChannelIDs))
+	}
+	for id := range want {
+		found := false
+		for _, got := range reloaded.AllowedChannelIDs {
+			if got == id {
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		t.Fatalf("new channel ID %d not in group.AllowedChannelIDs %v", newID, resp.Data.Group.AllowedChannelIDs)
-	}
-	// 原有的 99 也应保留
-	hasOld := false
-	for _, id := range resp.Data.Group.AllowedChannelIDs {
-		if id == 99 {
-			hasOld = true
-			break
+		if !found {
+			t.Fatalf("channel ID %d missing from group.AllowedChannelIDs=%v", id, reloaded.AllowedChannelIDs)
 		}
-	}
-	if !hasOld {
-		t.Fatalf("original channel ID 99 was lost from group")
 	}
 }
 

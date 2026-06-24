@@ -490,6 +490,7 @@ type QuickAddChannelRequest struct {
 	APIKeys              []string `json:"api_keys" binding:"required,min=1"`
 	ChannelType          string   `json:"channel_type,omitempty"`           // 空则默认 anthropic
 	Name                 string   `json:"name,omitempty"`                    // 空则用 URL hostname
+	Priority             *int     `json:"priority,omitempty"`                // 渠道优先级,nil=默认 299
 	ModelSourceChannelID *int64   `json:"model_source_channel_id,omitempty"` // 复制模型源渠道(二选一)
 	Models               []string `json:"models,omitempty"`                  // 手动模型名(二选一)
 	GroupID              *int64   `json:"group_id,omitempty"`                 // 可选,追加到该分组

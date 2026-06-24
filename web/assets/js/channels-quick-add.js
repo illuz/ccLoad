@@ -51,8 +51,10 @@ function closeQuickAddModal() {
 function resetQuickAddForm() {
   const input = document.getElementById('quickAddInput');
   if (input) input.value = '';
-  const name = document.getElementById('quickAddName');
-  if (name) name.value = '';
+  const nameInput = document.getElementById('quickAddName');
+  if (nameInput) nameInput.value = '';
+  const priorityInput = document.getElementById('quickAddPriority');
+  if (priorityInput) priorityInput.value = '299';
   const models = document.getElementById('quickAddModels');
   if (models) models.value = '';
   const typeSel = document.getElementById('quickAddType');
@@ -172,6 +174,8 @@ async function confirmQuickAdd() {
 
   const channelType = typeSel ? typeSel.value : QUICK_ADD_TYPE_DEFAULT;
   const name = (nameInput && nameInput.value.trim()) || hostnameFromURL(url) || '';
+  const priorityInput = document.getElementById('quickAddPriority');
+  const priority = priorityInput ? (parseInt(priorityInput.value, 10) || 0) : 0;
   const modelSourceId = srcSel && srcSel.value ? Number(srcSel.value) : null;
   const manualModels = (modelsInput && modelsInput.value || '')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -186,7 +190,8 @@ async function confirmQuickAdd() {
     url,
     api_keys: keys,
     channel_type: channelType,
-    name
+    name,
+    priority
   };
   if (modelSourceId) {
     payload.model_source_channel_id = modelSourceId;

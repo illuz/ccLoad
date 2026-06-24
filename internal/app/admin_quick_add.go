@@ -67,6 +67,12 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		channelType = util.ChannelTypeAnthropic
 	}
 
+	// 优先级:nil 或负数 -> 默认 299
+	priority := 299
+	if req.Priority != nil && *req.Priority >= 0 {
+		priority = *req.Priority
+	}
+
 	// 组装内部 ChannelRequest 并校验
 	cr := ChannelRequest{
 		Name:                  req.Name,
@@ -76,6 +82,7 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		ProtocolTransformMode: protocolTransformMode,
 		ProtocolTransforms:    protocolTransforms,
 		KeyStrategy:           model.KeyStrategySequential,
+		Priority:              priority,
 		Models:                modelEntries,
 		Enabled:               true,
 		CostMultiplier:        1,
