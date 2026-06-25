@@ -227,7 +227,7 @@
           formatter: function (params) {
             const v = params.value;
             const formatted = unit === '$' ? `$${v.toFixed(4)}` : v.toLocaleString();
-            return `${params.name}<br/>${formatted} (${params.percent}%)`;
+            return `${params.name}<br/>${formatted}`;
           }
         },
         legend: {
@@ -237,14 +237,7 @@
           top: 'middle',
           textStyle: { fontSize: 10, color: mutedText },
           pageIconColor: mutedText,
-          pageTextStyle: { color: mutedText },
-          formatter: function (name) {
-            const item = sorted.find(d => d.name === name);
-            if (item && total > 0) {
-              return `${name} (${((item.value / total) * 100).toFixed(0)}%)`;
-            }
-            return name;
-          }
+          pageTextStyle: { color: mutedText }
         },
         color: colors,
         series: [{
