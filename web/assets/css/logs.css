@@ -222,12 +222,12 @@
 
     .test-result.success {
       background: var(--success-50);
-      border: 1px solid var(--success-200);
+      border: 1px solid var(--success-200, rgba(34, 197, 94, 0.24));
     }
 
     .test-result.error {
       background: var(--error-50);
-      border: 1px solid var(--error-200);
+      border: 1px solid var(--error-200, rgba(239, 68, 68, 0.24));
     }
 
     .test-details {
@@ -251,6 +251,31 @@
       border-top-color: var(--primary-500);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
+    }
+
+    html[data-theme="dark"] .test-result.success,
+    html[data-theme="system"][data-resolved-theme="dark"] .test-result.success {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: rgba(52, 211, 153, 0.24);
+      color: #d1fae5;
+    }
+
+    html[data-theme="dark"] .test-result.error,
+    html[data-theme="system"][data-resolved-theme="dark"] .test-result.error {
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(248, 113, 113, 0.24);
+      color: #fee2e2;
+    }
+
+    html[data-theme="dark"] .test-details,
+    html[data-theme="system"][data-resolved-theme="dark"] .test-details {
+      color: inherit;
+    }
+
+    html[data-theme="dark"] .loading-spinner,
+    html[data-theme="system"][data-resolved-theme="dark"] .loading-spinner {
+      border-color: rgba(255, 255, 255, 0.16);
+      border-top-color: var(--primary-400);
     }
 
     @keyframes spin {
@@ -558,6 +583,36 @@
       color: var(--neutral-700);
       background: var(--neutral-100);
       border: 1px solid var(--neutral-200);
+    }
+
+    html[data-theme="dark"] .debug-log-status--refreshing,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-status--refreshing {
+      color: #bfdbfe;
+      background: rgba(30, 64, 175, 0.22);
+      border-color: rgba(96, 165, 250, 0.32);
+    }
+
+    html[data-theme="dark"] .debug-log-status--finished,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-status--finished {
+      color: var(--neutral-700);
+      background: rgba(30, 41, 59, 0.88);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__row,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__row {
+      background: rgba(17, 24, 39, 0.9);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__label,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__label {
+      color: var(--neutral-600);
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__value,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__value {
+      color: var(--neutral-900);
     }
 
     @keyframes debug-log-status-pulse {

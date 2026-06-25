@@ -487,6 +487,117 @@
       border-color: var(--error-400);
       background: var(--error-50);
     }
+
+    html[data-theme="dark"] .token-enable-switch--off,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-enable-switch--off {
+      background: rgba(148, 163, 184, 0.28);
+      border-color: rgba(148, 163, 184, 0.48);
+    }
+
+    html[data-theme="dark"] .token-enable-switch__knob,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-enable-switch__knob {
+      background: #e2e8f0;
+    }
+
+    html[data-theme="dark"] .tokens-view-switch,
+    html[data-theme="system"][data-resolved-theme="dark"] .tokens-view-switch {
+      background: rgba(30, 41, 59, 0.88);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .tokens-view-switch .btn.active,
+    html[data-theme="system"][data-resolved-theme="dark"] .tokens-view-switch .btn.active {
+      background: rgba(37, 99, 235, 0.92);
+      border-color: rgba(37, 99, 235, 0.92);
+      color: #fff;
+    }
+
+    html[data-theme="dark"] .token-batch-float__content,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-batch-float__content {
+      background: rgba(17, 24, 39, 0.92);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .token-batch-action,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-batch-action {
+      background: rgba(17, 24, 39, 0.88);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: var(--neutral-700);
+    }
+
+    html[data-theme="dark"] .token-batch-action:hover,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-batch-action:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    html[data-theme="dark"] .token-batch-action--disable,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-batch-action--disable {
+      background: rgba(127, 29, 29, 0.22);
+      border-color: rgba(248, 113, 113, 0.42);
+      color: #fecaca;
+    }
+
+    html[data-theme="dark"] .token-batch-action--delete,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-batch-action--delete {
+      background: rgba(220, 38, 38, 0.88);
+      border-color: rgba(220, 38, 38, 0.88);
+      color: #fff;
+    }
+
+    html[data-theme="dark"] .token-row-action-btn.btn-danger:hover,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-row-action-btn.btn-danger:hover {
+      background: rgba(127, 29, 29, 0.22);
+      border-color: rgba(248, 113, 113, 0.42);
+      color: #fecaca;
+    }
+
+    html[data-theme="dark"] .tokens-empty-title,
+    html[data-theme="system"][data-resolved-theme="dark"] .tokens-empty-title {
+      color: var(--neutral-900);
+    }
+
+    html[data-theme="dark"] .tokens-empty-desc,
+    html[data-theme="system"][data-resolved-theme="dark"] .tokens-empty-desc {
+      color: var(--neutral-600);
+    }
+
+    html[data-theme="dark"] .token-cost-prefix,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-cost-prefix {
+      color: var(--neutral-500);
+    }
+
+    html[data-theme="dark"] .token-group-inherit,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-group-inherit {
+      color: var(--neutral-500);
+    }
+
+    html[data-theme="dark"] .token-table thead,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-table thead {
+      background: rgba(31, 41, 55, 0.92);
+    }
+
+    html[data-theme="dark"] .token-table th,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-table th {
+      color: var(--neutral-700);
+      border-bottom-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .token-table td,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-table td {
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+
+    html[data-theme="dark"] .token-table tbody tr:hover,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    html[data-theme="dark"] .token-table,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-table {
+      background: rgba(17, 24, 39, 0.9);
+    }
+
     .tokens-visible-selection-toggle {
       display: inline-flex;
       align-items: center;
