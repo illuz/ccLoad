@@ -226,8 +226,8 @@
           textStyle: { color: tooltipText, fontSize: 12 },
           formatter: function (params) {
             const v = params.value;
-            const formatted = unit === '$' ? `$${v.toFixed(4)}` : v.toLocaleString();
-            return `${params.name}<br/>${formatted}`;
+            const formatted = unit === '$' ? `$${v.toFixed(2)}` : v.toLocaleString();
+            return `${params.name}<br/>${formatted}<br/>${params.percent.toFixed(0)}%`;
           }
         },
         legend: {
@@ -237,7 +237,16 @@
           top: 'middle',
           textStyle: { fontSize: 10, color: mutedText },
           pageIconColor: mutedText,
-          pageTextStyle: { color: mutedText }
+          pageTextStyle: { color: mutedText },
+          formatter: function (name) {
+            const item = sorted.find(d => d.name === name);
+            if (!item || total <= 0) return name;
+            const cost = unit === '$' ? `$${Math.round(item.value)}` : Math.round(item.value).toLocaleString();
+            const pct = Math.round((item.value / total) * 100);
+            const maxLen = 12;
+            const truncated = name.length > maxLen ? name.slice(0, maxLen) + '…' : name;
+            return `${truncated} ${cost} ${pct}%`;
+          }
         },
         color: colors,
         series: [{
