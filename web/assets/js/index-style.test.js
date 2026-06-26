@@ -11,6 +11,19 @@ test('首页已移除 hero 标题容器', () => {
   assert.doesNotMatch(html, /data-i18n="index\.heroTitle"/);
 });
 
+test('首页时间筛选栏包含自动刷新状态提示', () => {
+  assert.match(html, /class="index-auto-refresh-panel"/);
+  assert.match(html, /id="index-auto-refresh-status"\s+class="index-auto-refresh-status"/);
+  assert.match(html, /id="index-auto-refresh-meta"\s+class="index-auto-refresh-meta"/);
+  assert.match(html, /id="index-auto-refresh-button"\s+class="index-auto-refresh-button"/);
+  assert.match(css, /\.index-auto-refresh-panel\s*\{[\s\S]*?display:\s*inline-flex;/);
+  assert.match(css, /\.index-auto-refresh-status\s*\{[\s\S]*?display:\s*inline-flex;/);
+  assert.match(css, /\.index-auto-refresh-meta\s*\{[\s\S]*?font-size:\s*12px;/);
+  assert.match(css, /\.index-auto-refresh-button\s*\{[\s\S]*?min-height:\s*36px;/);
+  assert.match(css, /\.index-auto-refresh-status\.is-refreshing::before\s*\{/);
+  assert.match(css, /\.index-auto-refresh-status\.is-paused::before\s*\{/);
+});
+
 test('首页 hero 标题不再使用顶部装饰线', () => {
   assert.doesNotMatch(css, /\.hero-header::before\s*\{/);
 });

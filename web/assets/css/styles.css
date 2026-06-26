@@ -1336,9 +1336,99 @@ body {
 /* 时间范围选择器 */
 .time-range-container {
   display: flex;
+  align-items: center;
+  gap: var(--space-3);
   justify-content: flex-end;
   width: 100%;
   position: relative;
+}
+
+.index-auto-refresh-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.index-auto-refresh-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: var(--surface-bg-strong);
+  border: 1px solid var(--surface-border);
+  color: var(--muted-fg);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.index-auto-refresh-meta {
+  color: var(--muted-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.index-auto-refresh-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: var(--success-500);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success-500) 18%, transparent);
+}
+
+.index-auto-refresh-status.is-refreshing::before {
+  background: var(--primary-500);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-500) 18%, transparent);
+  animation: index-auto-refresh-pulse 1.2s ease-in-out infinite;
+}
+
+.index-auto-refresh-status.is-paused::before {
+  background: var(--warning-500);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning-500) 18%, transparent);
+}
+
+.index-auto-refresh-status.is-error::before {
+  background: var(--error-500);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--error-500) 18%, transparent);
+}
+
+@keyframes index-auto-refresh-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.72; }
+}
+
+.index-auto-refresh-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-full);
+  background: var(--surface-bg-strong);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, transform var(--duration-fast) ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.index-auto-refresh-button:hover {
+  background: var(--surface-hover);
+  border-color: var(--surface-border-strong);
+}
+
+.index-auto-refresh-button:active {
+  transform: translateY(1px);
+}
+
+.index-auto-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .time-range-selector {
@@ -2287,6 +2377,16 @@ html[data-theme="system"][data-resolved-theme="dark"] .login-button {
 
   .time-range-container {
     justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .index-auto-refresh-panel {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .index-auto-refresh-status {
+    justify-content: center;
   }
 
   .time-range-selector {

@@ -13,6 +13,15 @@
     // 当前选中的时间范围
     let currentTimeRange = 'today';
     let currentCustomTimeRange = null;
+    const overviewAutoRefreshIntervalSeconds = 15;
+    const overviewAutoRefreshState = {
+      nextRefreshAt: null,
+      countdownTimerId: null,
+      visibilityHandler: null,
+      refreshing: false,
+      hasError: false,
+      lastUpdatedAt: null
+    };
 
     function buildSummaryURL() {
       const query = typeof window.buildDateRangeQuery === 'function'
@@ -36,11 +45,165 @@
       } catch (error) {
         console.error('Failed to load stats:', error);
         showError('无法加载统计数据');
+        throw error;
       } finally {
         // 移除加载状态
         document.querySelectorAll('.metric-number').forEach(el => {
           el.classList.remove('animate-pulse');
         });
+      }
+    }
+
+    function getAutoRefreshStatusElement() {
+      return document.getElementById('index-auto-refresh-status');
+    }
+
+    function getAutoRefreshMetaElement() {
+      return document.getElementById('index-auto-refresh-meta');
+    }
+
+    function getAutoRefreshButtonElement() {
+      return document.getElementById('index-auto-refresh-button');
+    }
+
+    function formatAutoRefreshText(key, replacements) {
+      let text = t(key);
+      if (!replacements || typeof text !== 'string') return text;
+      Object.entries(replacements).forEach(([name, value]) => {
+        text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value));
+      });
+      return text;
+    }
+
+    function isOverviewAutoRefreshPaused() {
+      if (typeof document === 'undefined') return true;
+      if (document.hidden) return true;
+      if (document.querySelector('.modal.show')) return true;
+      return false;
+    }
+
+    function setOverviewNextRefreshAt(seconds = overviewAutoRefreshIntervalSeconds) {
+      overviewAutoRefreshState.nextRefreshAt = Date.now() + (seconds * 1000);
+    }
+
+    function formatOverviewRefreshTime(timestamp) {
+      if (!timestamp) return '';
+      try {
+        const locale = document?.documentElement?.lang || undefined;
+        return new Intl.DateTimeFormat(locale, {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }).format(new Date(timestamp));
+      } catch (_) {
+        return new Date(timestamp).toLocaleTimeString();
+      }
+    }
+
+    function renderOverviewAutoRefreshMeta() {
+      const el = getAutoRefreshMetaElement();
+      if (!el) return;
+      if (overviewAutoRefreshState.lastUpdatedAt) {
+        el.textContent = formatAutoRefreshText('index.autoRefresh.lastUpdated', {
+          time: formatOverviewRefreshTime(overviewAutoRefreshState.lastUpdatedAt)
+        });
+        return;
+      }
+      el.textContent = formatAutoRefreshText('index.autoRefresh.neverUpdated');
+    }
+
+    function renderOverviewAutoRefreshStatus() {
+      const el = getAutoRefreshStatusElement();
+      if (!el) return;
+
+      const paused = isOverviewAutoRefreshPaused();
+      el.classList.remove('is-refreshing', 'is-paused', 'is-error');
+
+      if (overviewAutoRefreshState.refreshing) {
+        el.classList.add('is-refreshing');
+        el.textContent = formatAutoRefreshText('index.autoRefresh.refreshing');
+        return;
+      }
+
+      if (paused) {
+        el.classList.add('is-paused');
+        el.textContent = formatAutoRefreshText('index.autoRefresh.paused');
+        return;
+      }
+
+      if (overviewAutoRefreshState.hasError) {
+        el.classList.add('is-error');
+      }
+
+      const remainingSeconds = overviewAutoRefreshState.nextRefreshAt
+        ? Math.max(0, Math.ceil((overviewAutoRefreshState.nextRefreshAt - Date.now()) / 1000))
+        : overviewAutoRefreshIntervalSeconds;
+
+      el.textContent = formatAutoRefreshText('index.autoRefresh.countdown', {
+        seconds: remainingSeconds
+      });
+    }
+
+    function updateOverviewRefreshButtonState() {
+      const button = getAutoRefreshButtonElement();
+      if (!button) return;
+      button.disabled = overviewAutoRefreshState.refreshing;
+    }
+
+    function startOverviewAutoRefreshCountdown() {
+      stopOverviewAutoRefreshCountdown();
+      renderOverviewAutoRefreshStatus();
+      renderOverviewAutoRefreshMeta();
+      updateOverviewRefreshButtonState();
+      overviewAutoRefreshState.countdownTimerId = window.setInterval(() => {
+        if (!isOverviewAutoRefreshPaused() && !overviewAutoRefreshState.refreshing && !overviewAutoRefreshState.nextRefreshAt) {
+          setOverviewNextRefreshAt();
+        }
+        renderOverviewAutoRefreshStatus();
+      }, 1000);
+
+      overviewAutoRefreshState.visibilityHandler = () => {
+        if (!isOverviewAutoRefreshPaused() && !overviewAutoRefreshState.refreshing && !overviewAutoRefreshState.nextRefreshAt) {
+          setOverviewNextRefreshAt();
+        }
+        renderOverviewAutoRefreshStatus();
+      };
+      document.addEventListener('visibilitychange', overviewAutoRefreshState.visibilityHandler);
+    }
+
+    function stopOverviewAutoRefreshCountdown() {
+      if (overviewAutoRefreshState.countdownTimerId !== null) {
+        clearInterval(overviewAutoRefreshState.countdownTimerId);
+        overviewAutoRefreshState.countdownTimerId = null;
+      }
+      if (overviewAutoRefreshState.visibilityHandler) {
+        document.removeEventListener('visibilitychange', overviewAutoRefreshState.visibilityHandler);
+        overviewAutoRefreshState.visibilityHandler = null;
+      }
+    }
+
+    async function refreshOverviewStats() {
+      if (overviewAutoRefreshState.refreshing) return;
+      overviewAutoRefreshState.refreshing = true;
+      overviewAutoRefreshState.hasError = false;
+      overviewAutoRefreshState.nextRefreshAt = null;
+      renderOverviewAutoRefreshStatus();
+      updateOverviewRefreshButtonState();
+
+      try {
+        await loadStats();
+        overviewAutoRefreshState.hasError = false;
+        overviewAutoRefreshState.lastUpdatedAt = Date.now();
+      } catch (_) {
+        overviewAutoRefreshState.hasError = true;
+      } finally {
+        overviewAutoRefreshState.refreshing = false;
+        if (!isOverviewAutoRefreshPaused()) {
+          setOverviewNextRefreshAt();
+        }
+        renderOverviewAutoRefreshStatus();
+        renderOverviewAutoRefreshMeta();
+        updateOverviewRefreshButtonState();
       }
     }
 
@@ -179,18 +342,47 @@
 
     // 通用饼图渲染器（基于 echarts，复用 ui.js 的 getChartTheme）
     const pieChartInstances = {};
-    function renderPie(containerId, items, unit, colorMap) {
+
+    function getPieChartInstance(containerId) {
       const container = document.getElementById(containerId);
-      if (!container) return;
+      if (!container || typeof window.echarts === 'undefined') return null;
 
-      if (typeof window.echarts === 'undefined') {
-        return;
+      let chart = pieChartInstances[containerId];
+      const chartDom = chart && typeof chart.getDom === 'function' ? chart.getDom() : null;
+      const disposed = chart && typeof chart.isDisposed === 'function' ? chart.isDisposed() : false;
+
+      if (chart && (disposed || chartDom !== container || !chartDom?.isConnected)) {
+        try { chart.dispose(); } catch (_) { /* 忽略旧实例清理异常 */ }
+        delete pieChartInstances[containerId];
+        chart = null;
       }
 
-      if (!pieChartInstances[containerId]) {
-        pieChartInstances[containerId] = window.echarts.init(container);
+      if (!chart) {
+        chart = typeof window.echarts.getInstanceByDom === 'function'
+          ? window.echarts.getInstanceByDom(container)
+          : null;
       }
-      const chart = pieChartInstances[containerId];
+
+      if (!chart) {
+        chart = window.echarts.init(container);
+      }
+
+      pieChartInstances[containerId] = chart;
+      return chart;
+    }
+
+    function schedulePieChartResize(chart) {
+      if (!chart || typeof window.requestAnimationFrame !== 'function') return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          try { chart.resize(); } catch (_) { /* 忽略重排阶段 resize 异常 */ }
+        });
+      });
+    }
+
+    function renderPie(containerId, items, unit, colorMap) {
+      const chart = getPieChartInstance(containerId);
+      if (!chart) return;
       const theme = (typeof window.getChartTheme === 'function') ? window.getChartTheme() : null;
       const mutedText = theme ? theme.mutedText : '#6b7280';
       const tooltipBg = theme ? theme.tooltipBg : 'rgba(255, 255, 255, 0.98)';
@@ -208,6 +400,7 @@
             textStyle: { color: mutedText, fontSize: 12 }
           }
         });
+        schedulePieChartResize(chart);
         return;
       }
 
@@ -263,6 +456,7 @@
           data: sorted
         }]
       }, true);
+      schedulePieChartResize(chart);
     }
 
     // 主题切换时刷新饼图
@@ -298,16 +492,39 @@
         onChange: (range, customRange) => {
           currentTimeRange = range;
           if (range === 'custom') currentCustomTimeRange = customRange;
-          loadStats();
+          void refreshOverviewStats();
         }
       });
 
-      // 加载统计数据
-      loadStats();
+      if (window.i18n && typeof window.i18n.onLocaleChange === 'function') {
+        window.i18n.onLocaleChange(() => {
+          renderOverviewAutoRefreshStatus();
+          renderOverviewAutoRefreshMeta();
+        });
+      }
 
-      // 自动刷新（system_settings.auto_refresh_interval_seconds，0=禁用）
+      const autoRefreshButton = getAutoRefreshButtonElement();
+      if (autoRefreshButton) {
+        autoRefreshButton.addEventListener('click', () => {
+          void refreshOverviewStats();
+        });
+      }
+
+      startOverviewAutoRefreshCountdown();
+
+      // 加载统计数据
+      void refreshOverviewStats();
+
+      if (window.CCPageLifecycle && typeof window.CCPageLifecycle.disposeCharts === 'function') {
+        window.CCPageLifecycle.disposeCharts(pieChartInstances);
+      }
+      if (window.CCPageLifecycle && typeof window.CCPageLifecycle.onCleanup === 'function') {
+        window.CCPageLifecycle.onCleanup(stopOverviewAutoRefreshCountdown);
+      }
+
+      // 概览页固定每 15 秒自动刷新一次
       if (typeof window.createAutoRefresh === 'function') {
-        window.createAutoRefresh({ load: loadStats }).init();
+        window.createAutoRefresh({ load: refreshOverviewStats, intervalSeconds: overviewAutoRefreshIntervalSeconds }).init();
       }
 
       // 添加页面动画

@@ -1730,6 +1730,7 @@
 
   function createAutoRefresh(options = {}) {
     const load = typeof options.load === 'function' ? options.load : null;
+    const manualIntervalSeconds = Number(options.intervalSeconds);
     if (!load) {
       return { init: async () => {}, stop: () => {} };
     }
@@ -1778,7 +1779,9 @@
     }
 
     async function init() {
-      const seconds = await fetchAutoRefreshIntervalSec();
+      const seconds = Number.isFinite(manualIntervalSeconds) && manualIntervalSeconds > 0
+        ? Math.floor(manualIntervalSeconds)
+        : await fetchAutoRefreshIntervalSec();
       if (!seconds || seconds <= 0) return;
       intervalMs = seconds * 1000;
       visibilityHandler = onVisibilityChange;

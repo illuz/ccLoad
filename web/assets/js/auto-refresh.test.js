@@ -234,6 +234,21 @@ test('createAutoRefresh: stop() 清理 interval 与 visibilitychange 监听', as
   assert.equal(env.listeners.has('visibilitychange'), false);
 });
 
+test('createAutoRefresh: 允许通过 intervalSeconds 覆盖后台配置', async () => {
+  const env = loadAutoRefresh({ settingsValue: '30' });
+  let loadCalls = 0;
+  const ar = env.createAutoRefresh({ load: () => { loadCalls++; }, intervalSeconds: 15 });
+
+  await ar.init();
+
+  assert.equal(env.fetchCalls.length, 0, '手动指定间隔时不应请求后台配置');
+  assert.equal(env.intervals.length, 1);
+  assert.equal(env.intervals[0].ms, 15000);
+
+  env.intervals[0].fn();
+  assert.equal(loadCalls, 1);
+});
+
 test('createAutoRefresh: sessionStorage 60s 缓存命中时不重复请求', async () => {
   const sharedStorage = makeMemoryStorage();
   // 第一次：拉取并写入缓存

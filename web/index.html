@@ -28,6 +28,11 @@
         <!-- 时间范围选择器 -->
         <section class="mb-4">
           <div class="time-range-container">
+            <div class="index-auto-refresh-panel">
+              <div id="index-auto-refresh-status" class="index-auto-refresh-status" aria-live="polite"></div>
+              <div id="index-auto-refresh-meta" class="index-auto-refresh-meta"></div>
+              <button type="button" id="index-auto-refresh-button" class="index-auto-refresh-button" data-i18n="index.autoRefresh.refreshNow">立即刷新</button>
+            </div>
             <div id="index-time-range" class="time-range-selector"></div>
           </div>
         </section>
