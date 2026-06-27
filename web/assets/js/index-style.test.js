@@ -12,16 +12,24 @@ test('首页已移除 hero 标题容器', () => {
 });
 
 test('首页时间筛选栏包含自动刷新状态提示', () => {
-  assert.match(html, /class="index-auto-refresh-panel"/);
-  assert.match(html, /id="index-auto-refresh-status"\s+class="index-auto-refresh-status"/);
-  assert.match(html, /id="index-auto-refresh-meta"\s+class="index-auto-refresh-meta"/);
-  assert.match(html, /id="index-auto-refresh-button"\s+class="index-auto-refresh-button"/);
-  assert.match(css, /\.index-auto-refresh-panel\s*\{[\s\S]*?display:\s*inline-flex;/);
-  assert.match(css, /\.index-auto-refresh-status\s*\{[\s\S]*?display:\s*inline-flex;/);
-  assert.match(css, /\.index-auto-refresh-meta\s*\{[\s\S]*?font-size:\s*12px;/);
-  assert.match(css, /\.index-auto-refresh-button\s*\{[\s\S]*?min-height:\s*36px;/);
-  assert.match(css, /\.index-auto-refresh-status\.is-refreshing::before\s*\{/);
-  assert.match(css, /\.index-auto-refresh-status\.is-paused::before\s*\{/);
+  assert.doesNotMatch(html, /class="index-auto-refresh-panel"/);
+  assert.doesNotMatch(html, /id="index-auto-refresh-status"/);
+  assert.doesNotMatch(html, /id="index-auto-refresh-meta"/);
+  assert.match(html, /id="index-auto-refresh-button"[\s\S]*class="index-auto-refresh-fab"/);
+  assert.match(css, /\.index-auto-refresh-fab\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*24px;[\s\S]*?bottom:\s*24px;/);
+  assert.match(css, /\.index-auto-refresh-fab\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--surface-bg-strong\) 92%, transparent\);/);
+  assert.match(css, /\.index-auto-refresh-fab\.is-refreshing\s+svg\s*\{[\s\S]*?animation:\s*index-auto-refresh-spin/);
+  assert.match(css, /@keyframes\s+index-auto-refresh-spin/);
+  assert.match(css, /\.index-auto-refresh-fab::after\s*\{/);
+  assert.doesNotMatch(css, /\.index-auto-refresh-panel\s*\{/);
+  assert.doesNotMatch(css, /\.index-auto-refresh-status\s*\{/);
+  assert.doesNotMatch(css, /\.index-auto-refresh-meta\s*\{/);
+});
+
+test('首页渠道卡片顺序为 Codex 在 Claude Code 前', () => {
+  const codexIndex = html.indexOf('<!-- Codex -->');
+  const claudeIndex = html.indexOf('<!-- Claude Code -->');
+  assert.ok(codexIndex !== -1 && claudeIndex !== -1 && codexIndex < claudeIndex);
 });
 
 test('首页 hero 标题不再使用顶部装饰线', () => {

@@ -54,14 +54,6 @@
       }
     }
 
-    function getAutoRefreshStatusElement() {
-      return document.getElementById('index-auto-refresh-status');
-    }
-
-    function getAutoRefreshMetaElement() {
-      return document.getElementById('index-auto-refresh-meta');
-    }
-
     function getAutoRefreshButtonElement() {
       return document.getElementById('index-auto-refresh-button');
     }
@@ -100,73 +92,72 @@
       }
     }
 
-    function renderOverviewAutoRefreshMeta() {
-      const el = getAutoRefreshMetaElement();
-      if (!el) return;
-      if (overviewAutoRefreshState.lastUpdatedAt) {
-        el.textContent = formatAutoRefreshText('index.autoRefresh.lastUpdated', {
-          time: formatOverviewRefreshTime(overviewAutoRefreshState.lastUpdatedAt)
-        });
-        return;
-      }
-      el.textContent = formatAutoRefreshText('index.autoRefresh.neverUpdated');
-    }
-
-    function renderOverviewAutoRefreshStatus() {
-      const el = getAutoRefreshStatusElement();
-      if (!el) return;
-
+    function buildOverviewAutoRefreshStatusText() {
       const paused = isOverviewAutoRefreshPaused();
-      el.classList.remove('is-refreshing', 'is-paused', 'is-error');
 
       if (overviewAutoRefreshState.refreshing) {
-        el.classList.add('is-refreshing');
-        el.textContent = formatAutoRefreshText('index.autoRefresh.refreshing');
-        return;
+        return formatAutoRefreshText('index.autoRefresh.refreshing');
       }
 
       if (paused) {
-        el.classList.add('is-paused');
-        el.textContent = formatAutoRefreshText('index.autoRefresh.paused');
-        return;
-      }
-
-      if (overviewAutoRefreshState.hasError) {
-        el.classList.add('is-error');
+        return formatAutoRefreshText('index.autoRefresh.paused');
       }
 
       const remainingSeconds = overviewAutoRefreshState.nextRefreshAt
         ? Math.max(0, Math.ceil((overviewAutoRefreshState.nextRefreshAt - Date.now()) / 1000))
         : overviewAutoRefreshIntervalSeconds;
 
-      el.textContent = formatAutoRefreshText('index.autoRefresh.countdown', {
+      return formatAutoRefreshText('index.autoRefresh.countdown', {
         seconds: remainingSeconds
       });
+    }
+
+    function buildOverviewAutoRefreshMetaText() {
+      if (overviewAutoRefreshState.lastUpdatedAt) {
+        return formatAutoRefreshText('index.autoRefresh.lastUpdated', {
+          time: formatOverviewRefreshTime(overviewAutoRefreshState.lastUpdatedAt)
+        });
+      }
+      return formatAutoRefreshText('index.autoRefresh.neverUpdated');
+    }
+
+    function renderOverviewAutoRefreshButtonTooltip() {
+      const button = getAutoRefreshButtonElement();
+      if (!button) return;
+      const parts = [buildOverviewAutoRefreshStatusText(), buildOverviewAutoRefreshMetaText()];
+      if (overviewAutoRefreshState.hasError) {
+        parts.unshift(formatAutoRefreshText('index.autoRefresh.error'));
+      }
+      const tooltip = parts.filter(Boolean).join(' · ');
+      button.title = tooltip;
+      button.setAttribute('aria-label', tooltip);
     }
 
     function updateOverviewRefreshButtonState() {
       const button = getAutoRefreshButtonElement();
       if (!button) return;
       button.disabled = overviewAutoRefreshState.refreshing;
+      button.classList.toggle('is-refreshing', overviewAutoRefreshState.refreshing);
+      button.classList.toggle('has-error', !overviewAutoRefreshState.refreshing && overviewAutoRefreshState.hasError);
+      button.classList.toggle('is-paused', !overviewAutoRefreshState.refreshing && !overviewAutoRefreshState.hasError && isOverviewAutoRefreshPaused());
     }
 
     function startOverviewAutoRefreshCountdown() {
       stopOverviewAutoRefreshCountdown();
-      renderOverviewAutoRefreshStatus();
-      renderOverviewAutoRefreshMeta();
+      renderOverviewAutoRefreshButtonTooltip();
       updateOverviewRefreshButtonState();
       overviewAutoRefreshState.countdownTimerId = window.setInterval(() => {
         if (!isOverviewAutoRefreshPaused() && !overviewAutoRefreshState.refreshing && !overviewAutoRefreshState.nextRefreshAt) {
           setOverviewNextRefreshAt();
         }
-        renderOverviewAutoRefreshStatus();
+        renderOverviewAutoRefreshButtonTooltip();
       }, 1000);
 
       overviewAutoRefreshState.visibilityHandler = () => {
         if (!isOverviewAutoRefreshPaused() && !overviewAutoRefreshState.refreshing && !overviewAutoRefreshState.nextRefreshAt) {
           setOverviewNextRefreshAt();
         }
-        renderOverviewAutoRefreshStatus();
+        renderOverviewAutoRefreshButtonTooltip();
       };
       document.addEventListener('visibilitychange', overviewAutoRefreshState.visibilityHandler);
     }
@@ -187,7 +178,7 @@
       overviewAutoRefreshState.refreshing = true;
       overviewAutoRefreshState.hasError = false;
       overviewAutoRefreshState.nextRefreshAt = null;
-      renderOverviewAutoRefreshStatus();
+      renderOverviewAutoRefreshButtonTooltip();
       updateOverviewRefreshButtonState();
 
       try {
@@ -201,8 +192,7 @@
         if (!isOverviewAutoRefreshPaused()) {
           setOverviewNextRefreshAt();
         }
-        renderOverviewAutoRefreshStatus();
-        renderOverviewAutoRefreshMeta();
+        renderOverviewAutoRefreshButtonTooltip();
         updateOverviewRefreshButtonState();
       }
     }
@@ -498,8 +488,7 @@
 
       if (window.i18n && typeof window.i18n.onLocaleChange === 'function') {
         window.i18n.onLocaleChange(() => {
-          renderOverviewAutoRefreshStatus();
-          renderOverviewAutoRefreshMeta();
+          renderOverviewAutoRefreshButtonTooltip();
         });
       }
 

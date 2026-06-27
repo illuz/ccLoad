@@ -28,11 +28,6 @@
         <!-- 时间范围选择器 -->
         <section class="mb-4">
           <div class="time-range-container">
-            <div class="index-auto-refresh-panel">
-              <div id="index-auto-refresh-status" class="index-auto-refresh-status" aria-live="polite"></div>
-              <div id="index-auto-refresh-meta" class="index-auto-refresh-meta"></div>
-              <button type="button" id="index-auto-refresh-button" class="index-auto-refresh-button" data-i18n="index.autoRefresh.refreshNow">立即刷新</button>
-            </div>
             <div id="index-time-range" class="time-range-selector"></div>
           </div>
         </section>
@@ -40,73 +35,6 @@
         <!-- 按渠道类型统计 -->
         <section class="mb-6">
           <div class="grid grid-cols-2 animate-slide-up animate-delay-1 gap-space-3">
-            <!-- Claude Code -->
-            <div class="channel-card" id="type-anthropic-card">
-              <div class="channel-card-header">
-                <div class="channel-card-title">
-                  <div class="channel-icon channel-icon--anthropic">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2L2 22h20L12 2zm0 4.5L18.5 20h-13L12 6.5z"/>
-                    </svg>
-                  </div>
-                  <span>Claude Code</span>
-                </div>
-                <div class="channel-cost">
-                  <span class="cost-label" data-i18n="common.cost">成本</span>
-                  <span class="cost-value" id="type-anthropic-cost">$0.00</span>
-                </div>
-              </div>
-              <!-- 主要指标 -->
-              <div class="channel-metrics">
-                <div class="metric-item">
-                  <div class="metric-value metric-total" id="type-anthropic-requests">0</div>
-                  <div class="metric-label" data-i18n="index.metrics.totalRequests">总请求</div>
-                </div>
-                <div class="metric-item">
-                  <div class="metric-value metric-success" id="type-anthropic-success">0</div>
-                  <div class="metric-label" data-i18n="index.metrics.success">成功</div>
-                </div>
-                <div class="metric-item">
-                  <div class="metric-value metric-error" id="type-anthropic-error">0</div>
-                  <div class="metric-label" data-i18n="index.metrics.failed">失败</div>
-                </div>
-                <div class="metric-item">
-                  <div class="metric-value metric-rate" id="type-anthropic-rate">0.0%</div>
-                  <div class="metric-label" data-i18n="index.metrics.successRate">成功率</div>
-                </div>
-              </div>
-              <!-- Token统计 -->
-              <div class="token-stats">
-                <div class="token-item">
-                  <span class="token-label" data-i18n="common.input">输入</span>
-                  <span class="token-value" id="type-anthropic-input">0</span>
-                </div>
-                <div class="token-item">
-                  <span class="token-label" data-i18n="common.output">输出</span>
-                  <span class="token-value" id="type-anthropic-output">0</span>
-                </div>
-                <div class="token-item">
-                  <span class="token-label" data-i18n="common.cacheRead">缓存读</span>
-                  <span class="token-value token-cache" id="type-anthropic-cache-read">0</span>
-                </div>
-                <div class="token-item">
-                  <span class="token-label" data-i18n="common.cacheCreate">缓存创</span>
-                  <span class="token-value token-cache" id="type-anthropic-cache-create">0</span>
-                </div>
-              </div>
-              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
-              <div class="channel-pies">
-                <div class="channel-pie">
-                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
-                  <div class="channel-pie-chart" id="type-anthropic-pie-token"></div>
-                </div>
-                <div class="channel-pie">
-                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
-                  <div class="channel-pie-chart" id="type-anthropic-pie-channel"></div>
-                </div>
-              </div>
-            </div>
-
             <!-- Codex -->
             <div class="channel-card" id="type-codex-card">
               <div class="channel-card-header">
@@ -170,6 +98,73 @@
                 <div class="channel-pie">
                   <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
                   <div class="channel-pie-chart" id="type-codex-pie-channel"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Claude Code -->
+            <div class="channel-card" id="type-anthropic-card">
+              <div class="channel-card-header">
+                <div class="channel-card-title">
+                  <div class="channel-icon channel-icon--anthropic">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L2 22h20L12 2zm0 4.5L18.5 20h-13L12 6.5z"/>
+                    </svg>
+                  </div>
+                  <span>Claude Code</span>
+                </div>
+                <div class="channel-cost">
+                  <span class="cost-label" data-i18n="common.cost">成本</span>
+                  <span class="cost-value" id="type-anthropic-cost">$0.00</span>
+                </div>
+              </div>
+              <!-- 主要指标 -->
+              <div class="channel-metrics">
+                <div class="metric-item">
+                  <div class="metric-value metric-total" id="type-anthropic-requests">0</div>
+                  <div class="metric-label" data-i18n="index.metrics.totalRequests">总请求</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-value metric-success" id="type-anthropic-success">0</div>
+                  <div class="metric-label" data-i18n="index.metrics.success">成功</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-value metric-error" id="type-anthropic-error">0</div>
+                  <div class="metric-label" data-i18n="index.metrics.failed">失败</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-value metric-rate" id="type-anthropic-rate">0.0%</div>
+                  <div class="metric-label" data-i18n="index.metrics.successRate">成功率</div>
+                </div>
+              </div>
+              <!-- Token统计 -->
+              <div class="token-stats">
+                <div class="token-item">
+                  <span class="token-label" data-i18n="common.input">输入</span>
+                  <span class="token-value" id="type-anthropic-input">0</span>
+                </div>
+                <div class="token-item">
+                  <span class="token-label" data-i18n="common.output">输出</span>
+                  <span class="token-value" id="type-anthropic-output">0</span>
+                </div>
+                <div class="token-item">
+                  <span class="token-label" data-i18n="common.cacheRead">缓存读</span>
+                  <span class="token-value token-cache" id="type-anthropic-cache-read">0</span>
+                </div>
+                <div class="token-item">
+                  <span class="token-label" data-i18n="common.cacheCreate">缓存创</span>
+                  <span class="token-value token-cache" id="type-anthropic-cache-create">0</span>
+                </div>
+              </div>
+              <!-- 饼图：今日令牌消费费用 + 今日渠道消费占用 -->
+              <div class="channel-pies">
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.tokenCost">今日令牌消费费用</div>
+                  <div class="channel-pie-chart" id="type-anthropic-pie-token"></div>
+                </div>
+                <div class="channel-pie">
+                  <div class="channel-pie-title" data-i18n="index.pies.channelCost">今日渠道消费占用</div>
+                  <div class="channel-pie-chart" id="type-anthropic-pie-channel"></div>
                 </div>
               </div>
             </div>
@@ -372,6 +367,21 @@
 
       </div>
     </main>
+
+    <button type="button"
+      id="index-auto-refresh-button"
+      class="index-auto-refresh-fab"
+      data-i18n-title="index.autoRefresh.refreshNow"
+      data-i18n-aria-label="index.autoRefresh.refreshNow"
+      title="立即刷新"
+      aria-label="立即刷新">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 3v6h-6"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-6h6"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 9a9 9 0 0 0-15-3.36L3 9"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a9 9 0 0 0 15 3.36L21 15"/>
+      </svg>
+    </button>
   </div>
 
 </body>
