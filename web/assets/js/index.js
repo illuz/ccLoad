@@ -248,6 +248,20 @@
       el.innerHTML = parts.length > 0 ? parts.join(' ') : '--';
     }
 
+    function calculateCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
+      const input = Number(inputTokens) || 0;
+      const cacheRead = Number(cacheReadTokens) || 0;
+      const cacheCreation = Number(cacheCreationTokens) || 0;
+      const denominator = input + cacheRead + cacheCreation;
+      if (denominator <= 0 || cacheRead <= 0) return null;
+      return (cacheRead / denominator) * 100;
+    }
+
+    function formatCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
+      const rate = calculateCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens);
+      return rate === null ? '--' : `${rate.toFixed(1)}%`;
+    }
+
     // 更新单个渠道类型的统计
     function updateTypeStats(type, data) {
       // 始终显示所有卡片，保持界面完整性
@@ -281,18 +295,15 @@
       document.getElementById(`type-${type}-output`).textContent = formatNumber(outputTokens);
       document.getElementById(`type-${type}-cost`).innerHTML = buildCostStackHtml(totalCost, effectiveCost, { tone: 'warning', inline: true });
 
-      // Claude和Codex类型的缓存统计（缓存读+缓存创建）
-      if (type === 'anthropic' || type === 'codex') {
-        const cacheReadTokens = data ? (data.total_cache_read_tokens || 0) : 0;
-        const cacheCreateTokens = data ? (data.total_cache_creation_tokens || 0) : 0;
-        document.getElementById(`type-${type}-cache-read`).textContent = formatNumber(cacheReadTokens);
-        document.getElementById(`type-${type}-cache-create`).textContent = formatNumber(cacheCreateTokens);
-      }
-
-      // OpenAI和Gemini类型的缓存统计（仅缓存读）
-      if (type === 'openai' || type === 'gemini') {
-        const cacheReadTokens = data ? (data.total_cache_read_tokens || 0) : 0;
-        document.getElementById(`type-${type}-cache-read`).textContent = formatNumber(cacheReadTokens);
+      const cacheReadTokens = data ? (data.total_cache_read_tokens || 0) : 0;
+      const cacheCreateTokens = data ? (data.total_cache_creation_tokens || 0) : 0;
+      const cacheReadEl = document.getElementById(`type-${type}-cache-read`);
+      if (cacheReadEl) cacheReadEl.textContent = formatNumber(cacheReadTokens);
+      const cacheCreateEl = document.getElementById(`type-${type}-cache-create`);
+      if (cacheCreateEl) cacheCreateEl.textContent = formatNumber(cacheCreateTokens);
+      const cacheHitRateEl = document.getElementById(`type-${type}-cache-hit-rate`);
+      if (cacheHitRateEl) {
+        cacheHitRateEl.textContent = formatCacheHitRate(inputTokens, cacheReadTokens, cacheCreateTokens);
       }
 
       // 渲染两个饼图：今日 API 令牌消费对比 + 今日渠道消费占用

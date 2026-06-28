@@ -483,6 +483,38 @@ test('createChannelCard 会把最后成功状态传给渠道行模板', () => {
   assert.equal(cardData.mobileLabelLastSuccess, '最后成功');
 });
 
+
+test('createChannelCard 在消耗列展示渠道级缓存命中率', () => {
+  const sandbox = loadRenderSandbox({
+    channelStatsById: {
+      12: {
+        success: 1,
+        error: 0,
+        total: 1,
+        totalInputTokens: 20,
+        totalOutputTokens: 5,
+        totalCacheReadInputTokens: 60,
+        totalCacheCreationInputTokens: 20,
+        totalCost: 0.01,
+        effectiveCost: 0.01
+      }
+    }
+  });
+
+  const cardData = sandbox.createChannelCard({
+    id: 12,
+    name: 'Cached',
+    channel_type: 'anthropic',
+    protocol_transforms: [],
+    models: [],
+    priority: 1,
+    enabled: true
+  });
+
+  assert.match(cardData.usageHtml, /channels\.stats\.cacheHitRate/);
+  assert.match(cardData.usageHtml, /60\.0%/);
+});
+
 test('createChannelCard 在手机端折叠空统计块但保留优先级常规列', () => {
   const { createChannelCard } = loadRenderHelpers();
 

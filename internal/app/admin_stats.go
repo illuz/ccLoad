@@ -194,8 +194,8 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 	typeStats := make(map[string]*TypeSummary)
 	// 临时累加器：按类型聚合 by-channel 数据，避免在 TypeSummary 上暴露内部状态
 	type channelAgg struct {
-		cost  float64
-		name  string
+		cost float64
+		name string
 	}
 	byChannelAgg := make(map[string]map[int64]*channelAgg)
 	totalSuccess := 0
@@ -257,15 +257,12 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 			*ts.EffectiveCost += *stat.TotalCost
 		}
 
-		// Claude和Codex类型额外统计缓存（其他类型不支持prompt caching）
-		isCacheType := channelType == "anthropic" || channelType == "codex"
-		if isCacheType {
-			if stat.TotalCacheReadInputTokens != nil {
-				ts.TotalCacheReadTokens += *stat.TotalCacheReadInputTokens
-			}
-			if stat.TotalCacheCreationInputTokens != nil {
-				ts.TotalCacheCreationTokens += *stat.TotalCacheCreationInputTokens
-			}
+		// 缓存统计：按上游实际返回的缓存 token 聚合，供概览页展示命中率。
+		if stat.TotalCacheReadInputTokens != nil {
+			ts.TotalCacheReadTokens += *stat.TotalCacheReadInputTokens
+		}
+		if stat.TotalCacheCreationInputTokens != nil {
+			ts.TotalCacheCreationTokens += *stat.TotalCacheCreationInputTokens
 		}
 
 		// 按 channel 聚合 effective_cost（缺省回退到 total_cost）
@@ -394,8 +391,8 @@ type TypeSummary struct {
 	ErrorRequests            int                  `json:"error_requests"`
 	TotalInputTokens         int64                `json:"total_input_tokens,omitempty"`          // 所有类型
 	TotalOutputTokens        int64                `json:"total_output_tokens,omitempty"`         // 所有类型
-	TotalCacheReadTokens     int64                `json:"total_cache_read_tokens,omitempty"`     // Claude/Codex专用（prompt caching）
-	TotalCacheCreationTokens int64                `json:"total_cache_creation_tokens,omitempty"` // Claude/Codex专用（prompt caching）
+	TotalCacheReadTokens     int64                `json:"total_cache_read_tokens,omitempty"`     // 缓存读取Token
+	TotalCacheCreationTokens int64                `json:"total_cache_creation_tokens,omitempty"` // 缓存创建Token
 	TotalCost                float64              `json:"total_cost,omitempty"`                  // 标准成本
 	EffectiveCost            *float64             `json:"effective_cost,omitempty"`              // 倍率后成本
 	ByToken                  []AuthTokenCostEntry `json:"by_token,omitempty"`                    // 该类型下各 API 令牌的 effective_cost 占用（用于饼图）

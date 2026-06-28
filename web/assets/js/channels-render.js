@@ -616,6 +616,15 @@ function buildChannelLastRequestFailureHtml(stats) {
   </div>`;
 }
 
+function formatChannelCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
+  const input = Number(inputTokens) || 0;
+  const cacheRead = Number(cacheReadTokens) || 0;
+  const cacheCreation = Number(cacheCreationTokens) || 0;
+  const denominator = input + cacheRead + cacheCreation;
+  if (denominator <= 0 || cacheRead <= 0) return '';
+  return `${((cacheRead / denominator) * 100).toFixed(1)}%`;
+}
+
 /**
  * 使用模板引擎创建渠道表格行
  * @param {Object} channel - 渠道数据
@@ -634,6 +643,11 @@ function createChannelCard(channel) {
     cacheReadText: formatMetricNumber(stats.totalCacheReadInputTokens),
     cacheCreationTokens: stats.totalCacheCreationInputTokens || 0,
     cacheCreationText: formatMetricNumber(stats.totalCacheCreationInputTokens),
+    cacheHitRateText: formatChannelCacheHitRate(
+      stats.totalInputTokens,
+      stats.totalCacheReadInputTokens,
+      stats.totalCacheCreationInputTokens
+    ),
     costInfo: getCostDisplayInfo(stats.totalCost, stats.effectiveCost)
   } : null;
 
@@ -656,6 +670,9 @@ function createChannelCard(channel) {
       parts.push(`<div class="ch-usage-row"><span class="ch-usage-label">${window.t('channels.stats.cacheRead')}</span><span class="ch-usage-value" style="color: var(--success-500);">${statsCache.cacheReadText}</span></div>`);
       if (statsCache.cacheCreationTokens > 0) {
         parts.push(`<div class="ch-usage-row"><span class="ch-usage-label">${window.t('channels.stats.cacheCreate')}</span><span class="ch-usage-value" style="color: var(--primary-500);">${statsCache.cacheCreationText}</span></div>`);
+      }
+      if (statsCache.cacheHitRateText) {
+        parts.push(`<div class="ch-usage-row"><span class="ch-usage-label">${window.t('channels.stats.cacheHitRate')}</span><span class="ch-usage-value" style="color: var(--success-600);">${statsCache.cacheHitRateText}</span></div>`);
       }
     }
     usageHtml = `<div class="ch-usage-list">${parts.join('')}</div>`;

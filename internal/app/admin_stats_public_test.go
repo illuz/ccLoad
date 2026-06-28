@@ -71,7 +71,7 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 			IsStreaming:          false,
 			InputTokens:          7,
 			OutputTokens:         8,
-			CacheReadInputTokens: 99, // openai 类型不应计入缓存统计
+			CacheReadInputTokens: 99, // openai 类型缓存也应计入概览命中率统计
 			Cost:                 0.02,
 		},
 		{
@@ -168,6 +168,16 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 		if anthTS.TotalRequests != 1 || anthTS.SuccessRequests != 1 || anthTS.ErrorRequests != 0 {
 			t.Fatalf("unexpected anthropic summary: %+v", anthTS)
 		}
+		if anthTS.TotalCacheReadTokens != 3 || anthTS.TotalCacheCreationTokens != 3 {
+			t.Fatalf("unexpected anthropic cache summary: %+v", anthTS)
+		}
+		oaiTS, ok := resp.Data.ByType["openai"]
+		if !ok {
+			t.Fatalf("expected openai in by_type: %#v", resp.Data.ByType)
+		}
+		if oaiTS.TotalCacheReadTokens != 99 {
+			t.Fatalf("unexpected openai cache summary: %+v", oaiTS)
+		}
 		if anthTS.TotalInputTokens != 10 || anthTS.TotalOutputTokens != 20 {
 			t.Fatalf("unexpected anthropic tokens: %+v", anthTS)
 		}
@@ -175,18 +185,14 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 			t.Fatalf("unexpected anthropic cache: %+v", anthTS)
 		}
 
-		oaiTS, ok := resp.Data.ByType["openai"]
-		if !ok {
-			t.Fatalf("expected openai in by_type: %#v", resp.Data.ByType)
-		}
 		if oaiTS.TotalRequests != 1 || oaiTS.SuccessRequests != 0 || oaiTS.ErrorRequests != 1 {
 			t.Fatalf("unexpected openai summary: %+v", oaiTS)
 		}
 		if oaiTS.TotalInputTokens != 7 || oaiTS.TotalOutputTokens != 8 {
 			t.Fatalf("unexpected openai tokens: %+v", oaiTS)
 		}
-		if oaiTS.TotalCacheReadTokens != 0 {
-			t.Fatalf("expected openai cache tokens excluded, got %+v", oaiTS)
+		if oaiTS.TotalCacheReadTokens != 99 {
+			t.Fatalf("unexpected openai cache tokens: %+v", oaiTS)
 		}
 	})
 
