@@ -7,6 +7,12 @@ RUNTIME_DIR="${RUNTIME_DIR:-/root/workspace/ccload-runtime}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/ccload}"
 ENV_FILE="${ENV_FILE:-$RUNTIME_DIR/.env}"
 LOG_DIR="${LOG_DIR:-$RUNTIME_DIR/logs}"
+DEBUG_ANALYSIS_DIR="${DEBUG_ANALYSIS_DIR:-$RUNTIME_DIR/data/debug-analysis}"
+ANALYZER_ENABLED="${ANALYZER_ENABLED:-1}"
+ANALYZER_NAME="${ANALYZER_NAME:-${APP_NAME}-debug-analyzer}"
+ANALYZER_SCRIPT_SOURCE="${ANALYZER_SCRIPT_SOURCE:-$SOURCE_DIR/scripts/analyze_debug_logs.py}"
+ANALYZER_RUNTIME_SCRIPT="${ANALYZER_RUNTIME_SCRIPT:-$RUNTIME_DIR/scripts/analyze_debug_logs.py}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 PM2_BIN="${PM2_BIN:-$(command -v pm2 || true)}"
 if [[ -z "$PM2_BIN" && -x "/root/.local/share/fnm/node-versions/v16.20.2/installation/bin/pm2" ]]; then
   PM2_BIN="/root/.local/share/fnm/node-versions/v16.20.2/installation/bin/pm2"
@@ -111,12 +117,14 @@ source "$ENV_FILE"
 set +a
 
 PORT="${PORT:-8080}"
+SQLITE_PATH="${SQLITE_PATH:-$RUNTIME_DIR/data/ccload.db}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:${PORT}/health}"
 HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
 HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
 HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$DEBUG_ANALYSIS_DIR" "$(dirname "$ANALYZER_RUNTIME_SCRIPT")"
+export CCLOAD_DEBUG_ANALYSIS_DIR="$DEBUG_ANALYSIS_DIR"
 
 cd "$SOURCE_DIR"
 echo "==> Building ccLoad from $SOURCE_DIR"
@@ -136,6 +144,19 @@ fi
 install_binary_atomically "$SOURCE_DIR/ccload" "$BIN_PATH"
 DEPLOYED_BINARY=1
 
+if [[ "$ANALYZER_ENABLED" == "1" ]]; then
+  if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERROR: python3 not found in PATH. Set PYTHON_BIN=/path/to/python3 or disable with ANALYZER_ENABLED=0." >&2
+    exit 1
+  fi
+  if [[ ! -f "$ANALYZER_SCRIPT_SOURCE" ]]; then
+    echo "ERROR: analyzer script not found: $ANALYZER_SCRIPT_SOURCE" >&2
+    exit 1
+  fi
+  echo "==> Installing debug analyzer to $ANALYZER_RUNTIME_SCRIPT"
+  install -m 0755 "$ANALYZER_SCRIPT_SOURCE" "$ANALYZER_RUNTIME_SCRIPT"
+fi
+
 if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
   echo "==> Restarting PM2 app: $APP_NAME"
   "$PM2_BIN" restart "$APP_NAME" --update-env
@@ -150,6 +171,22 @@ else
     --error "$LOG_DIR/ccload.error.log"
 fi
 
+if [[ "$ANALYZER_ENABLED" == "1" ]]; then
+  echo "==> Starting PM2 debug analyzer: $ANALYZER_NAME"
+  "$PM2_BIN" delete "$ANALYZER_NAME" >/dev/null 2>&1 || true
+  "$PM2_BIN" start "$ANALYZER_RUNTIME_SCRIPT" \
+    --name "$ANALYZER_NAME" \
+    --cwd "$RUNTIME_DIR" \
+    --interpreter "$PYTHON_BIN" \
+    --time \
+    --output "$LOG_DIR/ccload-debug-analyzer.log" \
+    --error "$LOG_DIR/ccload-debug-analyzer.error.log" \
+    -- \
+    --db "$SQLITE_PATH" \
+    --out-dir "$DEBUG_ANALYSIS_DIR" \
+    --follow
+fi
+
 echo "==> Running health check"
 healthcheck
 
@@ -158,3 +195,6 @@ echo "==> Saving PM2 process list"
 
 echo "==> PM2 status"
 "$PM2_BIN" status "$APP_NAME"
+if [[ "$ANALYZER_ENABLED" == "1" ]]; then
+  "$PM2_BIN" status "$ANALYZER_NAME"
+fi

@@ -676,6 +676,173 @@
       white-space: nowrap;
     }
 
+
+    .debug-analysis-view {
+      padding: var(--space-2);
+      color: var(--neutral-800);
+      overflow: auto;
+      height: 100%;
+    }
+
+    .debug-analysis-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-3);
+      margin-bottom: var(--space-4);
+    }
+
+    .debug-analysis-stat {
+      padding: var(--space-3);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      background: var(--surface-bg-muted);
+    }
+
+    .debug-analysis-stat b {
+      display: block;
+      font-size: 1.5rem;
+      line-height: 1.1;
+      color: var(--primary-600);
+    }
+
+    .debug-analysis-stat span,
+    .debug-analysis-meta span {
+      color: var(--neutral-600);
+      font-size: var(--text-sm);
+    }
+
+    .debug-analysis-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+
+    .debug-analysis-meta div {
+      padding: var(--space-2) var(--space-3);
+      border-radius: 10px;
+      background: var(--surface-bg-strong);
+      border: 1px solid var(--surface-border);
+    }
+
+    .debug-analysis-meta strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--neutral-900);
+      word-break: break-all;
+    }
+
+    .debug-analysis-section {
+      margin-bottom: var(--space-4);
+      padding: var(--space-3);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      background: var(--surface-bg);
+    }
+
+    .debug-analysis-section h3 {
+      margin: 0 0 var(--space-3);
+      font-size: 1rem;
+      color: var(--neutral-900);
+    }
+
+    .debug-analysis-item {
+      border: 1px solid var(--surface-border);
+      border-radius: 10px;
+      background: var(--surface-bg-muted);
+      margin-bottom: var(--space-2);
+      overflow: hidden;
+    }
+
+    .debug-analysis-item summary {
+      cursor: pointer;
+      padding: var(--space-2) var(--space-3);
+      font-weight: var(--font-semibold);
+      color: var(--neutral-800);
+    }
+
+    .debug-analysis-text,
+    .debug-analysis-tree,
+    .debug-analysis-json {
+      margin: 0;
+      padding: var(--space-3);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: var(--neutral-800);
+      background: rgba(15, 23, 42, 0.04);
+      border-top: 1px solid var(--surface-border);
+    }
+
+    .debug-analysis-tree {
+      border: 1px solid var(--surface-border);
+      border-radius: 10px;
+      border-top: 1px solid var(--surface-border);
+    }
+
+    .debug-analysis-paths {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .debug-analysis-path {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      border-radius: 8px;
+      background: var(--surface-bg-muted);
+      border: 1px solid var(--surface-border);
+    }
+
+    .debug-analysis-path code {
+      color: var(--neutral-900);
+      word-break: break-all;
+    }
+
+    .debug-analysis-path__type {
+      flex: 0 0 auto;
+      min-width: 72px;
+      text-align: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      color: var(--primary-700);
+      background: var(--primary-50);
+      border: 1px solid var(--primary-100);
+    }
+
+    .debug-analysis-empty,
+    .debug-analysis-warning {
+      padding: var(--space-3);
+      border-radius: 10px;
+      background: var(--surface-bg-muted);
+      color: var(--neutral-600);
+    }
+
+    .debug-analysis-warnings {
+      display: grid;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+
+    .debug-analysis-warning {
+      color: var(--warning-700, #a16207);
+      background: var(--warning-50, #fefce8);
+      border: 1px solid var(--warning-200, #fde68a);
+    }
+
+    html[data-theme="dark"] .debug-analysis-text,
+    html[data-theme="dark"] .debug-analysis-tree,
+    html[data-theme="dark"] .debug-analysis-json,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-text,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-tree,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-json {
+      background: rgba(15, 23, 42, 0.45);
+    }
+
     .log-timing-pair {
       display: inline-flex;
       align-items: center;

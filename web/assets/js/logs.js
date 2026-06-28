@@ -2432,7 +2432,7 @@ let activeDebugLogRefreshInFlight = false;
 let debugResponseMergedVisible = false;
 
 async function showDebugLogModal(logId) {
-  return showDebugLogModalFromUrl(`/admin/debug-logs/${logId}`, { activeRequestId: 0 });
+  return showDebugLogModalFromUrl(`/admin/debug-logs/${logId}`, { activeRequestId: 0, logId });
 }
 
 async function showActiveDebugLogModal(activeRequestId) {
@@ -2465,8 +2465,10 @@ async function showDebugLogModalFromUrl(url, opts = {}) {
   });
   document.getElementById('debugTabRequest').classList.add('active');
   document.getElementById('debugTabResponse').classList.remove('active');
+  document.getElementById('debugTabAnalysis')?.classList.remove('active');
   setDebugResponseMergedVisible(false);
   updateDebugResponseActionButtons();
+  setDebugAnalysisMessage('debugAnalysisRaw', t('logs.debugAnalysisLoading') || '正在加载分析结果…');
 
   try {
     const { res, payload } = await fetchAPIWithAuthRaw(url);
@@ -2489,6 +2491,13 @@ async function showDebugLogModalFromUrl(url, opts = {}) {
     const mergedResponse = composeDebugMergedResponse(data);
     window.setHighlightedCodeContent('debugRespMerged', mergedResponse, getDebugMergedRenderMode(mergedResponse));
 
+    const numericLogId = Number(data.log_id || opts.logId || 0);
+    if (Number.isFinite(numericLogId) && numericLogId > 0) {
+      loadDebugLogAnalysis(numericLogId);
+    } else {
+      setDebugAnalysisMessage('debugAnalysisRaw', t('logs.debugAnalysisUnavailableActive') || '活跃请求暂不支持分析结果，请等待请求完成并运行分析器。');
+    }
+
     // 如果是实时活跃请求，启动轮询
     const activeRequestId = Number(opts.activeRequestId);
     if (Number.isFinite(activeRequestId) && activeRequestId > 0) {
@@ -2499,6 +2508,106 @@ async function showDebugLogModalFromUrl(url, opts = {}) {
     error.textContent = e.message || '加载失败';
     error.style.display = '';
   }
+}
+
+
+
+async function loadDebugLogAnalysis(logId) {
+  const targetId = 'debugAnalysisRaw';
+  try {
+    const { res, payload } = await fetchAPIWithAuthRaw(`/admin/debug-log-analysis/${logId}`);
+    if (!payload.success) {
+      const msg = res.status === 404
+        ? (t('logs.debugAnalysisNotFound') || '暂无分析结果，请先运行 scripts/analyze_debug_logs.py。')
+        : (payload.error || t('error.requestFailed') || '加载分析结果失败');
+      setDebugAnalysisMessage(targetId, msg);
+      return;
+    }
+    renderDebugAnalysis(targetId, payload.data);
+  } catch (e) {
+    setDebugAnalysisMessage(targetId, e.message || '加载分析结果失败');
+  }
+}
+
+function setDebugAnalysisMessage(targetId, msg) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el._rawText = msg || '';
+  el.innerHTML = `<div class="debug-analysis-empty">${escapeHtml(msg || '')}</div>`;
+}
+
+function debugAnalysisRawText(data) {
+  if (!data || typeof data !== 'object') return String(data || '');
+  return JSON.stringify(data, null, 2);
+}
+
+function renderDebugAnalysis(targetId, data) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el._rawText = debugAnalysisRawText(data);
+  if (!data || typeof data !== 'object') {
+    setDebugAnalysisMessage(targetId, String(data || ''));
+    return;
+  }
+
+  const questions = Array.isArray(data.user_questions) ? data.user_questions : [];
+  const toolTree = data.tool_file_tree || {};
+  const paths = Array.isArray(toolTree.paths) ? toolTree.paths : [];
+  const calls = Array.isArray(data.tool_calls) ? data.tool_calls : [];
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  const treeText = String(toolTree.tree_text || '').trim();
+
+  const meta = [
+    ['Log ID', data.log_id],
+    [t('logs.debugAnalysisCreatedAt') || 'Created', data.created_at ? formatTime(data.created_at) : '-'],
+    [t('logs.debugAnalysisAnalyzedAt') || 'Analyzed', data.analyzed_at || '-'],
+  ];
+
+  const questionHtml = questions.length
+    ? questions.map((q, i) => `
+        <details class="debug-analysis-item" ${i === questions.length - 1 ? 'open' : ''}>
+          <summary>${escapeHtml(t('logs.debugAnalysisQuestion') || 'Question')} #${i + 1}</summary>
+          <div class="debug-analysis-text">${escapeHtml(q.content || '')}</div>
+        </details>`).join('')
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const treeHtml = treeText
+    ? `<pre class="debug-analysis-tree">${escapeHtml(treeText)}</pre>`
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const pathHtml = paths.length
+    ? `<div class="debug-analysis-paths">${paths.slice(0, 200).map(p => `
+        <div class="debug-analysis-path">
+          <span class="debug-analysis-path__type">${escapeHtml(p.type || 'unknown')}</span>
+          <code>${escapeHtml(p.path || '')}</code>
+        </div>`).join('')}${paths.length > 200 ? `<div class="debug-analysis-empty">+${paths.length - 200} more</div>` : ''}</div>`
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const callsHtml = calls.length
+    ? `<div class="debug-analysis-calls">${calls.slice(0, 100).map((call, i) => `
+        <details class="debug-analysis-item">
+          <summary>#${i + 1} ${escapeHtml(call.name || 'tool')}</summary>
+          <pre class="debug-analysis-json">${escapeHtml(JSON.stringify(call.arguments || {}, null, 2))}</pre>
+        </details>`).join('')}${calls.length > 100 ? `<div class="debug-analysis-empty">+${calls.length - 100} more</div>` : ''}</div>`
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const warningHtml = errors.length
+    ? `<div class="debug-analysis-warnings">${errors.map(err => `<div class="debug-analysis-warning">${escapeHtml(err)}</div>`).join('')}</div>`
+    : '';
+
+  el.innerHTML = `
+    <div class="debug-analysis-summary">
+      <div class="debug-analysis-stat"><b>${questions.length}</b><span>${escapeHtml(t('logs.debugAnalysisQuestions') || 'Questions')}</span></div>
+      <div class="debug-analysis-stat"><b>${paths.length}</b><span>${escapeHtml(t('logs.debugAnalysisPaths') || 'Paths')}</span></div>
+      <div class="debug-analysis-stat"><b>${calls.length}</b><span>${escapeHtml(t('logs.debugAnalysisToolCalls') || 'Tool calls')}</span></div>
+    </div>
+    <div class="debug-analysis-meta">${meta.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v ?? '-'))}</strong></div>`).join('')}</div>
+    ${warningHtml}
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisQuestions') || 'User Questions')}</h3>${questionHtml}</section>
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisFileTree') || 'File Tree')}</h3>${treeHtml}</section>
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisPaths') || 'Paths')}</h3>${pathHtml}</section>
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisToolCalls') || 'Tool Calls')}</h3>${callsHtml}</section>
+  `;
 }
 
 function setDebugLogStatus(kind) {
@@ -2607,11 +2716,12 @@ function closeDebugLogModal() {
 
 function updateDebugResponseActionButtons() {
   const responseActive = !!document.getElementById('debugTabResponse')?.classList.contains('active');
+  const analysisActive = !!document.getElementById('debugTabAnalysis')?.classList.contains('active');
   const copyBtn = document.querySelector('#debugLogModal .upstream-copy-btn--tabs');
   if (copyBtn) {
-    copyBtn.dataset.copyTarget = responseActive
-      ? (debugResponseMergedVisible ? 'debugRespMerged' : 'debugRespRaw')
-      : 'debugReqRaw';
+    copyBtn.dataset.copyTarget = analysisActive
+      ? 'debugAnalysisRaw'
+      : (responseActive ? (debugResponseMergedVisible ? 'debugRespMerged' : 'debugRespRaw') : 'debugReqRaw');
   }
 
   const mergeBtn = document.getElementById('debugMergeBtn');
@@ -2650,6 +2760,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       document.querySelectorAll('#debugLogModal .upstream-tab').forEach(t => t.classList.toggle('active', t === tab));
       document.getElementById('debugTabRequest').classList.toggle('active', target === 'request');
       document.getElementById('debugTabResponse').classList.toggle('active', target === 'response');
+      document.getElementById('debugTabAnalysis')?.classList.toggle('active', target === 'analysis');
       updateDebugResponseActionButtons();
       return;
     }
