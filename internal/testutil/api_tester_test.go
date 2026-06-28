@@ -58,6 +58,109 @@ func TestOpenAITesterBuild_AddsSessionIDHeader(t *testing.T) {
 	}
 }
 
+func TestOpenAITesterBuild_AppliesThinkingEffortAndWebSearchOptions(t *testing.T) {
+	cfg := &model.Config{URL: "https://api.example.com"}
+	req := &TestChannelRequest{
+		Model:          "gpt-test",
+		Content:        "hello",
+		ThinkingEffort: "high",
+		BuiltinSearch:  true,
+	}
+
+	_, _, body, err := (&OpenAITester{}).Build(cfg, "sk-test", req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := sonic.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal body failed: %v; body=%s", err, body)
+	}
+	if got, _ := payload["reasoning_effort"].(string); got != "high" {
+		t.Fatalf("reasoning_effort = %q, want high; body=%s", got, body)
+	}
+	searchOptions, ok := payload["web_search_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("web_search_options missing or invalid; body=%s", body)
+	}
+	if len(searchOptions) != 0 {
+		t.Fatalf("web_search_options = %#v, want empty object; body=%s", searchOptions, body)
+	}
+	if _, ok := payload["tools"]; ok {
+		t.Fatalf("OpenAI chat search must use web_search_options, not tools; body=%s", body)
+	}
+}
+
+func TestOpenAITesterBuild_AppliesSamplingAndSystemPrompt(t *testing.T) {
+	cfg := &model.Config{URL: "https://api.example.com"}
+	temperature := 0.7
+	topP := 0.9
+	req := &TestChannelRequest{
+		Model:        "gpt-test",
+		Content:      "hello",
+		SystemPrompt: "answer tersely",
+		Temperature:  &temperature,
+		TopP:         &topP,
+		MaxTokens:    2048,
+	}
+
+	_, _, body, err := (&OpenAITester{}).Build(cfg, "sk-test", req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := sonic.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal body failed: %v; body=%s", err, body)
+	}
+	if got, _ := payload["temperature"].(float64); got != 0.7 {
+		t.Fatalf("temperature = %v, want 0.7; body=%s", got, body)
+	}
+	if got, _ := payload["top_p"].(float64); got != 0.9 {
+		t.Fatalf("top_p = %v, want 0.9; body=%s", got, body)
+	}
+	if got, _ := payload["max_tokens"].(float64); got != 2048 {
+		t.Fatalf("max_tokens = %v, want 2048; body=%s", got, body)
+	}
+	messages, ok := payload["messages"].([]any)
+	if !ok || len(messages) < 2 {
+		t.Fatalf("messages invalid: %#v; body=%s", payload["messages"], body)
+	}
+	system, ok := messages[0].(map[string]any)
+	if !ok || system["role"] != "system" || system["content"] != "answer tersely" {
+		t.Fatalf("first message should be system prompt, got %#v; body=%s", messages[0], body)
+	}
+}
+
+func TestOpenAITesterBuild_SupportsStructuredImageMessages(t *testing.T) {
+	cfg := &model.Config{URL: "https://api.example.com"}
+	req := &TestChannelRequest{
+		Model: "gpt-test",
+		Messages: []ChatMessage{
+			{
+				Role: "user",
+				ContentBlocks: []chatContentBlock{
+					{Type: "text", Text: "describe"},
+					{Type: "image_url", ImageURL: &chatImageURL{URL: "data:image/png;base64,aW1n"}},
+				},
+			},
+		},
+	}
+
+	_, _, body, err := (&OpenAITester{}).Build(cfg, "sk-test", req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	bodyText := string(body)
+	if !strings.Contains(bodyText, `"type":"text"`) || !strings.Contains(bodyText, `"text":"describe"`) {
+		t.Fatalf("openai body missing text block: %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `"type":"image_url"`) || !strings.Contains(bodyText, `"url":"data:image/png;base64,aW1n"`) {
+		t.Fatalf("openai body missing image_url block: %s", bodyText)
+	}
+}
+
 func TestCodexTesterBuild_UsesCurrentCodexClientHeaders(t *testing.T) {
 	cfg := &model.Config{URL: "https://api.example.com"}
 	req := &TestChannelRequest{Model: "gpt-5.5", Content: "hello", Stream: true}

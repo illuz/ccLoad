@@ -16,6 +16,486 @@ import (
 	"github.com/bytedance/sonic"
 )
 
+// patchMessagesInBody 将消息列表注入到已生成的请求体 JSON 中，替换指定字段。
+// 用于多轮对话：先用模板生成基础请求体，再按协议替换 messages/contents 字段。
+func patchMessagesInBody(body []byte, key string, messages any) ([]byte, error) {
+	var obj map[string]any
+	if err := sonic.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+	obj[key] = messages
+	return sonic.Marshal(obj)
+}
+
+func parseDataURLImage(dataURL string) (mimeType, data string, ok bool) {
+	value := strings.TrimSpace(dataURL)
+	if !strings.HasPrefix(value, "data:") {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(value, "data:")
+	parts := strings.SplitN(rest, ",", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	meta := strings.TrimSpace(parts[0])
+	if !strings.HasSuffix(strings.ToLower(meta), ";base64") {
+		return "", "", false
+	}
+	mimeType = strings.TrimSpace(strings.TrimSuffix(meta, ";base64"))
+	data = strings.TrimSpace(parts[1])
+	if mimeType == "" || data == "" {
+		return "", "", false
+	}
+	return mimeType, data, true
+}
+
+func chatMessageContentBlocks(msg ChatMessage) []chatContentBlock {
+	if len(msg.ContentBlocks) > 0 {
+		return msg.ContentBlocks
+	}
+	switch content := msg.Content.(type) {
+	case string:
+		if strings.TrimSpace(content) == "" {
+			return nil
+		}
+		return []chatContentBlock{{Type: "text", Text: content}}
+	case []chatContentBlock:
+		return content
+	case []any:
+		raw, err := sonic.Marshal(content)
+		if err != nil {
+			return nil
+		}
+		var blocks []chatContentBlock
+		if err := sonic.Unmarshal(raw, &blocks); err != nil {
+			return nil
+		}
+		return blocks
+	default:
+		return nil
+	}
+}
+
+func openAIContentValue(msg ChatMessage) any {
+	blocks := chatMessageContentBlocks(msg)
+	if len(blocks) == 0 {
+		return msg.Content
+	}
+	if len(blocks) == 1 && blocks[0].Type == "text" {
+		return blocks[0].Text
+	}
+	items := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		switch strings.TrimSpace(block.Type) {
+		case "text":
+			items = append(items, map[string]any{"type": "text", "text": block.Text})
+		case "image_url":
+			if block.ImageURL == nil || strings.TrimSpace(block.ImageURL.URL) == "" {
+				continue
+			}
+			payload := map[string]any{"url": strings.TrimSpace(block.ImageURL.URL)}
+			if detail := strings.TrimSpace(block.ImageURL.Detail); detail != "" {
+				payload["detail"] = detail
+			}
+			items = append(items, map[string]any{"type": "image_url", "image_url": payload})
+		}
+	}
+	if len(items) == 0 {
+		if text, ok := msg.Content.(string); ok {
+			return text
+		}
+		return ""
+	}
+	return items
+}
+
+func anthropicContentValue(msg ChatMessage) any {
+	blocks := chatMessageContentBlocks(msg)
+	if len(blocks) == 0 {
+		if text, ok := msg.Content.(string); ok {
+			return text
+		}
+		return ""
+	}
+	items := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		switch strings.TrimSpace(block.Type) {
+		case "text":
+			if strings.TrimSpace(block.Text) == "" {
+				continue
+			}
+			items = append(items, map[string]any{"type": "text", "text": block.Text})
+		case "image_url":
+			if block.ImageURL == nil || strings.TrimSpace(block.ImageURL.URL) == "" {
+				continue
+			}
+			url := strings.TrimSpace(block.ImageURL.URL)
+			if mimeType, data, ok := parseDataURLImage(url); ok {
+				items = append(items, map[string]any{
+					"type": "image",
+					"source": map[string]any{
+						"type":       "base64",
+						"media_type": mimeType,
+						"data":       data,
+					},
+				})
+				continue
+			}
+			items = append(items, map[string]any{
+				"type": "image",
+				"source": map[string]any{
+					"type":       "url",
+					"media_type": "image/*",
+					"url":        url,
+				},
+			})
+		}
+	}
+	return items
+}
+
+func codexContentValue(msg ChatMessage) []map[string]any {
+	blocks := chatMessageContentBlocks(msg)
+	if len(blocks) == 0 {
+		text := ""
+		if raw, ok := msg.Content.(string); ok {
+			text = raw
+		}
+		partType := "input_text"
+		if strings.TrimSpace(msg.Role) == "assistant" {
+			partType = "output_text"
+		}
+		return []map[string]any{{"type": partType, "text": text}}
+	}
+	items := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		switch strings.TrimSpace(block.Type) {
+		case "text":
+			partType := "input_text"
+			if strings.TrimSpace(msg.Role) == "assistant" {
+				partType = "output_text"
+			}
+			items = append(items, map[string]any{"type": partType, "text": block.Text})
+		case "image_url":
+			if block.ImageURL == nil || strings.TrimSpace(block.ImageURL.URL) == "" {
+				continue
+			}
+			items = append(items, map[string]any{"type": "input_image", "image_url": strings.TrimSpace(block.ImageURL.URL)})
+		}
+	}
+	return items
+}
+
+func geminiContentValue(msg ChatMessage) []map[string]any {
+	blocks := chatMessageContentBlocks(msg)
+	if len(blocks) == 0 {
+		text := ""
+		if raw, ok := msg.Content.(string); ok {
+			text = raw
+		}
+		return []map[string]any{{"text": text}}
+	}
+	items := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		switch strings.TrimSpace(block.Type) {
+		case "text":
+			items = append(items, map[string]any{"text": block.Text})
+		case "image_url":
+			if block.ImageURL == nil || strings.TrimSpace(block.ImageURL.URL) == "" {
+				continue
+			}
+			url := strings.TrimSpace(block.ImageURL.URL)
+			if mimeType, data, ok := parseDataURLImage(url); ok {
+				items = append(items, map[string]any{
+					"inlineData": map[string]any{
+						"mimeType": mimeType,
+						"data":     data,
+					},
+				})
+				continue
+			}
+			items = append(items, map[string]any{
+				"fileData": map[string]any{
+					"mimeType": "image/*",
+					"fileUri":  url,
+				},
+			})
+		}
+	}
+	return items
+}
+
+// toOpenAIMessages 将通用消息列表转换为 OpenAI/Anthropic 兼容格式。
+func toOpenAIMessages(msgs []ChatMessage) []map[string]any {
+	out := make([]map[string]any, len(msgs))
+	for i, m := range msgs {
+		out[i] = map[string]any{"role": m.Role, "content": openAIContentValue(m)}
+	}
+	return out
+}
+
+func toAnthropicMessages(msgs []ChatMessage) []map[string]any {
+	out := make([]map[string]any, len(msgs))
+	for i, m := range msgs {
+		out[i] = map[string]any{"role": m.Role, "content": anthropicContentValue(m)}
+	}
+	return out
+}
+
+// toCodexInput 将通用消息列表转换为 Responses API input 格式。
+func toCodexInput(msgs []ChatMessage) []map[string]any {
+	out := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = "user"
+		}
+		out = append(out, map[string]any{
+			"type":    "message",
+			"role":    role,
+			"content": codexContentValue(m),
+		})
+	}
+	return out
+}
+
+// toGeminiContents 将通用消息列表转换为 Gemini contents 格式
+func toGeminiContents(msgs []ChatMessage) []map[string]any {
+	out := make([]map[string]any, len(msgs))
+	for i, m := range msgs {
+		role := m.Role
+		if role == "assistant" {
+			role = "model"
+		}
+		out[i] = map[string]any{
+			"role":  role,
+			"parts": geminiContentValue(m),
+		}
+	}
+	return out
+}
+
+func patchBodyObject(body []byte, mutate func(map[string]any)) ([]byte, error) {
+	var obj map[string]any
+	if err := sonic.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+	mutate(obj)
+	return sonic.Marshal(obj)
+}
+
+func hasTestSamplingOptions(req *TestChannelRequest) bool {
+	return req != nil && (req.Temperature != nil || req.TopP != nil || req.MaxTokens > 0 || strings.TrimSpace(req.SystemPrompt) != "")
+}
+
+func setOpenAILikeSampling(obj map[string]any, req *TestChannelRequest, maxTokensKey string) {
+	if req.Temperature != nil {
+		obj["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		obj["top_p"] = *req.TopP
+	}
+	if req.MaxTokens > 0 {
+		obj[maxTokensKey] = req.MaxTokens
+	}
+}
+
+func appendOpenAISystemPrompt(obj map[string]any, prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	systemMessage := map[string]any{"role": "system", "content": prompt}
+	messages, _ := obj["messages"].([]any)
+	obj["messages"] = append([]any{systemMessage}, messages...)
+}
+
+func prependCodexDeveloperPrompt(obj map[string]any, prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	developerMessage := map[string]any{"role": "developer", "content": prompt}
+	input, _ := obj["input"].([]any)
+	obj["input"] = append([]any{developerMessage}, input...)
+}
+
+func setGeminiGenerationOption(generationConfig map[string]any, key string, value any) {
+	if value != nil {
+		generationConfig[key] = value
+	}
+}
+
+func applyGeminiSamplingAndSystemPrompt(obj map[string]any, req *TestChannelRequest) {
+	if req.Temperature != nil || req.TopP != nil || req.MaxTokens > 0 {
+		generationConfig, _ := obj["generationConfig"].(map[string]any)
+		if generationConfig == nil {
+			generationConfig = map[string]any{}
+		}
+		if req.Temperature != nil {
+			setGeminiGenerationOption(generationConfig, "temperature", *req.Temperature)
+		}
+		if req.TopP != nil {
+			setGeminiGenerationOption(generationConfig, "topP", *req.TopP)
+		}
+		if req.MaxTokens > 0 {
+			setGeminiGenerationOption(generationConfig, "maxOutputTokens", req.MaxTokens)
+		}
+		obj["generationConfig"] = generationConfig
+	}
+
+	if prompt := strings.TrimSpace(req.SystemPrompt); prompt != "" {
+		obj["systemInstruction"] = map[string]any{
+			"parts": []any{map[string]any{"text": prompt}},
+		}
+	}
+}
+
+func appendAnthropicSystemPrompt(obj map[string]any, prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	system, _ := obj["system"].([]any)
+	obj["system"] = append(system, map[string]any{"type": "text", "text": prompt})
+}
+
+func normalizeTestThinkingEffort(effort string) string {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "":
+		return ""
+	case "none", "minimal", "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(effort))
+	case "auto":
+		return "medium"
+	default:
+		return "medium"
+	}
+}
+
+func testThinkingBudget(effort string) int {
+	switch normalizeTestThinkingEffort(effort) {
+	case "minimal", "low":
+		return 1024
+	case "medium":
+		return 4096
+	case "high":
+		return 16384
+	default:
+		return 0
+	}
+}
+
+func testCodexReasoningEffort(effort string) string {
+	switch normalizeTestThinkingEffort(effort) {
+	case "minimal", "low":
+		return "low"
+	case "high":
+		return "high"
+	case "medium":
+		return "medium"
+	default:
+		return ""
+	}
+}
+
+func appendTestTool(obj map[string]any, tool map[string]any) {
+	tools, _ := obj["tools"].([]any)
+	obj["tools"] = append(tools, tool)
+}
+
+func applyOpenAITestOptions(body []byte, req *TestChannelRequest) ([]byte, error) {
+	effort := normalizeTestThinkingEffort(req.ThinkingEffort)
+	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) {
+		return body, nil
+	}
+	return patchBodyObject(body, func(obj map[string]any) {
+		setOpenAILikeSampling(obj, req, "max_tokens")
+		appendOpenAISystemPrompt(obj, req.SystemPrompt)
+		if effort == "none" {
+			delete(obj, "reasoning_effort")
+		} else if effort != "" {
+			obj["reasoning_effort"] = effort
+		}
+		if req.BuiltinSearch {
+			obj["web_search_options"] = map[string]any{}
+		}
+	})
+}
+
+func applyCodexTestOptions(body []byte, req *TestChannelRequest) ([]byte, error) {
+	effort := normalizeTestThinkingEffort(req.ThinkingEffort)
+	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) {
+		return body, nil
+	}
+	return patchBodyObject(body, func(obj map[string]any) {
+		setOpenAILikeSampling(obj, req, "max_output_tokens")
+		prependCodexDeveloperPrompt(obj, req.SystemPrompt)
+		if effort == "none" {
+			delete(obj, "reasoning")
+			delete(obj, "include")
+		} else if effort != "" {
+			obj["reasoning"] = map[string]any{
+				"effort":  testCodexReasoningEffort(effort),
+				"summary": "auto",
+			}
+			obj["include"] = []any{"reasoning.encrypted_content"}
+		}
+		if req.BuiltinSearch {
+			appendTestTool(obj, map[string]any{"type": "web_search"})
+			obj["tool_choice"] = "auto"
+		}
+	})
+}
+
+func applyGeminiTestOptions(body []byte, req *TestChannelRequest) ([]byte, error) {
+	effort := normalizeTestThinkingEffort(req.ThinkingEffort)
+	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) {
+		return body, nil
+	}
+	return patchBodyObject(body, func(obj map[string]any) {
+		applyGeminiSamplingAndSystemPrompt(obj, req)
+		if effort != "" {
+			generationConfig, _ := obj["generationConfig"].(map[string]any)
+			if generationConfig == nil {
+				generationConfig = map[string]any{}
+			}
+			thinkingConfig := map[string]any{"thinkingBudget": testThinkingBudget(effort)}
+			if effort != "none" {
+				thinkingConfig["includeThoughts"] = true
+			}
+			generationConfig["thinkingConfig"] = thinkingConfig
+			obj["generationConfig"] = generationConfig
+		}
+		if req.BuiltinSearch {
+			appendTestTool(obj, map[string]any{"googleSearch": map[string]any{}})
+		}
+	})
+}
+
+func applyAnthropicTestOptions(body []byte, req *TestChannelRequest) ([]byte, error) {
+	effort := normalizeTestThinkingEffort(req.ThinkingEffort)
+	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) {
+		return body, nil
+	}
+	return patchBodyObject(body, func(obj map[string]any) {
+		setOpenAILikeSampling(obj, req, "max_tokens")
+		appendAnthropicSystemPrompt(obj, req.SystemPrompt)
+		if effort == "none" {
+			obj["thinking"] = map[string]any{"type": "disabled"}
+		} else if effort != "" {
+			obj["thinking"] = map[string]any{"type": "adaptive"}
+			obj["output_config"] = map[string]any{"effort": testCodexReasoningEffort(effort)}
+		}
+		if req.BuiltinSearch {
+			appendTestTool(obj, map[string]any{
+				"type": "web_search_20250305",
+				"name": "web_search",
+			})
+		}
+	})
+}
+
 // ChannelTester 定义不同渠道类型的测试协议（OCP：新增类型无需修改调用方）
 type ChannelTester interface {
 	// Build 构造完整请求：URL、基础请求头、请求体
