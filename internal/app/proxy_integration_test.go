@@ -3012,6 +3012,130 @@ func TestProxy_StreamingPingOnly200RetriesNextChannel(t *testing.T) {
 	}
 }
 
+func TestProxy_CodexInvalidResponseRetriesNextChannel(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls atomic.Int32
+	upstreamInvalid := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, "event: response.failed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"server_error","message":"bad response"}}}`+"\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstreamInvalid.Close()
+
+	var secondCalls atomic.Int32
+	upstreamOK := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, "event: response.output_text.delta\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"from-ch2"}`+"\n\n")
+		_, _ = fmt.Fprint(w, "event: response.completed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.completed","response":{"id":"resp_2","status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`+"\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstreamOK.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "codex-invalid", channelType: "codex", models: "gpt-5-codex", apiKey: "sk-1", priority: 100},
+		{name: "codex-ok", channelType: "codex", models: "gpt-5-codex", apiKey: "sk-2", priority: 50},
+	}, map[int]string{0: upstreamInvalid.URL, 1: upstreamOK.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/responses", map[string]any{
+		"model":  "gpt-5-codex",
+		"stream": true,
+		"input":  []map[string]any{{"type": "message", "role": "user", "content": []map[string]string{{"type": "input_text", "text": "hi"}}}},
+	}, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after retrying next channel, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "from-ch2") {
+		t.Fatalf("expected response from second channel, got body: %s", body)
+	}
+	if strings.Contains(body, "response.failed") || strings.Contains(body, "bad response") {
+		t.Fatalf("expected invalid first response not to leak to client, body: %s", body)
+	}
+	if got := firstCalls.Load(); got != 1 {
+		t.Fatalf("first upstream calls=%d, want 1", got)
+	}
+	if got := secondCalls.Load(); got != 1 {
+		t.Fatalf("second upstream calls=%d, want 1", got)
+	}
+}
+
+func TestProxy_GeminiInvalidFinishReasonRetriesNextChannel(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls atomic.Int32
+	upstreamInvalid := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, `data: {"candidates":[{"content":{"parts":[]},"finishReason":"MALFORMED_FUNCTION_CALL"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
+
+`)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstreamInvalid.Close()
+
+	var secondCalls atomic.Int32
+	upstreamOK := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, `data: {"candidates":[{"content":{"parts":[{"text":"from-ch2"}]}}]}
+
+`)
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstreamOK.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "gemini-invalid", channelType: "gemini", models: "gemini-2.5-pro", apiKey: "sk-1", priority: 100},
+		{name: "gemini-ok", channelType: "gemini", models: "gemini-2.5-pro", apiKey: "sk-2", priority: 50},
+	}, map[int]string{0: upstreamInvalid.URL, 1: upstreamOK.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1beta/models/gemini-2.5-pro:streamGenerateContent", map[string]any{
+		"contents": []map[string]any{{"role": "user", "parts": []map[string]string{{"text": "hi"}}}},
+		"stream":   true,
+	}, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after retrying next channel, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "from-ch2") {
+		t.Fatalf("expected response from second channel, got body: %s", body)
+	}
+	if strings.Contains(body, "MALFORMED_FUNCTION_CALL") {
+		t.Fatalf("expected invalid first response not to leak to client, body: %s", body)
+	}
+	if got := firstCalls.Load(); got != 1 {
+		t.Fatalf("first upstream calls=%d, want 1", got)
+	}
+	if got := secondCalls.Load(); got != 1 {
+		t.Fatalf("second upstream calls=%d, want 1", got)
+	}
+}
+
 func TestProxy_MultiURL5xx_SwitchesToNextChannel(t *testing.T) {
 	t.Parallel()
 

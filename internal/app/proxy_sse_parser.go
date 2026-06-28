@@ -59,6 +59,9 @@ type sseUsageParser struct {
 	// hasStreamOutput 表示已经看到应转发给客户端的非心跳流事件。
 	// ping 只是上游保活，不能让 200 空流被误判为成功。
 	hasStreamOutput bool
+
+	// invalidResponse 表示流以 200 返回，但语义上不是可用回答（例如 Codex failed/incomplete）。
+	invalidResponse []byte
 }
 
 type jsonUsageParser struct {
@@ -103,6 +106,7 @@ type usageParser interface {
 	GetCacheBreakdown() (cache5m, cache1h int, serviceTier string) // 返回缓存分桶与 OpenAI service_tier
 	GetToolCostUSD() float64                                       // 返回 Responses 工具调用的额外费用
 	GetLastError() []byte                                          // [INFO] 返回SSE流中检测到的最后一个error事件（用于1308等错误的延迟处理）
+	GetInvalidResponse() []byte                                    // 返回 200 OK 但语义异常的响应片段
 	IsStreamComplete() bool                                        // [INFO] 返回是否检测到流结束标志（[DONE]/message_stop）
 	HasStreamOutput() bool                                         // 返回是否已经看到非心跳的可见响应内容
 }
@@ -487,6 +491,8 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 		return fmt.Errorf("json unmarshal failed: %w", err)
 	}
 
+	p.captureInvalidResponse(event, data)
+
 	// 提取 service_tier（OpenAI Chat/Responses API 顶层字段）
 	if tier, ok := event["service_tier"].(string); ok && tier != "" {
 		p.ServiceTier = tier
@@ -545,6 +551,10 @@ func (p *sseUsageParser) GetLastError() []byte {
 	return p.lastError
 }
 
+func (p *sseUsageParser) GetInvalidResponse() []byte {
+	return p.invalidResponse
+}
+
 // [INFO] IsStreamComplete 返回是否检测到流结束标志
 func (p *sseUsageParser) IsStreamComplete() bool {
 	return p.streamComplete
@@ -552,6 +562,106 @@ func (p *sseUsageParser) IsStreamComplete() bool {
 
 func (p *sseUsageParser) HasStreamOutput() bool {
 	return p.hasStreamOutput
+}
+
+func (p *sseUsageParser) captureInvalidResponse(event map[string]any, rawData string) {
+	if p.invalidResponse != nil || !isInvalidResponseForChannel(p.channelType, event) {
+		return
+	}
+	p.invalidResponse = []byte(rawData)
+}
+
+func isInvalidResponseForChannel(channelType string, payload map[string]any) bool {
+	switch channelType {
+	case "codex":
+		return isCodexInvalidResponse(payload)
+	case "gemini":
+		return isGeminiInvalidResponse(payload)
+	default:
+		return false
+	}
+}
+
+func isCodexInvalidResponse(payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	if typ, _ := payload["type"].(string); isBadCodexResponseEventType(typ) {
+		return true
+	}
+	if status, _ := payload["status"].(string); isBadCodexResponseStatus(status) {
+		return true
+	}
+	if resp, _ := payload["response"].(map[string]any); resp != nil {
+		if status, _ := resp["status"].(string); isBadCodexResponseStatus(status) {
+			return true
+		}
+		if _, ok := resp["error"]; ok {
+			if status, _ := resp["status"].(string); strings.EqualFold(strings.TrimSpace(status), "completed") {
+				return false
+			}
+			return true
+		}
+	}
+	if _, ok := payload["error"]; ok {
+		if typ, _ := payload["type"].(string); strings.HasPrefix(typ, "response.") {
+			return true
+		}
+	}
+	return false
+}
+
+func isBadCodexResponseEventType(typ string) bool {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBadCodexResponseStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "failed", "incomplete", "cancelled", "canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGeminiInvalidResponse(payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	if feedback, ok := payload["promptFeedback"].(map[string]any); ok {
+		if blockReason, _ := feedback["blockReason"].(string); strings.TrimSpace(blockReason) != "" {
+			return true
+		}
+	}
+	candidates, _ := payload["candidates"].([]any)
+	if len(candidates) == 0 {
+		return false
+	}
+	for _, item := range candidates {
+		candidate, _ := item.(map[string]any)
+		if candidate == nil {
+			continue
+		}
+		finishReason, _ := candidate["finishReason"].(string)
+		if isBadGeminiFinishReason(finishReason) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBadGeminiFinishReason(reason string) bool {
+	switch strings.ToUpper(strings.TrimSpace(reason)) {
+	case "SAFETY", "RECITATION", "LANGUAGE", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL", "UNEXPECTED_TOOL_CALL", "MODEL_ARMOR":
+		return true
+	default:
+		return false
+	}
 }
 
 func isHeartbeatEvent(eventType, data string) bool {
@@ -819,6 +929,20 @@ func (p *jsonUsageParser) GetUsage() (inputTokens, outputTokens, cacheRead, cach
 // [INFO] GetLastError 返回nil（jsonUsageParser不处理SSE error事件）
 func (p *jsonUsageParser) GetLastError() []byte {
 	return nil // JSON解析器不处理SSE error事件
+}
+
+func (p *jsonUsageParser) GetInvalidResponse() []byte {
+	if p.buffer.Len() == 0 || p.truncated {
+		return nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(p.buffer.Bytes(), &payload); err != nil {
+		return nil
+	}
+	if !isInvalidResponseForChannel(p.channelType, payload) {
+		return nil
+	}
+	return append([]byte(nil), p.buffer.Bytes()...)
 }
 
 // [INFO] IsStreamComplete 返回false（非流式请求无结束标志概念）

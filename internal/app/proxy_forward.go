@@ -734,10 +734,10 @@ func (s *Server) handleSuccessResponse(
 			if deferredWriter == nil || deferredWriter.Committed() {
 				return nil
 			}
-			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
-			if parser.GetLastError() != nil {
+			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil {
 				return errAbortStreamBeforeWrite
 			}
 			if parser.HasStreamOutput() {
@@ -777,6 +777,9 @@ func (s *Server) handleSuccessResponse(
 
 		if errorEvent := parser.GetLastError(); errorEvent != nil {
 			result.SSEErrorEvent = errorEvent
+		}
+		if invalidResponse := parser.GetInvalidResponse(); invalidResponse != nil {
+			result.InvalidResponse = invalidResponse
 		}
 		streamComplete = parser.IsStreamComplete()
 	}
@@ -910,10 +913,10 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			if err := parser.Feed(rawEvent); err != nil {
 				return err
 			}
-			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
-			if !deferredWriter.Committed() && parser.GetLastError() != nil {
+			if !deferredWriter.Committed() && (parser.GetLastError() != nil || parser.GetInvalidResponse() != nil) {
 				return errAbortStreamBeforeWrite
 			}
 			if !deferredWriter.Committed() && parser.HasStreamOutput() {
@@ -968,6 +971,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	result.ServiceTier = parser.ServiceTier
 	result.ToolCostUSD = parser.GetToolCostUSD()
 	result.SSEErrorEvent = parser.GetLastError()
+	result.InvalidResponse = parser.GetInvalidResponse()
 	streamComplete := parser.IsStreamComplete() || translatedComplete
 
 	if diagMsg := buildStreamDiagnostics(streamErr, readStats, streamComplete, channelType, resp.Header.Get("Content-Type")); diagMsg != "" {
@@ -1374,6 +1378,12 @@ func markIncompleteStreamForwardResult(res *fwResult) {
 	res.Status = util.StatusStreamIncomplete
 }
 
+func markInvalidResponseForwardResult(res *fwResult) {
+	res.Body = res.InvalidResponse
+	res.Status = http.StatusBadGateway
+	res.StreamDiagMsg = fmt.Sprintf("Invalid upstream response: %s", safeBodyToString(res.InvalidResponse))
+}
+
 func (s *Server) handleCommittedAwareProxyError(
 	ctx context.Context,
 	cfg *model.Config,
@@ -1407,6 +1417,15 @@ func (s *Server) handleSuccessfulForwardAnomaly(
 	if res.SSEErrorEvent != nil {
 		log.Printf("[WARN]  [SSE错误处理] HTTP状态码200但检测到SSE error事件，触发冷却逻辑")
 		markSSEErrorForwardResult(res)
+		result, action := s.handleCommittedAwareProxyError(
+			ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
+		)
+		return result, action, true
+	}
+
+	if res.InvalidResponse != nil {
+		log.Printf("[WARN]  [响应异常处理] HTTP状态码200但检测到响应语义异常，触发冷却逻辑: %s", truncateErr(safeBodyToString(res.InvalidResponse)))
+		markInvalidResponseForwardResult(res)
 		result, action := s.handleCommittedAwareProxyError(
 			ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
 		)
