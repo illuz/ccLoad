@@ -540,6 +540,16 @@
             <label class="form-label channel-editor-checkbox-label">
               <input type="checkbox" id="channelEnabled" checked> <span data-i18n="channels.enableChannel">启用</span>
             </label>
+            <label class="form-label channel-editor-checkbox-label">
+              <input type="checkbox" id="channelCooldownFixedEnabled"> <span data-i18n="channels.channelCooldownFixedEnabled">固定冷却</span>
+            </label>
+            <div class="channel-editor-inline-field">
+              <label class="form-label channel-editor-inline-label" for="channelCooldownFixedSeconds"
+                data-i18n="channels.channelCooldownFixedSeconds">固定冷却秒数</label>
+              <input type="number" id="channelCooldownFixedSeconds" class="form-input" value="10" min="1" step="1"
+                style="width: 84px; min-width: 84px;" data-i18n-placeholder="channels.channelCooldownFixedSecondsPlaceholder"
+                placeholder="10">
+            </div>
             <label id="channelScheduledCheckEnabledWrapper" class="form-label channel-editor-checkbox-label" hidden>
               <input type="checkbox" id="channelScheduledCheckEnabled"> <span data-i18n="channels.enableScheduledCheck">定时检测</span>
             </label>

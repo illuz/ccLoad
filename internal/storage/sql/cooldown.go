@@ -29,11 +29,13 @@ func (s *SQLStore) BumpChannelCooldown(ctx context.Context, channelID int64, now
 	err := s.WithTransaction(ctx, func(tx *sql.Tx) error {
 		// 1. 读取当前冷却状态。MySQL 必须显式 FOR UPDATE 锁行，否则两个事务可读到同一旧值。
 		var cooldownUntil, cooldownDurationMs int64
+		var fixedEnabledInt int
+		var fixedSeconds int
 		err := tx.QueryRowContext(ctx, `
-			SELECT cooldown_until, cooldown_duration_ms
+			SELECT cooldown_until, cooldown_duration_ms, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds
 			FROM channels
 			WHERE id = ?
-		`+s.cooldownSelectLockClause(), channelID).Scan(&cooldownUntil, &cooldownDurationMs)
+		`+s.cooldownSelectLockClause(), channelID).Scan(&cooldownUntil, &cooldownDurationMs, &fixedEnabledInt, &fixedSeconds)
 
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -42,9 +44,16 @@ func (s *SQLStore) BumpChannelCooldown(ctx context.Context, channelID int64, now
 			return fmt.Errorf("query channel cooldown: %w", err)
 		}
 
-		// 2. 计算新的冷却时间(指数退避)
-		until := unixToTime(cooldownUntil)
-		nextDuration = util.CalculateBackoffDuration(cooldownDurationMs, until, now, &statusCode)
+		// 2. 计算新的冷却时间
+		if fixedEnabledInt != 0 {
+			if fixedSeconds <= 0 {
+				fixedSeconds = 10
+			}
+			nextDuration = time.Duration(fixedSeconds) * time.Second
+		} else {
+			until := unixToTime(cooldownUntil)
+			nextDuration = util.CalculateBackoffDuration(cooldownDurationMs, until, now, &statusCode)
+		}
 		newUntil := now.Add(nextDuration)
 
 		// 3. 更新 channels 表(事务内)

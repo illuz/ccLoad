@@ -33,6 +33,8 @@ type ChannelRequest struct {
 	Enabled                bool                      `json:"enabled"`
 	ScheduledCheckEnabled  bool                      `json:"scheduled_check_enabled"`
 	ScheduledCheckModel    string                    `json:"scheduled_check_model"`
+	ChannelCooldownFixedEnabled bool                  `json:"channel_cooldown_fixed_enabled"`
+	ChannelCooldownFixedSeconds int                  `json:"channel_cooldown_fixed_seconds"`
 	DailyCostLimit         float64                   `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
 	CostMultiplier         float64                   `json:"cost_multiplier"`  // 成本倍率（默认1，0=免费，>=0）
 	CustomRequestRules     *model.CustomRequestRules `json:"custom_request_rules,omitempty"`
@@ -231,6 +233,10 @@ func (cr *ChannelRequest) Validate() error {
 // ToConfig 转换为Config结构(不包含API Key,API Key单独处理)
 // 规范化重定向模型：如果 RedirectModel == Model 则清空（透传语义，节省存储）
 func (cr *ChannelRequest) ToConfig() *model.Config {
+	fixedSeconds := cr.ChannelCooldownFixedSeconds
+	if fixedSeconds < 1 {
+		fixedSeconds = 1
+	}
 	// 规范化模型条目：同名重定向清空为透传
 	normalizedModels := make([]model.ModelEntry, len(cr.Models))
 	for i, m := range cr.Models {
@@ -254,6 +260,8 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		Enabled:                cr.Enabled,
 		ScheduledCheckEnabled:  cr.ScheduledCheckEnabled,
 		ScheduledCheckModel:    cr.ScheduledCheckModel,
+		ChannelCooldownFixedEnabled: cr.ChannelCooldownFixedEnabled,
+		ChannelCooldownFixedSeconds: fixedSeconds,
 		DailyCostLimit:         cr.DailyCostLimit,
 		CostMultiplier:         cr.CostMultiplier,
 		CustomRequestRules:     cr.CustomRequestRules,

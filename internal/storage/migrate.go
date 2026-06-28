@@ -123,6 +123,12 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsScheduledCheckModel(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels scheduled_check_model: %w", err)
 			}
+			if err := ensureChannelsCooldownFixedEnabled(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels channel_cooldown_fixed_enabled: %w", err)
+			}
+			if err := ensureChannelsCooldownFixedSeconds(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels channel_cooldown_fixed_seconds: %w", err)
+			}
 			if err := ensureChannelsCustomRequestRules(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels custom_request_rules: %w", err)
 			}

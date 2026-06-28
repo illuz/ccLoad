@@ -218,6 +218,14 @@ function syncModelFixedPriceVisibility() {
   }
 }
 
+function syncChannelCooldownFixedState() {
+  const enabled = document.getElementById('channelCooldownFixedEnabled')?.checked === true;
+  const input = document.getElementById('channelCooldownFixedSeconds');
+  if (input) {
+    input.disabled = !enabled;
+  }
+}
+
 async function syncScheduledCheckVisibility() {
   const scheduledCheckWrapper = document.getElementById('channelScheduledCheckEnabledWrapper');
   const scheduledCheckModelWrapper = document.getElementById('channelScheduledCheckModelWrapper');
@@ -459,6 +467,15 @@ function initChannelEditorActions() {
     fixedPriceCheckbox.dataset.bound = '1';
   }
 
+  const cooldownFixedCheckbox = document.getElementById('channelCooldownFixedEnabled');
+  if (cooldownFixedCheckbox && !cooldownFixedCheckbox.dataset.bound) {
+    cooldownFixedCheckbox.addEventListener('change', () => {
+      syncChannelCooldownFixedState();
+      markChannelFormDirty();
+    });
+    cooldownFixedCheckbox.dataset.bound = '1';
+  }
+
   const channelTypeRadios = document.getElementById('channelTypeRadios');
   if (channelTypeRadios && !channelTypeRadios.dataset.protocolTransformsBound) {
     channelTypeRadios.addEventListener('change', (event) => {
@@ -481,6 +498,8 @@ async function showAddModal() {
   setChannelModalTitle('channels.addChannel');
   document.getElementById('channelForm').reset();
   document.getElementById('channelEnabled').checked = true;
+  document.getElementById('channelCooldownFixedEnabled').checked = false;
+  document.getElementById('channelCooldownFixedSeconds').value = '10';
   document.getElementById('channelScheduledCheckEnabled').checked = false;
   document.getElementById('channelScheduledCheckModel').value = '';
   document.getElementById('channelModelFixedPriceEnabled').checked = false;
@@ -496,6 +515,7 @@ async function showAddModal() {
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
   syncModelFixedPriceVisibility();
+  syncChannelCooldownFixedState();
   syncScheduledCheckModelState();
 
   inlineURLTableData = [''];
@@ -578,6 +598,8 @@ async function editChannel(id) {
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
   document.getElementById('channelCostMultiplier').value = (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1);
   document.getElementById('channelEnabled').checked = channel.enabled;
+  document.getElementById('channelCooldownFixedEnabled').checked = !!channel.channel_cooldown_fixed_enabled;
+  document.getElementById('channelCooldownFixedSeconds').value = String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10);
   document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
   document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
   document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
@@ -594,6 +616,7 @@ async function editChannel(id) {
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
   syncModelFixedPriceVisibility();
+  syncChannelCooldownFixedState();
   syncScheduledCheckModelState();
 
   invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
@@ -820,6 +843,11 @@ async function saveChannel(event) {
     model_fixed_price_enabled: document.getElementById('channelModelFixedPriceEnabled').checked,
     models: models,
     enabled: document.getElementById('channelEnabled').checked,
+    channel_cooldown_fixed_enabled: document.getElementById('channelCooldownFixedEnabled').checked,
+    channel_cooldown_fixed_seconds: (function () {
+      const v = parseInt(document.getElementById('channelCooldownFixedSeconds').value, 10);
+      return Number.isFinite(v) && v > 0 ? v : 10;
+    })(),
     scheduled_check_enabled: document.getElementById('channelScheduledCheckEnabled').checked,
     scheduled_check_model: document.getElementById('channelScheduledCheckModel').value.trim(),
     custom_request_rules: invokeChannelEditorAction('collectCustomRulesForSubmit') || null,
@@ -1494,6 +1522,8 @@ async function copyChannel(id, name) {
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
   document.getElementById('channelCostMultiplier').value = (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1);
   document.getElementById('channelEnabled').checked = true;
+  document.getElementById('channelCooldownFixedEnabled').checked = !!channel.channel_cooldown_fixed_enabled;
+  document.getElementById('channelCooldownFixedSeconds').value = String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10);
   document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
   document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
   document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
@@ -1510,6 +1540,7 @@ async function copyChannel(id, name) {
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
   syncModelFixedPriceVisibility();
+  syncChannelCooldownFixedState();
   syncScheduledCheckModelState();
 
   resetChannelFormDirty();

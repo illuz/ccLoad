@@ -467,6 +467,18 @@ func ensureChannelsScheduledCheckEnabled(ctx context.Context, db *sql.DB, dialec
 		"INTEGER NOT NULL DEFAULT 0")
 }
 
+func ensureChannelsCooldownFixedEnabled(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "channel_cooldown_fixed_enabled",
+		"TINYINT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
+func ensureChannelsCooldownFixedSeconds(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "channel_cooldown_fixed_seconds",
+		"INT NOT NULL DEFAULT 10",
+		"INTEGER NOT NULL DEFAULT 10")
+}
+
 func ensureChannelsScheduledCheckModel(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "scheduled_check_model",
 		"VARCHAR(191) NOT NULL DEFAULT ''",

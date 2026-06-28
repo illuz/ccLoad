@@ -90,6 +90,39 @@ func TestCooldown_ChannelCooldown(t *testing.T) {
 	}
 }
 
+func TestCooldown_ChannelFixedCooldown(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	store, err := storage.CreateSQLiteStore(filepath.Join(tmp, "fixed_cooldown.db"))
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	channelID := createTestChannel(t, ctx, store, "test-fixed-channel")
+
+	cfg, err := store.GetConfig(ctx, channelID)
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	cfg.ChannelCooldownFixedEnabled = true
+	cfg.ChannelCooldownFixedSeconds = 10
+	if _, err := store.UpdateConfig(ctx, channelID, cfg); err != nil {
+		t.Fatalf("enable fixed cooldown: %v", err)
+	}
+
+	now := time.Now()
+	duration, err := store.BumpChannelCooldown(ctx, channelID, now, 500)
+	if err != nil {
+		t.Fatalf("bump fixed channel cooldown: %v", err)
+	}
+	if duration != 10*time.Second {
+		t.Fatalf("expected fixed 10s cooldown, got %v", duration)
+	}
+}
+
 func TestCooldown_KeyCooldown(t *testing.T) {
 	t.Parallel()
 

@@ -120,6 +120,8 @@ type Config struct {
 	Enabled               bool     `json:"enabled"`
 	ScheduledCheckEnabled bool     `json:"scheduled_check_enabled"`
 	ScheduledCheckModel   string   `json:"scheduled_check_model"`
+	ChannelCooldownFixedEnabled bool `json:"channel_cooldown_fixed_enabled"`
+	ChannelCooldownFixedSeconds int  `json:"channel_cooldown_fixed_seconds"`
 
 	// 模型配置（统一管理模型和重定向）
 	ModelEntries []ModelEntry `json:"models"`
@@ -176,6 +178,8 @@ func (c *Config) Clone() *Config {
 		Enabled:                c.Enabled,
 		ScheduledCheckEnabled:  c.ScheduledCheckEnabled,
 		ScheduledCheckModel:    c.ScheduledCheckModel,
+		ChannelCooldownFixedEnabled: c.ChannelCooldownFixedEnabled,
+		ChannelCooldownFixedSeconds: c.ChannelCooldownFixedSeconds,
 		CooldownUntil:          c.CooldownUntil,
 		CooldownDurationMs:     c.CooldownDurationMs,
 		DailyCostLimit:         c.DailyCostLimit,
