@@ -42,7 +42,8 @@ function getLastExactRuleBody(css, selector) {
 
 test('共享样式在窄屏下压缩顶部导航、时间范围、筛选栏和弹窗', () => {
   assert.match(sharedCss, /--topbar-offset:\s*var\(--topbar-height\)/);
-  assert.match(sharedCss, /\.top-layout\s+\.main-content\s*\{[^}]*padding-top:\s*var\(--topbar-offset\)/s);
+  assert.match(sharedCss, /\.top-layout\s+\.main-content\s*\{[^}]*padding-top:\s*calc\(var\(--topbar-offset\)\s*-\s*12px\)/s);
+  assert.match(sharedCss, /\.top-layout\s+\.main-content\.index-main-content\s*\{[^}]*padding-top:\s*calc\(var\(--topbar-offset\)\s*-\s*8px\)/s);
   assert.match(sharedCss, /\.topnav-link\s*\{[\s\S]*?white-space:\s*nowrap;/);
   assert.match(sharedCss, /\.topbar-left\s*\{[\s\S]*?min-width:\s*0;/);
   assert.match(sharedCss, /\.topnav\s*\{[\s\S]*?min-width:\s*0;/);

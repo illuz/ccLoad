@@ -541,11 +541,11 @@ body {
 /* ===== 顶部导航（Topbar） ===== */
 .top-layout .main-content {
   margin-left: 0 !important;
-  padding-top: var(--topbar-offset);
+  padding-top: calc(var(--topbar-offset) - 12px);
 }
 
 .top-layout .main-content.index-main-content {
-  padding-top: calc(var(--topbar-offset) + 10px);
+  padding-top: calc(var(--topbar-offset) - 8px);
 }
 
 .topbar {
