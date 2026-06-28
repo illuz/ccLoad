@@ -16,6 +16,9 @@ func DefineChannelsTable() *TableBuilder {
 		Column("scheduled_check_model VARCHAR(191) NOT NULL DEFAULT ''").
 		Column("channel_cooldown_fixed_enabled TINYINT NOT NULL DEFAULT 0").
 		Column("channel_cooldown_fixed_seconds INT NOT NULL DEFAULT 10").
+		Column("input_priority_bonus_enabled TINYINT NOT NULL DEFAULT 0").
+		Column("input_priority_threshold INT NOT NULL DEFAULT 12000").
+		Column("input_priority_bonus INT NOT NULL DEFAULT 100").
 		Column("cooldown_until BIGINT NOT NULL DEFAULT 0").
 		Column("cooldown_duration_ms BIGINT NOT NULL DEFAULT 0").
 		Column("daily_cost_limit DOUBLE NOT NULL DEFAULT 0").

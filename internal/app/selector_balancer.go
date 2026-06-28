@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"math"
 	"sort"
 	"time"
@@ -13,6 +14,40 @@ const (
 	// 设计考虑：优先级通常是整数（5, 10），成功率惩罚基于统计（精度有限），0.1精度已足够
 	effPriorityPrecision = 10
 )
+
+func effectiveBasePriority(ch *modelpkg.Config, inputTokens int) float64 {
+	return float64(effectivePriorityForSort(ch, inputTokens))
+}
+
+func effectivePriorityForSort(ch *modelpkg.Config, inputTokens int) int {
+	if ch == nil {
+		return 0
+	}
+	priority := ch.Priority
+	if inputTokens > 0 && ch.InputPriorityBonusEnabled && ch.InputPriorityThreshold > 0 && inputTokens > ch.InputPriorityThreshold {
+		priority += ch.InputPriorityBonus
+	}
+	return priority
+}
+
+type inputTokensContextKey struct{}
+
+func contextWithEstimatedInputTokens(ctx context.Context, tokens int) context.Context {
+	if tokens <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, inputTokensContextKey{}, tokens)
+}
+
+func estimatedInputTokensFromContext(ctx context.Context) int {
+	if ctx == nil {
+		return 0
+	}
+	if v, ok := ctx.Value(inputTokensContextKey{}).(int); ok && v > 0 {
+		return v
+	}
+	return 0
+}
 
 func effPriorityBucket(p float64) int64 {
 	scaled := p * float64(effPriorityPrecision)
@@ -39,12 +74,21 @@ func (s *Server) sortChannelsByHealth(
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
 ) []*modelpkg.Config {
+	return s.sortChannelsByHealthWithInputTokens(channels, keyCooldowns, now, 0)
+}
+
+func (s *Server) sortChannelsByHealthWithInputTokens(
+	channels []*modelpkg.Config,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	inputTokens int,
+) []*modelpkg.Config {
 	if len(channels) == 0 {
 		return channels
 	}
 
 	if s == nil || s.healthCache == nil {
-		return s.balanceSamePriorityChannels(channels, keyCooldowns, now)
+		return s.balanceSamePriorityChannelsWithInputTokens(channels, keyCooldowns, now, inputTokens)
 	}
 
 	cfg := s.healthCache.Config()
@@ -54,7 +98,7 @@ func (s *Server) sortChannelsByHealth(
 		stats := s.healthCache.GetHealthStats(ch.ID)
 		scored[i] = channelWithScore{
 			config:      ch,
-			effPriority: s.calculateEffectivePriority(ch, stats, cfg),
+			effPriority: s.calculateEffectivePriorityWithInputTokens(ch, stats, cfg, inputTokens),
 		}
 	}
 
@@ -91,7 +135,16 @@ func (s *Server) calculateEffectivePriority(
 	stats modelpkg.ChannelHealthStats,
 	cfg modelpkg.HealthScoreConfig,
 ) float64 {
-	basePriority := float64(ch.Priority)
+	return s.calculateEffectivePriorityWithInputTokens(ch, stats, cfg, 0)
+}
+
+func (s *Server) calculateEffectivePriorityWithInputTokens(
+	ch *modelpkg.Config,
+	stats modelpkg.ChannelHealthStats,
+	cfg modelpkg.HealthScoreConfig,
+	inputTokens int,
+) float64 {
+	basePriority := effectiveBasePriority(ch, inputTokens)
 
 	successRate := stats.SuccessRate
 	if successRate < 0 {
@@ -120,6 +173,15 @@ func (s *Server) balanceSamePriorityChannels(
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
 ) []*modelpkg.Config {
+	return s.balanceSamePriorityChannelsWithInputTokens(channels, keyCooldowns, now, 0)
+}
+
+func (s *Server) balanceSamePriorityChannelsWithInputTokens(
+	channels []*modelpkg.Config,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	inputTokens int,
+) []*modelpkg.Config {
 	n := len(channels)
 	if n <= 1 {
 		return channels
@@ -129,7 +191,7 @@ func (s *Server) balanceSamePriorityChannels(
 		result := make([]*modelpkg.Config, n)
 		copy(result, channels)
 		sort.SliceStable(result, func(i, j int) bool {
-			return result[i].Priority > result[j].Priority
+			return effectivePriorityForSort(result[i], inputTokens) > effectivePriorityForSort(result[j], inputTokens)
 		})
 		return result
 	}
@@ -138,13 +200,13 @@ func (s *Server) balanceSamePriorityChannels(
 	result := make([]*modelpkg.Config, n)
 	copy(result, channels)
 	sort.SliceStable(result, func(i, j int) bool {
-		return result[i].Priority > result[j].Priority
+		return effectivePriorityForSort(result[i], inputTokens) > effectivePriorityForSort(result[j], inputTokens)
 	})
 
 	// 按优先级分组，组内使用平滑加权轮询
 	groupStart := 0
 	for i := 1; i <= n; i++ {
-		if i == n || result[i].Priority != result[groupStart].Priority {
+		if i == n || effectivePriorityForSort(result[i], inputTokens) != effectivePriorityForSort(result[groupStart], inputTokens) {
 			if i-groupStart > 1 {
 				group := result[groupStart:i]
 				balanced := s.channelBalancer.SelectWithCooldown(group, keyCooldowns, now)

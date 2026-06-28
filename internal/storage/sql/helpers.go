@@ -263,3 +263,17 @@ func normalizeCostMultiplier(m float64) float64 {
 	}
 	return m
 }
+
+func normalizeInputPriorityThreshold(v int) int {
+	if v <= 0 {
+		return 12000
+	}
+	return v
+}
+
+func normalizeInputPriorityBonus(v int) int {
+	if v == 0 {
+		return 100
+	}
+	return v
+}

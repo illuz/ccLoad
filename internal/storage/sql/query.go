@@ -124,6 +124,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	var scheduledCheckEnabledInt int
 	var channelCooldownFixedEnabledInt int
 	var modelFixedPriceEnabledInt int
+	var inputPriorityBonusEnabledInt int
 	var scheduledCheckModel string
 	var channelCooldownFixedSeconds int
 	var customRequestRules sql.NullString
@@ -133,7 +134,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	// 注意：不再包含 models 和 model_redirects 字段
 	if err := scanner.Scan(&c.ID, &c.Name, &c.URL, &c.Priority,
 		&c.RPMLimit, &c.MaxConcurrency, &c.ChannelType, &c.ProtocolTransformMode, &enabledInt, &scheduledCheckEnabledInt, &scheduledCheckModel,
-		&channelCooldownFixedEnabledInt, &channelCooldownFixedSeconds, &c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &c.ProxyURL, &c.KeyCount,
+		&channelCooldownFixedEnabledInt, &channelCooldownFixedSeconds, &inputPriorityBonusEnabledInt, &c.InputPriorityThreshold, &c.InputPriorityBonus, &c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &c.ProxyURL, &c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
 		return nil, err
 	}
@@ -144,6 +145,13 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	c.ChannelCooldownFixedSeconds = channelCooldownFixedSeconds
 	if c.ChannelCooldownFixedSeconds <= 0 {
 		c.ChannelCooldownFixedSeconds = 10
+	}
+	c.InputPriorityBonusEnabled = inputPriorityBonusEnabledInt != 0
+	if c.InputPriorityThreshold <= 0 {
+		c.InputPriorityThreshold = 12000
+	}
+	if c.InputPriorityBonus == 0 {
+		c.InputPriorityBonus = 100
 	}
 	c.ModelFixedPriceEnabled = modelFixedPriceEnabledInt != 0
 	c.ScheduledCheckModel = scheduledCheckModel

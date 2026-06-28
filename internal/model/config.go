@@ -108,20 +108,23 @@ func (r *CustomRequestRules) IsEmpty() bool {
 
 // Config 渠道配置
 type Config struct {
-	ID                    int64    `json:"id"`
-	Name                  string   `json:"name"`
-	ChannelType           string   `json:"channel_type"` // 渠道类型: "anthropic" | "codex" | "openai" | "gemini"，默认anthropic
-	ProtocolTransformMode string   `json:"protocol_transform_mode,omitempty"`
-	ProtocolTransforms    []string `json:"protocol_transforms,omitempty"`
-	URL                   string   `json:"url"`
-	Priority              int      `json:"priority"`
-	RPMLimit              int      `json:"rpm_limit"`       // 每分钟请求数限制，0表示无限制
-	MaxConcurrency        int      `json:"max_concurrency"` // 最大并发请求数，0表示无限制
-	Enabled               bool     `json:"enabled"`
-	ScheduledCheckEnabled bool     `json:"scheduled_check_enabled"`
-	ScheduledCheckModel   string   `json:"scheduled_check_model"`
-	ChannelCooldownFixedEnabled bool `json:"channel_cooldown_fixed_enabled"`
-	ChannelCooldownFixedSeconds int  `json:"channel_cooldown_fixed_seconds"`
+	ID                          int64    `json:"id"`
+	Name                        string   `json:"name"`
+	ChannelType                 string   `json:"channel_type"` // 渠道类型: "anthropic" | "codex" | "openai" | "gemini"，默认anthropic
+	ProtocolTransformMode       string   `json:"protocol_transform_mode,omitempty"`
+	ProtocolTransforms          []string `json:"protocol_transforms,omitempty"`
+	URL                         string   `json:"url"`
+	Priority                    int      `json:"priority"`
+	RPMLimit                    int      `json:"rpm_limit"`       // 每分钟请求数限制，0表示无限制
+	MaxConcurrency              int      `json:"max_concurrency"` // 最大并发请求数，0表示无限制
+	Enabled                     bool     `json:"enabled"`
+	ScheduledCheckEnabled       bool     `json:"scheduled_check_enabled"`
+	ScheduledCheckModel         string   `json:"scheduled_check_model"`
+	ChannelCooldownFixedEnabled bool     `json:"channel_cooldown_fixed_enabled"`
+	ChannelCooldownFixedSeconds int      `json:"channel_cooldown_fixed_seconds"`
+	InputPriorityBonusEnabled   bool     `json:"input_priority_bonus_enabled"`
+	InputPriorityThreshold      int      `json:"input_priority_threshold"`
+	InputPriorityBonus          int      `json:"input_priority_bonus"`
 
 	// 模型配置（统一管理模型和重定向）
 	ModelEntries []ModelEntry `json:"models"`
@@ -166,31 +169,34 @@ func (c *Config) Clone() *Config {
 		return nil
 	}
 	dst := &Config{
-		ID:                     c.ID,
-		Name:                   c.Name,
-		ChannelType:            c.ChannelType,
-		ProtocolTransformMode:  c.ProtocolTransformMode,
-		ProtocolTransforms:     append([]string(nil), c.ProtocolTransforms...),
-		URL:                    c.URL,
-		Priority:               c.Priority,
-		RPMLimit:               c.RPMLimit,
-		MaxConcurrency:         c.MaxConcurrency,
-		Enabled:                c.Enabled,
-		ScheduledCheckEnabled:  c.ScheduledCheckEnabled,
-		ScheduledCheckModel:    c.ScheduledCheckModel,
+		ID:                          c.ID,
+		Name:                        c.Name,
+		ChannelType:                 c.ChannelType,
+		ProtocolTransformMode:       c.ProtocolTransformMode,
+		ProtocolTransforms:          append([]string(nil), c.ProtocolTransforms...),
+		URL:                         c.URL,
+		Priority:                    c.Priority,
+		RPMLimit:                    c.RPMLimit,
+		MaxConcurrency:              c.MaxConcurrency,
+		Enabled:                     c.Enabled,
+		ScheduledCheckEnabled:       c.ScheduledCheckEnabled,
+		ScheduledCheckModel:         c.ScheduledCheckModel,
 		ChannelCooldownFixedEnabled: c.ChannelCooldownFixedEnabled,
 		ChannelCooldownFixedSeconds: c.ChannelCooldownFixedSeconds,
-		CooldownUntil:          c.CooldownUntil,
-		CooldownDurationMs:     c.CooldownDurationMs,
-		DailyCostLimit:         c.DailyCostLimit,
-		CostMultiplier:         c.CostMultiplier,
-		CustomRequestRules:     c.CustomRequestRules,
-		ProxyURL:               c.ProxyURL,
-		CreatedAt:              c.CreatedAt,
-		UpdatedAt:              c.UpdatedAt,
-		KeyCount:               c.KeyCount,
-		CooldownFallback:       c.CooldownFallback,
-		ModelFixedPriceEnabled: c.ModelFixedPriceEnabled,
+		InputPriorityBonusEnabled:   c.InputPriorityBonusEnabled,
+		InputPriorityThreshold:      c.InputPriorityThreshold,
+		InputPriorityBonus:          c.InputPriorityBonus,
+		CooldownUntil:               c.CooldownUntil,
+		CooldownDurationMs:          c.CooldownDurationMs,
+		DailyCostLimit:              c.DailyCostLimit,
+		CostMultiplier:              c.CostMultiplier,
+		CustomRequestRules:          c.CustomRequestRules,
+		ProxyURL:                    c.ProxyURL,
+		CreatedAt:                   c.CreatedAt,
+		UpdatedAt:                   c.UpdatedAt,
+		KeyCount:                    c.KeyCount,
+		CooldownFallback:            c.CooldownFallback,
+		ModelFixedPriceEnabled:      c.ModelFixedPriceEnabled,
 	}
 	if c.ModelEntries != nil {
 		dst.ModelEntries = make([]ModelEntry, len(c.ModelEntries))

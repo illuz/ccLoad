@@ -479,6 +479,24 @@ func ensureChannelsCooldownFixedSeconds(ctx context.Context, db *sql.DB, dialect
 		"INTEGER NOT NULL DEFAULT 10")
 }
 
+func ensureChannelsInputPriorityBonusEnabled(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "input_priority_bonus_enabled",
+		"TINYINT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
+func ensureChannelsInputPriorityThreshold(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "input_priority_threshold",
+		"INT NOT NULL DEFAULT 12000",
+		"INTEGER NOT NULL DEFAULT 12000")
+}
+
+func ensureChannelsInputPriorityBonus(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "input_priority_bonus",
+		"INT NOT NULL DEFAULT 100",
+		"INTEGER NOT NULL DEFAULT 100")
+}
+
 func ensureChannelsScheduledCheckModel(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "scheduled_check_model",
 		"VARCHAR(191) NOT NULL DEFAULT ''",

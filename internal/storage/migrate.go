@@ -129,6 +129,15 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsCooldownFixedSeconds(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels channel_cooldown_fixed_seconds: %w", err)
 			}
+			if err := ensureChannelsInputPriorityBonusEnabled(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels input_priority_bonus_enabled: %w", err)
+			}
+			if err := ensureChannelsInputPriorityThreshold(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels input_priority_threshold: %w", err)
+			}
+			if err := ensureChannelsInputPriorityBonus(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels input_priority_bonus: %w", err)
+			}
 			if err := ensureChannelsCustomRequestRules(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels custom_request_rules: %w", err)
 			}

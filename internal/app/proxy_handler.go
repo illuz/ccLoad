@@ -349,6 +349,8 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		defer cancel()
 	}
 
+	ctx = contextWithEstimatedInputTokens(ctx, estimateRequestInputTokens(all))
+
 	cands, err := s.selectRouteCandidates(ctx, c, originalModel, string(clientProtocol))
 	if err != nil {
 		if errors.Is(err, errUnknownChannelType) {

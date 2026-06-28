@@ -39,6 +39,7 @@ func (s *Server) filterCooldownChannelsInternal(ctx context.Context, channels []
 	}
 
 	now := time.Now()
+	inputTokens := estimatedInputTokensFromContext(ctx)
 
 	// === 成本限额过滤（在冷却过滤之前）===
 	channels = s.filterCostLimitExceededChannels(channels)
@@ -79,7 +80,7 @@ func (s *Server) filterCooldownChannelsInternal(ctx context.Context, channels []
 			return nil, nil
 		}
 
-		best, readyIn := s.pickBestChannelWhenAllCooled(channels, channelCooldowns, keyCooldowns, now)
+		best, readyIn := s.pickBestChannelWhenAllCooledWithInputTokens(channels, channelCooldowns, keyCooldowns, now, inputTokens)
 		if best != nil {
 			log.Printf("[INFO] 所有渠道冷却中，兜底使用渠道 %d（%.1fs 后就绪）", best.ID, readyIn.Seconds())
 			return []*modelpkg.Config{cooldownFallbackCandidate(best)}, nil
@@ -89,11 +90,11 @@ func (s *Server) filterCooldownChannelsInternal(ctx context.Context, channels []
 
 	// 启用健康度排序：对"已通过冷却过滤"的渠道按健康度排序
 	if s.healthCache != nil && s.healthCache.Config().Enabled {
-		return s.sortChannelsByHealth(filtered, keyCooldowns, now), nil
+		return s.sortChannelsByHealthWithInputTokens(filtered, keyCooldowns, now, inputTokens), nil
 	}
 
 	// healthCache 关闭时：按优先级分组，使用平滑加权轮询
-	return s.balanceSamePriorityChannels(filtered, keyCooldowns, now), nil
+	return s.balanceSamePriorityChannelsWithInputTokens(filtered, keyCooldowns, now, inputTokens), nil
 }
 
 func cooldownFallbackCandidate(cfg *modelpkg.Config) *modelpkg.Config {
@@ -113,6 +114,16 @@ func (s *Server) pickBestChannelWhenAllCooled(
 	channelCooldowns map[int64]time.Time,
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
+) (*modelpkg.Config, time.Duration) {
+	return s.pickBestChannelWhenAllCooledWithInputTokens(channels, channelCooldowns, keyCooldowns, now, 0)
+}
+
+func (s *Server) pickBestChannelWhenAllCooledWithInputTokens(
+	channels []*modelpkg.Config,
+	channelCooldowns map[int64]time.Time,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	inputTokens int,
 ) (*modelpkg.Config, time.Duration) {
 	if len(channels) == 0 {
 		return nil, 0
@@ -156,9 +167,9 @@ func (s *Server) pickBestChannelWhenAllCooled(
 	// 计算有效优先级
 	getEffPriority := func(ch *modelpkg.Config) float64 {
 		if healthEnabled {
-			return s.calculateEffectivePriority(ch, s.healthCache.GetHealthStats(ch.ID), healthCfg)
+			return s.calculateEffectivePriorityWithInputTokens(ch, s.healthCache.GetHealthStats(ch.ID), healthCfg, inputTokens)
 		}
-		return float64(ch.Priority)
+		return effectiveBasePriority(ch, inputTokens)
 	}
 
 	// 过滤nil并找最优
