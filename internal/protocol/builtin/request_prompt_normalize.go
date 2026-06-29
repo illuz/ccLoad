@@ -86,8 +86,14 @@ func normalizeAnthropicConversation(req anthropicMessagesRequest) (conversation,
 	if disable, ok := extractAnthropicDisableParallel(req.ToolChoice); ok {
 		conv.ToolChoice.DisableParallel = disable
 	}
-	if req.Thinking != nil && strings.TrimSpace(req.Thinking.Type) != "" {
-		conv.Thinking = req.Thinking
+	if req.OutputConfig != nil {
+		if effort := normalizeAnthropicOutputEffort(req.OutputConfig.Effort); effort != "" {
+			conv.Thinking = &anthropicThinkingConfig{Type: "adaptive", Effort: effort}
+		}
+	}
+	if conv.Thinking == nil && req.Thinking != nil && strings.TrimSpace(req.Thinking.Type) != "" {
+		thinking := *req.Thinking
+		conv.Thinking = &thinking
 	}
 
 	if req.System != nil {
@@ -114,7 +120,7 @@ func normalizeAnthropicConversation(req anthropicMessagesRequest) (conversation,
 			if len(parts) == 0 {
 				continue
 			}
-			conv.Turns = append(conv.Turns, conversationTurn{Role: "system", Parts: parts})
+			conv.Turns = append(conv.Turns, conversationTurn{Role: role, Parts: parts})
 		case "user", "assistant":
 			if len(parts) == 0 {
 				continue
