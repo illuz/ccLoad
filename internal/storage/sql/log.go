@@ -152,40 +152,7 @@ func (s *SQLStore) fillLogAuthTokenDescriptions(ctx context.Context, entries []*
 
 // AddLog 添加日志记录
 func (s *SQLStore) AddLog(ctx context.Context, e *model.LogEntry) error {
-	if s.isChannelDeleted(e.ChannelID) {
-		return nil
-	}
-	if e.Time.IsZero() {
-		e.Time = model.JSONTime{Time: time.Now()}
-	}
-
-	// 清理单调时钟信息，确保时间格式标准化
-	cleanTime := e.Time.Round(0) // 移除单调时钟部分
-
-	// Unix时间戳：直接存储毫秒级Unix时间戳
-	timeMs := cleanTime.UnixMilli()
-	minuteBucket := timeMs / minuteMs
-
-	// API Key在写入时强制脱敏（2025-10-06）
-	// 设计原则：数据库中不应存储完整API Key，避免备份和日志导出时泄露
-	maskedKey := e.APIKeyUsed
-	apiKeyHash := util.HashAPIKey(e.APIKeyUsed)
-	if maskedKey != "" {
-		maskedKey = util.MaskAPIKey(maskedKey)
-	}
-
-	logSourceValue := model.NormalizeStoredLogSource(e.LogSource)
-
-	// 直接写入日志数据库（简化预编译语句缓存）
-	query := `
-		INSERT INTO logs(time, minute_bucket, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier,
-			input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_5m_input_tokens, cache_1h_input_tokens, cost, cost_multiplier)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	_, err := s.db.ExecContext(ctx, query, timeMs, minuteBucket, e.Model, e.ActualModel, logSourceValue, e.ChannelID, e.StatusCode, e.Message, e.Duration, e.IsStreaming, e.FirstByteTime, maskedKey, apiKeyHash, e.AuthTokenID, e.ClientIP, e.BaseURL, e.ServiceTier,
-		e.InputTokens, e.OutputTokens, e.CacheReadInputTokens, e.CacheCreationInputTokens, e.Cache5mInputTokens, e.Cache1hInputTokens, e.Cost, normalizeCostMultiplier(e.CostMultiplier))
-	return err
+	return s.BatchAddLogs(ctx, []*model.LogEntry{e})
 }
 
 const logsInsertColumns = `INSERT INTO logs(time, minute_bucket, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,

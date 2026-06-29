@@ -49,6 +49,7 @@ type channelTestRequestPlan struct {
 	requestBody      []byte
 	clientBody       []byte
 	timeout          *channelTestTimeout
+	debugCapture     *debugCapture
 }
 
 type channelTestTimeout struct {
@@ -899,8 +900,17 @@ func (s *Server) buildTestUpstreamRequest(
 		req.Header.Set(key, value)
 	}
 	applyHeaderRules(req.Header, cfgForBuild.HeaderRules())
+	requestPlan.debugCapture = s.captureDebugRequest(req, requestPlan.requestBody)
 
 	return req, requestPlan, timeout.cancelAll, nil
+}
+
+func attachTestDebugData(requestPlan *channelTestRequestPlan, resp *http.Response, result map[string]any) map[string]any {
+	if result == nil || requestPlan == nil || requestPlan.debugCapture == nil {
+		return result
+	}
+	result["debug_data"] = requestPlan.debugCapture.buildEntry(resp)
+	return result
 }
 
 // parseTestTranslatedSSEResponse 处理需要跨协议翻译的 SSE 响应分支。

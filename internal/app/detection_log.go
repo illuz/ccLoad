@@ -175,6 +175,16 @@ func getResultInt64OrDefault(result map[string]any, key string, fallback int64) 
 	return fallback
 }
 
+func getResultBoolOrDefault(result map[string]any, key string, fallback bool) bool {
+	if result == nil {
+		return fallback
+	}
+	if value, ok := result[key].(bool); ok {
+		return value
+	}
+	return fallback
+}
+
 func getResultFloat64OrDefault(result map[string]any, key string, fallback float64) float64 {
 	if result == nil {
 		return fallback

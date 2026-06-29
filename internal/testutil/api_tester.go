@@ -602,7 +602,7 @@ type CodexTester struct{}
 // Build 构建 Codex 格式的 API 请求
 func (t *CodexTester) Build(cfg *model.Config, apiKey string, req *TestChannelRequest) (string, http.Header, []byte, error) {
 	testContent := req.Content
-	if strings.TrimSpace(testContent) == "" {
+	if strings.TrimSpace(testContent) == "" && len(req.Messages) == 0 {
 		testContent = "test"
 	}
 	sessionID := newTestSessionID()
@@ -722,6 +722,16 @@ func (t *OpenAITester) Build(cfg *model.Config, apiKey string, req *TestChannelR
 		"CONTENT":    testContent,
 		"SESSION_ID": sessionID,
 	})
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if len(req.Messages) > 0 {
+		body, err = patchMessagesInBody(body, "messages", toOpenAIMessages(req.Messages))
+		if err != nil {
+			return "", nil, nil, err
+		}
+	}
+	body, err = applyOpenAITestOptions(body, req)
 	if err != nil {
 		return "", nil, nil, err
 	}
