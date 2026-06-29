@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"sort"
 	"strings"
 	"testing"
@@ -134,53 +133,6 @@ func TestSSEUsageParser_StreamOutputIgnoresHeartbeat(t *testing.T) {
 // ============================================================================
 // 边界测试：分块读取（真实SSE流场景）
 // ============================================================================
-
-func TestSSEUsageParser_CodexInvalidResponse(t *testing.T) {
-	parser := newSSEUsageParser("codex")
-	data := "event: response.failed\n" +
-		`data: {"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"server_error","message":"bad response"}}}` + "\n\n"
-	if err := parser.Feed([]byte(data)); err != nil {
-		t.Fatalf("Feed失败: %v", err)
-	}
-	if got := parser.GetInvalidResponse(); !strings.Contains(string(got), "response.failed") {
-		t.Fatalf("expected invalid Codex response capture, got %q", got)
-	}
-}
-
-func TestJSONUsageParser_CodexInvalidResponse(t *testing.T) {
-	parser := newJSONUsageParser("codex")
-	body := []byte(`{"id":"resp_1","object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`)
-	if err := parser.Feed(body); err != nil {
-		t.Fatalf("Feed失败: %v", err)
-	}
-	if got := parser.GetInvalidResponse(); !bytes.Contains(got, []byte("incomplete")) {
-		t.Fatalf("expected invalid Codex response capture, got %q", got)
-	}
-}
-
-func TestSSEUsageParser_GeminiInvalidResponse(t *testing.T) {
-	parser := newSSEUsageParser("gemini")
-	data := `data: {"candidates":[{"content":{"parts":[]},"finishReason":"MALFORMED_FUNCTION_CALL"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}
-
-`
-	if err := parser.Feed([]byte(data)); err != nil {
-		t.Fatalf("Feed失败: %v", err)
-	}
-	if got := parser.GetInvalidResponse(); !strings.Contains(string(got), "MALFORMED_FUNCTION_CALL") {
-		t.Fatalf("expected invalid Gemini response capture, got %q", got)
-	}
-}
-
-func TestJSONUsageParser_GeminiInvalidResponse(t *testing.T) {
-	parser := newJSONUsageParser("gemini")
-	body := []byte(`{"candidates":[{"finishReason":"SAFETY"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
-	if err := parser.Feed(body); err != nil {
-		t.Fatalf("Feed失败: %v", err)
-	}
-	if got := parser.GetInvalidResponse(); !bytes.Contains(got, []byte("SAFETY")) {
-		t.Fatalf("expected invalid Gemini response capture, got %q", got)
-	}
-}
 
 func TestSSEUsageParser_ChunkedReading(t *testing.T) {
 	// 真实场景：SSE流分多次到达，可能在任意位置切割

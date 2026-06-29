@@ -4,6 +4,7 @@ import "testing"
 
 func TestCheckSoftError(t *testing.T) {
 	t.Parallel()
+	prefixes := parseSoftErrorTextPrefixes(defaultSoftErrorTextPrefixes)
 
 	tests := []struct {
 		name        string
@@ -54,6 +55,12 @@ func TestCheckSoftError(t *testing.T) {
 			want:        false,
 		},
 		{
+			name:        "text_plain_public_key_client_restriction",
+			contentType: "text/plain; charset=utf-8",
+			data:        []byte("本公益key仅支持在AI编程客户端使用"),
+			want:        true,
+		},
+		{
 			name:        "text_plain_sse_should_not_match",
 			contentType: "text/plain",
 			data:        []byte("data: {\"type\":\"message\"}\n\n"),
@@ -64,7 +71,7 @@ func TestCheckSoftError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := checkSoftError(tt.data, tt.contentType); got != tt.want {
+			if got := checkSoftError(tt.data, tt.contentType, prefixes); got != tt.want {
 				t.Fatalf("checkSoftError()=%v, want %v", got, tt.want)
 			}
 		})

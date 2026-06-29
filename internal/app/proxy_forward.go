@@ -27,6 +27,8 @@ const (
 	SSEProbeSize = 2 * 1024
 	// softErrorProbeSize 用于探测 HTTP 200 非流响应里的结构化错误。
 	softErrorProbeSize = 512
+	// defaultSoftErrorTextPrefixes 是短纯文本软错误前缀的默认配置，一行一个前缀。
+	defaultSoftErrorTextPrefixes = "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用\n本公益 key 仅支持在 AI 编程客户端使用"
 )
 
 // readerWithCloser 给 Reader 补回底层 Closer，避免 bufio/TeeReader 包装后取消无法打断阻塞 Read。
@@ -734,10 +736,10 @@ func (s *Server) handleSuccessResponse(
 			if deferredWriter == nil || deferredWriter.Committed() {
 				return nil
 			}
-			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
-			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil {
+			if parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
 			}
 			if parser.HasStreamOutput() {
@@ -777,9 +779,6 @@ func (s *Server) handleSuccessResponse(
 
 		if errorEvent := parser.GetLastError(); errorEvent != nil {
 			result.SSEErrorEvent = errorEvent
-		}
-		if invalidResponse := parser.GetInvalidResponse(); invalidResponse != nil {
-			result.InvalidResponse = invalidResponse
 		}
 		streamComplete = parser.IsStreamComplete()
 	}
@@ -913,10 +912,10 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			if err := parser.Feed(rawEvent); err != nil {
 				return err
 			}
-			if parser.GetLastError() != nil || parser.GetInvalidResponse() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
-			if !deferredWriter.Committed() && (parser.GetLastError() != nil || parser.GetInvalidResponse() != nil) {
+			if !deferredWriter.Committed() && parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
 			}
 			if !deferredWriter.Committed() && parser.HasStreamOutput() {
@@ -971,7 +970,6 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	result.ServiceTier = parser.ServiceTier
 	result.ToolCostUSD = parser.GetToolCostUSD()
 	result.SSEErrorEvent = parser.GetLastError()
-	result.InvalidResponse = parser.GetInvalidResponse()
 	streamComplete := parser.IsStreamComplete() || translatedComplete
 
 	if diagMsg := buildStreamDiagnostics(streamErr, readStats, streamComplete, channelType, resp.Header.Get("Content-Type")); diagMsg != "" {
@@ -1138,7 +1136,7 @@ func (s *Server) probeSoftErrorResponse(
 	}
 
 	validData := buf[:n]
-	if n > 0 && checkSoftError(validData, ct) {
+	if n > 0 && checkSoftError(validData, ct, s.softErrorTextPrefixes()) {
 		log.Printf("[WARN] [软错误检测] 渠道ID=%d, 响应200但疑似错误响应: %s", cfg.ID, truncateErr(safeBodyToString(validData)))
 		resp.StatusCode = classifySSEErrorStatus(validData)
 		prependToBody(resp, validData)
@@ -1378,12 +1376,6 @@ func markIncompleteStreamForwardResult(res *fwResult) {
 	res.Status = util.StatusStreamIncomplete
 }
 
-func markInvalidResponseForwardResult(res *fwResult) {
-	res.Body = res.InvalidResponse
-	res.Status = http.StatusBadGateway
-	res.StreamDiagMsg = fmt.Sprintf("Invalid upstream response: %s", safeBodyToString(res.InvalidResponse))
-}
-
 func (s *Server) handleCommittedAwareProxyError(
 	ctx context.Context,
 	cfg *model.Config,
@@ -1417,15 +1409,6 @@ func (s *Server) handleSuccessfulForwardAnomaly(
 	if res.SSEErrorEvent != nil {
 		log.Printf("[WARN]  [SSE错误处理] HTTP状态码200但检测到SSE error事件，触发冷却逻辑")
 		markSSEErrorForwardResult(res)
-		result, action := s.handleCommittedAwareProxyError(
-			ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
-		)
-		return result, action, true
-	}
-
-	if res.InvalidResponse != nil {
-		log.Printf("[WARN]  [响应异常处理] HTTP状态码200但检测到响应语义异常，触发冷却逻辑: %s", truncateErr(safeBodyToString(res.InvalidResponse)))
-		markInvalidResponseForwardResult(res)
 		result, action := s.handleCommittedAwareProxyError(
 			ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
 		)
@@ -2113,7 +2096,29 @@ func shouldCheckSoftErrorForChannelType(channelType string) bool {
 // - JSON：先用 bytes.Contains 短路，仅含可能错误标记时才完整 Unmarshal；只看顶层结构
 // - text/plain：只接受“前缀匹配 + 短消息”，禁止 Contains 误判用户内容
 // - SSE：若看起来像 SSE（data:/event:），直接跳过
-func checkSoftError(data []byte, contentType string) bool {
+func (s *Server) softErrorTextPrefixes() []string {
+	value := defaultSoftErrorTextPrefixes
+	if s != nil && s.configService != nil {
+		value = s.configService.GetString("soft_error_text_prefixes", defaultSoftErrorTextPrefixes)
+	}
+	return parseSoftErrorTextPrefixes(value)
+}
+
+func parseSoftErrorTextPrefixes(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	})
+	prefixes := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			prefixes = append(prefixes, field)
+		}
+	}
+	return prefixes
+}
+
+func checkSoftError(data []byte, contentType string, textPrefixes []string) bool {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return false
@@ -2158,16 +2163,18 @@ func checkSoftError(data []byte, contentType string) bool {
 		}
 	}
 
-	// text/plain：仅前缀 + 短消息
+	// text/plain：仅前缀匹配
 	const maxPlainLen = 256
 	if len(trimmed) > maxPlainLen {
 		return false
 	}
-	if bytes.HasPrefix(trimmed, []byte("当前模型负载过高")) {
-		return true
-	}
-	if bytes.HasPrefix(trimmed, []byte("Current model load too high")) {
-		return true
+	for _, prefix := range textPrefixes {
+		if prefix == "" {
+			continue
+		}
+		if bytes.HasPrefix(trimmed, []byte(prefix)) {
+			return true
+		}
 	}
 
 	return false

@@ -22,7 +22,7 @@ function getSettingGroupInfo(key) {
     { id: 'timeout', nameKey: 'settings.group.timeout', order: 20, match: () => k.includes('timeout') },
     { id: 'health', nameKey: 'settings.group.health', order: 30, match: () => k.includes('health_score') || k.includes('success_rate') || k.includes('penalty_weight') || k === 'enable_health_score' || k === 'health_min_confident_sample' },
     { id: 'cooldown', nameKey: 'settings.group.cooldown', order: 40, match: () => k.startsWith('cooldown_') },
-    { id: 'log', nameKey: 'settings.group.log', order: 50, match: () => k.startsWith('log_') || k.startsWith('debug_') },
+    { id: 'log', nameKey: 'settings.group.log', order: 50, match: () => k.startsWith('log_') || k.startsWith('debug_') || k.startsWith('soft_error_') },
     { id: 'access', nameKey: 'settings.group.access', order: 60, match: () => k.includes('auth_') },
   ];
 
@@ -165,7 +165,7 @@ function initSettingsEventDelegation() {
 
   // 输入变更
   tbody.addEventListener('change', (e) => {
-    const input = e.target.closest('input');
+    const input = e.target.closest('input, textarea');
     if (input) markChanged(input);
   });
 }
@@ -173,6 +173,10 @@ function initSettingsEventDelegation() {
 function renderInput(setting) {
   const safeKey = escapeHtml(setting.key);
   const safeValue = escapeHtml(setting.value);
+
+  if (setting.key === 'soft_error_text_prefixes') {
+    return `<textarea id="${safeKey}" class="settings-input settings-input--textarea">${safeValue}</textarea>`;
+  }
 
   switch (setting.value_type) {
     case 'bool':

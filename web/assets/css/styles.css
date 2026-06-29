@@ -3530,6 +3530,14 @@ html[data-theme="system"][data-resolved-theme="dark"] .login-button {
   width: min(280px, 100%);
 }
 
+.settings-input--textarea {
+  width: min(520px, 100%);
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
 .settings-bool-option {
   display: inline-flex;
   align-items: center;

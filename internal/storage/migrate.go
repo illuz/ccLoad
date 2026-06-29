@@ -385,6 +385,7 @@ func initDefaultSettings(ctx context.Context, db *sql.DB, dialect Dialect) error
 		{"cooldown_fallback_enabled", "true", "bool", "所有渠道冷却时选最优渠道兜底(关闭则直接拒绝请求)", "true"},
 		// Debug日志配置
 		{"debug_log_enabled", "false", "bool", "启用Debug日志(记录上游请求/响应原始数据)", "false"},
+		{"soft_error_text_prefixes", "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用", "string", "短纯文本软错误前缀(一行一个,匹配则触发失败重试)", "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用"},
 		{"debug_log_retention_minutes", "2", "int", "Debug日志保留时长(分钟,1-1440)", "2"},
 		// 前端自动刷新
 		{"auto_refresh_interval_seconds", "0", "int", "页面自动刷新间隔(秒,0=禁用,建议≥30;有对话框打开时跳过本次刷新)", "0"},

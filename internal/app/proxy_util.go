@@ -108,9 +108,6 @@ type fwResult struct {
 	// 虽然HTTP状态码是200，但error事件表示实际上发生了错误
 	SSEErrorEvent []byte // SSE流中检测到的最后一个error事件的完整JSON
 
-	// InvalidResponse 表示 HTTP 200 但响应语义异常（如 Gemini SAFETY/MALFORMED_FUNCTION_CALL）。
-	InvalidResponse []byte
-
 	// 响应是否已经提交给客户端（头或正文已发送）
 	// false 表示本次尝试仍可在同一请求内切换到其他Key/渠道
 	ResponseCommitted bool
