@@ -14,6 +14,7 @@ var sqliteMigratableTables = map[string]bool{
 	"logs":                        true,
 	"auth_tokens":                 true,
 	"auth_token_groups":           true,
+	"channel_groups":              true,
 	"channel_models":              true,
 	"channel_protocol_transforms": true,
 	"api_keys":                    true,
@@ -470,6 +471,13 @@ func ensureChannelsCostMultiplier(ctx context.Context, db *sql.DB, dialect Diale
 	return ensureColumn(ctx, db, dialect, "channels", "cost_multiplier",
 		"DOUBLE NOT NULL DEFAULT 1",
 		"REAL NOT NULL DEFAULT 1")
+}
+
+// ensureChannelsGroupID 确保channels表有渠道分组字段（纯管理标签）。
+func ensureChannelsGroupID(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "group_id",
+		"BIGINT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
 }
 
 // ensureChannelsScheduledCheckEnabled 确保channels表有scheduled_check_enabled字段

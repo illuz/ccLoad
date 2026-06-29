@@ -46,6 +46,7 @@ func (sm *SyncManager) RestoreOnStartup(ctx context.Context, logDays int) error 
 	// 第一步：恢复配置表（快速，<1 秒）
 	configTables := []string{
 		"system_settings",
+		"channel_groups",
 		"channels",
 		"channel_models",
 		"channel_protocol_transforms",

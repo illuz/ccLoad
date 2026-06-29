@@ -15,8 +15,9 @@ import (
 
 // quickAddResponse 快速添加渠道响应
 type quickAddResponse struct {
-	Channel *model.Config        `json:"channel"`
-	Group   *model.AuthTokenGroup `json:"group,omitempty"`
+	Channel      *model.Config         `json:"channel"`
+	Group        *model.AuthTokenGroup `json:"group,omitempty"`
+	ChannelGroup *model.ChannelGroup   `json:"channel_group,omitempty"`
 }
 
 // HandleQuickAddChannel 快速添加渠道:粘贴 URL + Key(s),复制模型/手填模型,可选追加到 auth token 分组。
@@ -67,6 +68,15 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		channelType = util.ChannelTypeAnthropic
 	}
 
+	channelGroupID := int64(0)
+	if req.ChannelGroupID != nil {
+		if *req.ChannelGroupID < 0 {
+			RespondErrorMsg(c, http.StatusBadRequest, "channel_group_id must be >= 0")
+			return
+		}
+		channelGroupID = *req.ChannelGroupID
+	}
+
 	// 优先级:nil 或负数 -> 默认 299
 	priority := 299
 	if req.Priority != nil && *req.Priority >= 0 {
@@ -83,6 +93,7 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		ProtocolTransforms:    protocolTransforms,
 		KeyStrategy:           model.KeyStrategySequential,
 		Priority:              priority,
+		GroupID:               channelGroupID,
 		Models:                modelEntries,
 		Enabled:               true,
 		CostMultiplier:        1,
@@ -98,13 +109,25 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		return
 	}
 
+	var channelGroup *model.ChannelGroup
+	if channelGroupID > 0 {
+		channelGroup, err = s.store.GetChannelGroup(ctx, channelGroupID)
+		if err != nil {
+			log.Printf("[WARN] quick-add: channel group %d not found after channel created (channel=%d)", channelGroupID, created.ID)
+		}
+	}
+
 	// 可选:追加到 auth token 分组
 	var group *model.AuthTokenGroup
-	if req.GroupID != nil {
-		group, err = s.store.GetAuthTokenGroup(ctx, *req.GroupID)
+	authTokenGroupID := req.AuthTokenGroupID
+	if authTokenGroupID == nil {
+		authTokenGroupID = req.GroupID
+	}
+	if authTokenGroupID != nil {
+		group, err = s.store.GetAuthTokenGroup(ctx, *authTokenGroupID)
 		if err != nil {
-			log.Printf("[WARN] quick-add: group %d not found after channel created (channel=%d)", *req.GroupID, created.ID)
-			RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created})
+			log.Printf("[WARN] quick-add: auth token group %d not found after channel created (channel=%d)", *authTokenGroupID, created.ID)
+			RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created, ChannelGroup: channelGroup})
 			return
 		}
 		// 追加新渠道 ID(去重)
@@ -118,8 +141,8 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		if !alreadyExists {
 			group.AllowedChannelIDs = append(group.AllowedChannelIDs, created.ID)
 			if err := s.store.UpdateAuthTokenGroup(ctx, group); err != nil {
-				log.Printf("[WARN] quick-add: failed to update group %d (channel=%d): %v", *req.GroupID, created.ID, err)
-				RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created})
+				log.Printf("[WARN] quick-add: failed to update auth token group %d (channel=%d): %v", *authTokenGroupID, created.ID, err)
+				RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created, ChannelGroup: channelGroup})
 				return
 			}
 			if err := s.authService.ReloadAuthTokens(); err != nil {
@@ -128,5 +151,5 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		}
 	}
 
-	RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created, Group: group})
+	RespondJSON(c, http.StatusCreated, quickAddResponse{Channel: created, Group: group, ChannelGroup: channelGroup})
 }

@@ -52,6 +52,17 @@ function filterChannels() {
       if (filters.status === 'cooldown' && !isCooldown) return false;
     }
 
+    const groupValue = String(filters.group || 'all').trim();
+    if (groupValue && groupValue !== 'all') {
+      const groupID = Number(groupValue);
+      if (!Number.isFinite(groupID) || groupID < 0) return false;
+      if (groupID === 0) {
+        if (Number(channel?.group_id || 0) !== 0) return false;
+      } else if (Number(channel?.group_id || 0) !== groupID) {
+        return false;
+      }
+    }
+
     const modelValue = String(filters.model || '').trim().toLowerCase();
     if (modelValue && modelValue !== 'all') {
       const channelModels = Array.isArray(channel?.models) ? channel.models : [];
@@ -119,6 +130,21 @@ function setupFilterListeners() {
     filterChannels();
   });
 
+  const groupFilter = document.getElementById('channelGroupFilter');
+  if (groupFilter && !groupFilter.dataset.bound) {
+    groupFilter.value = filters.group || 'all';
+    groupFilter.addEventListener('change', (e) => {
+      filters.group = e.target.value || 'all';
+      if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
+      if (typeof loadChannels === 'function') {
+        loadChannels(filters.channelType || 'all');
+      } else {
+        filterChannels();
+      }
+    });
+    groupFilter.dataset.bound = '1';
+  }
+
   // 模型筛选 combobox
   const modelFilterInput = document.getElementById('modelFilter');
   if (modelFilterInput) {
@@ -175,6 +201,7 @@ function setupFilterListeners() {
       filters.model = 'all';
       filters.modelExact = false;
       filters.channelType = 'all';
+      filters.group = 'all';
 
       const searchInputEl = document.getElementById('searchInput');
       if (searchInputEl) searchInputEl.value = '';
@@ -194,6 +221,8 @@ function setupFilterListeners() {
       // 重置渠道类型下拉框
       const channelTypeFilterEl = document.getElementById('channelTypeFilter');
       if (channelTypeFilterEl) channelTypeFilterEl.value = 'all';
+      const channelGroupFilterEl = document.getElementById('channelGroupFilter');
+      if (channelGroupFilterEl) channelGroupFilterEl.value = 'all';
 
       if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
       if (typeof loadChannels === 'function') {

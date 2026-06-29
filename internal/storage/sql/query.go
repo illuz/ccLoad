@@ -128,11 +128,13 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	var scheduledCheckModel string
 	var channelCooldownFixedSeconds int
 	var customRequestRules sql.NullString
+	var groupName sql.NullString
+	var groupColor sql.NullString
 	var createdAtRaw, updatedAtRaw any // 使用any接受任意类型（兼容字符串、整数或RFC3339）
 
 	// 扫描key_count字段（从JOIN查询获取）
 	// 注意：不再包含 models 和 model_redirects 字段
-	if err := scanner.Scan(&c.ID, &c.Name, &c.URL, &c.Priority,
+	if err := scanner.Scan(&c.ID, &c.Name, &c.GroupID, &groupName, &groupColor, &c.URL, &c.Priority,
 		&c.RPMLimit, &c.MaxConcurrency, &c.ChannelType, &c.ProtocolTransformMode, &enabledInt, &scheduledCheckEnabledInt, &scheduledCheckModel,
 		&channelCooldownFixedEnabledInt, &channelCooldownFixedSeconds, &inputPriorityBonusEnabledInt, &c.InputPriorityThreshold, &c.InputPriorityBonus, &c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &c.ProxyURL, &c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
@@ -155,6 +157,12 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	}
 	c.ModelFixedPriceEnabled = modelFixedPriceEnabledInt != 0
 	c.ScheduledCheckModel = scheduledCheckModel
+	if groupName.Valid {
+		c.GroupName = groupName.String
+	}
+	if groupColor.Valid {
+		c.GroupColor = model.CanonicalAuthTokenGroupColor(groupColor.String)
+	}
 	c.CustomRequestRules = parseCustomRequestRules(c.ID, customRequestRules)
 	if c.CostMultiplier < 0 {
 		c.CostMultiplier = 1

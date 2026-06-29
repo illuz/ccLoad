@@ -154,6 +154,7 @@ func (s *Server) handleListChannels(c *gin.Context) {
 // applyChannelListFilters 串联应用所有列表过滤条件：
 //   - type: 渠道类型（标准化比较）
 //   - channel_name | search: 名称精确/模糊（互斥，channel_name 优先）
+//   - group_id: 渠道分组（纯管理标签，0 表示未分组）
 //   - status: enabled / disabled / cooldown（cooldown 依赖 channelCooldownsMap）
 //   - model | model_like: 模型精确/模糊（互斥，model 优先）
 //
@@ -176,6 +177,20 @@ func applyChannelListFilters(cfgs []*model.Config, c *gin.Context, channelCooldo
 		searchLower := strings.ToLower(search)
 		cfgs = filterConfigs(cfgs, func(cfg *model.Config) bool {
 			return strings.Contains(strings.ToLower(strings.TrimSpace(cfg.Name)), searchLower)
+		})
+	}
+
+	// group_id（纯管理标签，不影响优先级/路由）
+	if rawGroupID := strings.TrimSpace(c.Query("group_id")); rawGroupID != "" && rawGroupID != "all" {
+		groupID, err := strconv.ParseInt(rawGroupID, 10, 64)
+		if err != nil || groupID < 0 {
+			return []*model.Config{}
+		}
+		cfgs = filterConfigs(cfgs, func(cfg *model.Config) bool {
+			if groupID == 0 {
+				return cfg.GroupID == 0
+			}
+			return cfg.GroupID == groupID
 		})
 	}
 
@@ -1099,6 +1114,51 @@ func (s *Server) HandleBatchUpdatePriority(c *gin.Context) {
 	RespondJSON(c, http.StatusOK, gin.H{
 		"updated": rowsAffected,
 		"total":   len(req.Updates),
+	})
+}
+
+// HandleBatchUpdateChannelGroup 批量移动渠道分组。
+// POST /admin/channels/batch-group
+func (s *Server) HandleBatchUpdateChannelGroup(c *gin.Context) {
+	var req struct {
+		ChannelIDs []int64 `json:"channel_ids"`
+		GroupID    int64   `json:"group_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if req.GroupID < 0 {
+		RespondError(c, http.StatusBadRequest, fmt.Errorf("group_id must be >= 0"))
+		return
+	}
+
+	channelIDs := normalizeBatchChannelIDs(req.ChannelIDs)
+	if len(channelIDs) == 0 {
+		RespondError(c, http.StatusBadRequest, fmt.Errorf("channel_ids cannot be empty"))
+		return
+	}
+
+	updated, err := s.store.BatchUpdateChannelGroup(c.Request.Context(), channelIDs, req.GroupID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			RespondErrorMsg(c, http.StatusBadRequest, "channel group not found")
+			return
+		}
+		log.Printf("批量移动渠道分组失败: %v", err)
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if updated > 0 {
+		s.InvalidateChannelListCache()
+	}
+
+	RespondJSON(c, http.StatusOK, gin.H{
+		"group_id": req.GroupID,
+		"total":    len(channelIDs),
+		"updated":  updated,
 	})
 }
 

@@ -3,6 +3,9 @@ function buildChannelsListParams(type = 'all') {
   if (type && type !== 'all') {
     params.set('type', type);
   }
+  if (filters && filters.group && filters.group !== 'all') {
+    params.set('group_id', filters.group);
+  }
   return params;
 }
 
@@ -94,6 +97,7 @@ function upsertChannelLocal(channel, options = {}) {
     syncSelectedChannelsWithLoadedChannels();
   }
   recomputeLocalChannelFilterOptions(type, filters.status);
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
   if (typeof filterChannels === 'function') filterChannels();
   return normalized;
 }
@@ -108,6 +112,7 @@ function removeChannelsLocal(channelIDs = [], options = {}) {
     syncSelectedChannelsWithLoadedChannels();
   }
   recomputeLocalChannelFilterOptions(options.type || filters.channelType, filters.status);
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
   if (typeof filterChannels === 'function') filterChannels();
 }
 

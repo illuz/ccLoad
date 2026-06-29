@@ -5,6 +5,7 @@ func DefineChannelsTable() *TableBuilder {
 	return NewTable("channels").
 		Column("id INT PRIMARY KEY AUTO_INCREMENT").
 		Column("name VARCHAR(191) NOT NULL UNIQUE").
+		Column("group_id BIGINT NOT NULL DEFAULT 0").
 		Column("url TEXT NOT NULL").
 		Column("priority INT NOT NULL DEFAULT 0").
 		Column("rpm_limit INT NOT NULL DEFAULT 0").
@@ -31,7 +32,20 @@ func DefineChannelsTable() *TableBuilder {
 		Index("idx_channels_enabled", "enabled").
 		Index("idx_channels_priority", "priority DESC").
 		Index("idx_channels_type_enabled", "channel_type, enabled").
+		Index("idx_channels_group_id", "group_id").
 		Index("idx_channels_cooldown", "cooldown_until")
+}
+
+// DefineChannelGroupsTable 定义渠道分组表结构。
+func DefineChannelGroupsTable() *TableBuilder {
+	return NewTable("channel_groups").
+		Column("id INT PRIMARY KEY AUTO_INCREMENT").
+		Column("name VARCHAR(191) NOT NULL UNIQUE").
+		Column("description VARCHAR(512) NOT NULL DEFAULT ''").
+		Column("color VARCHAR(16) NOT NULL DEFAULT '#64748b'").
+		Column("created_at BIGINT NOT NULL").
+		Column("updated_at BIGINT NOT NULL").
+		Index("idx_channel_groups_name", "name")
 }
 
 // DefineAPIKeysTable 定义api_keys表结构

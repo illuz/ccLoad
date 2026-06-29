@@ -32,6 +32,7 @@
   <script defer src="/web/assets/js/channels-custom-rules.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/channels-test.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/channels-sort.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/channels-groups.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/channels-init.js?v=__VERSION__"></script>
 </head>
 
@@ -57,6 +58,14 @@
                 <option value="enabled" data-i18n="channels.statusEnabled">已启用</option>
                 <option value="disabled" data-i18n="channels.statusDisabled">已禁用</option>
                 <option value="cooldown" data-i18n="channels.statusCooldown">冷却中</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label class="filter-label" data-i18n="channels.filterGroup">分组</label>
+              <select id="channelGroupFilter" class="filter-select filter-control--compact">
+                <option value="all" data-i18n="channels.groupAll">全部分组</option>
+                <option value="0" data-i18n="channels.ungrouped">未分组</option>
               </select>
             </div>
 
@@ -99,6 +108,11 @@
                   title="粘贴 URL + Key 快速添加渠道">
                   <span>快速添加</span>
                 </button>
+                <span class="channels-view-switch" role="group" aria-label="渠道视图切换">
+                  <button id="channelGroupViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-group" data-i18n="channels.groupView">分组视图</button>
+                  <button id="channelListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-list" data-i18n="channels.listView">列表视图</button>
+                </span>
+                <button type="button" data-action="show-channel-group-manager" class="btn btn-secondary btn-sm" data-i18n="channels.groupManager">分组管理</button>
                 <button id="clearSearchBtn" type="button" class="btn btn-secondary btn-sm"
                   data-i18n="common.clear" data-i18n-title="common.clearSearch" title="清空搜索">
                   清空
@@ -151,6 +165,16 @@
                   </svg>
                 </span>
                 <span data-i18n="channels.batchDisableChannels">批量禁用</span>
+              </button>
+              <button id="batchMoveGroupBtn" type="button"
+                class="btn btn-sm channel-batch-action channel-batch-action--group"
+                data-action="show-batch-channel-group-modal" disabled>
+                <span class="channel-batch-action__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 5.5H9L10.5 7H16V14.5H4V5.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span data-i18n="channels.batchMoveGroup">移动分组</span>
               </button>
               <button id="batchDeleteChannelsBtn" type="button"
                 class="btn btn-sm channel-batch-action channel-batch-action--delete"
@@ -226,14 +250,12 @@
       <form id="channelForm" class="channel-editor-form">
         <div class="channel-editor-body">
         <div class="form-group channel-editor-group channel-editor-group--primary">
-          <div class="channel-editor-primary-row channel-editor-primary-row--single">
+          <div class="channel-editor-primary-row">
             <div class="channel-editor-primary-field channel-editor-primary-field--name">
               <label class="form-label channel-editor-inline-label" data-i18n="channels.channelName">渠道名称
                 *</label>
               <input type="text" id="channelName" class="form-input channel-editor-input" required>
             </div>
-          </div>
-          <div class="channel-editor-primary-row channel-editor-primary-row--single">
             <div class="channel-editor-primary-field channel-editor-primary-field--type">
               <label class="form-label channel-editor-inline-label channel-editor-inline-label--muted"
                 data-i18n="channels.modal.upstreamProtocol">上游协议</label>
@@ -242,7 +264,7 @@
               </div>
             </div>
           </div>
-          <div class="channel-editor-primary-row channel-editor-primary-row--dual">
+          <div class="channel-editor-primary-row">
             <div class="channel-editor-primary-field channel-editor-primary-field--transforms">
               <div class="channel-editor-inline-group">
                 <label class="form-label channel-editor-inline-label"
@@ -563,6 +585,13 @@
                   <div id="channelScheduledCheckModelDropdown" class="filter-dropdown" role="listbox"></div>
                   <input type="hidden" id="channelScheduledCheckModel" value="">
                 </div>
+              </div>
+              <div class="channel-editor-inline-field">
+                <label class="form-label channel-editor-inline-label" for="channelGroup"
+                  data-i18n="channels.group">分组</label>
+                <select id="channelGroup" class="form-input" style="width: 128px; min-width: 128px;">
+                  <option value="0" data-i18n="channels.ungrouped">未分组</option>
+                </select>
               </div>
               <div class="channel-editor-inline-field">
                 <label class="form-label channel-editor-inline-label" for="channelPriority"
@@ -922,11 +951,19 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">加入分组 <span class="channel-import-hint">(可选,新渠道 ID 追加到该 auth token 分组)</span></label>
-          <select id="quickAddGroup" class="form-input">
-            <option value="">-- 不加入分组 --</option>
-          </select>
+        <div class="channel-editor-group">
+          <div class="form-group">
+            <label class="form-label">渠道分组 <span class="channel-import-hint">(可选,纯标签)</span></label>
+            <select id="quickAddChannelGroup" class="form-input">
+              <option value="0">未分组</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">加入 API 令牌分组 <span class="channel-import-hint">(可选,新渠道 ID 追加到该 auth token 分组)</span></label>
+            <select id="quickAddGroup" class="form-input">
+              <option value="">-- 不加入分组 --</option>
+            </select>
+          </div>
         </div>
 
         <div id="quickAddPreview" class="channel-import-preview">
@@ -944,6 +981,70 @@
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" data-action="close-quick-add-modal">取消</button>
         <button type="button" class="btn btn-primary" data-action="confirm-quick-add" id="quickAddSubmitBtn">确认添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 渠道分组管理对话框 -->
+  <div id="channelGroupModal" class="modal">
+    <div class="modal-content modal-content--wide channel-group-modal">
+      <div class="modal-header">
+        <h2 class="modal-title" data-i18n="channels.groupManager">分组管理</h2>
+        <button type="button" class="close-btn" data-action="close-channel-group-modal">&times;</button>
+      </div>
+      <div class="modal-body channel-group-manager-body">
+        <div class="channel-group-list-panel">
+          <div class="channel-group-list-header">
+            <h3 class="channel-group-section-title" data-i18n="channels.groupList">分组列表</h3>
+            <button type="button" class="btn btn-primary btn-sm" data-action="create-channel-group-draft" data-i18n="channels.groupCreate">创建分组</button>
+          </div>
+          <div id="channelGroupList" class="channel-group-list"></div>
+        </div>
+        <div class="channel-group-form-panel">
+          <input type="hidden" id="channelGroupEditId">
+          <div class="channel-group-form-row">
+            <label class="form-label" data-i18n="channels.groupName">分组名称</label>
+            <input id="channelGroupName" class="form-input" type="text" placeholder="例如：付费渠道">
+          </div>
+          <div class="channel-group-form-row">
+            <label class="form-label" data-i18n="channels.groupDescription">描述</label>
+            <input id="channelGroupDescription" class="form-input" type="text">
+          </div>
+          <div class="channel-group-form-row">
+            <label class="form-label" data-i18n="channels.groupColor">颜色</label>
+            <div id="channelGroupColorPicker" class="channel-group-color-picker" role="radiogroup" aria-label="分组颜色"></div>
+            <input type="hidden" id="channelGroupColor" value="#64748b">
+          </div>
+          <div class="channel-group-form-row channel-group-count-row">
+            <span data-i18n="channels.channelCountLabel">渠道数量</span>
+            <strong id="channelGroupChannelCount">0</strong>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" data-action="delete-channel-group" class="btn btn-danger" data-i18n="common.delete">删除</button>
+        <button type="button" data-action="close-channel-group-modal" class="btn btn-secondary" data-i18n="common.close">关闭</button>
+        <button type="button" data-action="save-channel-group" class="btn btn-primary" data-i18n="common.save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量移动渠道分组 -->
+  <div id="batchChannelGroupModal" class="modal">
+    <div class="modal-content modal-content--sm">
+      <div class="modal-header">
+        <h2 class="modal-title" data-i18n="channels.batchMoveGroup">移动分组</h2>
+        <button type="button" class="close-btn" data-action="close-batch-channel-group-modal">&times;</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="batchChannelGroupSelect" data-i18n="channels.moveToGroup">移动到分组</label>
+        <select id="batchChannelGroupSelect" class="form-input">
+          <option value="0" data-i18n="channels.ungrouped">未分组</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" data-action="close-batch-channel-group-modal" data-i18n="common.cancel">取消</button>
+        <button type="button" class="btn btn-primary" data-action="confirm-batch-channel-group" data-i18n="common.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -1218,6 +1319,7 @@
           <div class="ch-name-line">
             <div class="ch-name-main">{{{typeBadge}}}<strong>{{name}}</strong>{{{protocolTransformBadges}}}</div>
             <div class="ch-url-line" title="{{url}}">{{url}}</div>
+            {{{groupBadge}}}
           </div>
           <div class="ch-refresh-result-slot">{{{batchRefreshStatusHtml}}}</div>
           {{{healthHtml}}}

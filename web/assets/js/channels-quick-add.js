@@ -61,6 +61,8 @@ function resetQuickAddForm() {
   if (typeSel) typeSel.value = QUICK_ADD_TYPE_DEFAULT;
   const srcSel = document.getElementById('quickAddModelSource');
   if (srcSel) srcSel.innerHTML = '<option value="">-- 选择源渠道 --</option>';
+  const channelGroupSel = document.getElementById('quickAddChannelGroup');
+  if (channelGroupSel && typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
   const groupSel = document.getElementById('quickAddGroup');
   if (groupSel) groupSel.innerHTML = '<option value="">-- 不加入分组 --</option>';
   const previewContent = document.getElementById('quickAddPreviewContent');
@@ -128,10 +130,14 @@ function updateQuickAddPreview() {
     ? '复制源渠道模型'
     : (manualModels.length > 0 ? `${manualModels.length} 个手动模型` : '⚠️ 未配模型');
 
+  const channelGroupSel = document.getElementById('quickAddChannelGroup');
+  const channelGroupName = channelGroupSel && channelGroupSel.value && channelGroupSel.value !== '0'
+    ? `渠道分组 #${channelGroupSel.value}`
+    : '未分组';
   const groupSel = document.getElementById('quickAddGroup');
-  const groupName = groupSel && groupSel.value ? `加入分组 #${groupSel.value}` : '不加入分组';
+  const groupName = groupSel && groupSel.value ? `API令牌分组 #${groupSel.value}` : '不加入API令牌分组';
 
-  previewText.textContent = `URL: ${url} | ${keys.length} 个 Key | 类型 ${type} | ${modelDesc} | ${groupName}`;
+  previewText.textContent = `URL: ${url} | ${keys.length} 个 Key | 类型 ${type} | ${modelDesc} | ${channelGroupName} | ${groupName}`;
   previewContent.classList.remove('hidden');
 }
 
@@ -171,6 +177,7 @@ async function confirmQuickAdd() {
   const srcSel = document.getElementById('quickAddModelSource');
   const modelsInput = document.getElementById('quickAddModels');
   const groupSel = document.getElementById('quickAddGroup');
+  const channelGroupSel = document.getElementById('quickAddChannelGroup');
 
   const channelType = typeSel ? typeSel.value : QUICK_ADD_TYPE_DEFAULT;
   const name = (nameInput && nameInput.value.trim()) || hostnameFromURL(url) || '';
@@ -180,6 +187,7 @@ async function confirmQuickAdd() {
   const manualModels = (modelsInput && modelsInput.value || '')
     .split(',').map(s => s.trim()).filter(Boolean);
   const groupId = groupSel && groupSel.value ? Number(groupSel.value) : null;
+  const channelGroupId = channelGroupSel && channelGroupSel.value ? Number(channelGroupSel.value) : 0;
 
   if (!modelSourceId && manualModels.length === 0) {
     if (window.showError) window.showError('请选择模型来源渠道,或手动填模型名');
@@ -198,7 +206,8 @@ async function confirmQuickAdd() {
   } else {
     payload.models = manualModels;
   }
-  if (groupId) payload.group_id = groupId;
+  if (groupId) payload.auth_token_group_id = groupId;
+  if (channelGroupId > 0) payload.channel_group_id = channelGroupId;
 
   setQuickAddPending(true);
   try {
@@ -218,8 +227,9 @@ async function confirmQuickAdd() {
     if (window.showSuccess) {
       const ch = resp.data && resp.data.channel;
       const groupName = (resp.data && resp.data.group && resp.data.group.name) || '';
-      const tail = groupName ? `,已加入分组「${groupName}」` : '';
-      window.showSuccess(`渠道「${ch ? ch.name : url}」已创建${tail}`);
+      const channelGroupName = (resp.data && resp.data.channel_group && resp.data.channel_group.name) || '';
+      const tail = [channelGroupName ? `渠道分组「${channelGroupName}」` : '', groupName ? `API令牌分组「${groupName}」` : ''].filter(Boolean).join(',');
+      window.showSuccess(`渠道「${ch ? ch.name : url}」已创建${tail ? '，' + tail : ''}`);
     }
   } catch (e) {
     console.error('Quick add channel failed', e);
@@ -278,6 +288,12 @@ function setupQuickAddPreview() {
   if (modelsInput && !modelsInput.dataset.bound) {
     modelsInput.addEventListener('input', updateQuickAddPreview);
     modelsInput.dataset.bound = '1';
+  }
+
+  const channelGroupSel = document.getElementById('quickAddChannelGroup');
+  if (channelGroupSel && !channelGroupSel.dataset.bound) {
+    channelGroupSel.addEventListener('change', updateQuickAddPreview);
+    channelGroupSel.dataset.bound = '1';
   }
 
   const groupSel = document.getElementById('quickAddGroup');

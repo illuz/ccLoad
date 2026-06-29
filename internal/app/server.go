@@ -759,12 +759,17 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/channels", s.HandleChannels)
 		admin.POST("/channels/quick-add", s.HandleQuickAddChannel)
 		admin.GET("/channels/filter-options", s.HandleChannelsFilterOptions)
+		admin.GET("/channel-groups", s.HandleListChannelGroups)
+		admin.POST("/channel-groups", s.HandleCreateChannelGroup)
+		admin.PUT("/channel-groups/:id", s.HandleUpdateChannelGroup)
+		admin.DELETE("/channel-groups/:id", s.HandleDeleteChannelGroup)
 		admin.GET("/channels/export", s.HandleExportChannelsCSV)
 		admin.POST("/channels/import", s.HandleImportChannelsCSV)
 		admin.POST("/channels/check-duplicate", s.HandleCheckDuplicateChannel)
-		admin.POST("/channels/batch-priority", s.HandleBatchUpdatePriority) // 批量更新渠道优先级
-		admin.POST("/channels/batch-enabled", s.HandleBatchSetEnabled)      // 批量启用/禁用渠道
-		admin.POST("/channels/batch-delete", s.HandleBatchDeleteChannels)   // 批量删除渠道
+		admin.POST("/channels/batch-priority", s.HandleBatchUpdatePriority)  // 批量更新渠道优先级
+		admin.POST("/channels/batch-group", s.HandleBatchUpdateChannelGroup) // 批量移动渠道分组
+		admin.POST("/channels/batch-enabled", s.HandleBatchSetEnabled)       // 批量启用/禁用渠道
+		admin.POST("/channels/batch-delete", s.HandleBatchDeleteChannels)    // 批量删除渠道
 		admin.GET("/channels/:id", s.HandleChannelByID)
 		admin.PUT("/channels/:id", s.HandleChannelByID)
 		admin.DELETE("/channels/:id", s.HandleChannelByID)

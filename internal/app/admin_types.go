@@ -28,6 +28,7 @@ type ChannelRequest struct {
 	Priority                    int                       `json:"priority"`
 	RPMLimit                    int                       `json:"rpm_limit"`                       // 每分钟请求数限制，0表示无限制
 	MaxConcurrency              int                       `json:"max_concurrency"`                 // 最大并发请求数，0表示无限制
+	GroupID                     int64                     `json:"group_id"`                        // 渠道分组ID，0表示未分组
 	Models                      []model.ModelEntry        `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
 	ModelFixedPriceEnabled      bool                      `json:"model_fixed_price_enabled,omitempty"`
 	Enabled                     bool                      `json:"enabled"`
@@ -222,6 +223,9 @@ func (cr *ChannelRequest) Validate() error {
 	if cr.MaxConcurrency < 0 {
 		return fmt.Errorf("max_concurrency must be >= 0 (got %d)", cr.MaxConcurrency)
 	}
+	if cr.GroupID < 0 {
+		return fmt.Errorf("group_id must be >= 0 (got %d)", cr.GroupID)
+	}
 
 	// CostMultiplier: 未传视为默认 1；0 表示免费渠道；负数拒绝
 	if cr.InputPriorityThreshold < 0 {
@@ -262,6 +266,7 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		Priority:                    cr.Priority,
 		RPMLimit:                    cr.RPMLimit,
 		MaxConcurrency:              cr.MaxConcurrency,
+		GroupID:                     cr.GroupID,
 		ModelEntries:                normalizedModels,
 		ModelFixedPriceEnabled:      cr.ModelFixedPriceEnabled,
 		Enabled:                     cr.Enabled,
@@ -511,7 +516,9 @@ type QuickAddChannelRequest struct {
 	Priority             *int     `json:"priority,omitempty"`                // 渠道优先级,nil=默认 299
 	ModelSourceChannelID *int64   `json:"model_source_channel_id,omitempty"` // 复制模型源渠道(二选一)
 	Models               []string `json:"models,omitempty"`                  // 手动模型名(二选一)
-	GroupID              *int64   `json:"group_id,omitempty"`                // 可选,追加到该分组
+	GroupID              *int64   `json:"group_id,omitempty"`                // 兼容旧字段：可选,追加到 auth token 分组
+	AuthTokenGroupID     *int64   `json:"auth_token_group_id,omitempty"`     // 可选,追加到 auth token 分组
+	ChannelGroupID       *int64   `json:"channel_group_id,omitempty"`        // 可选,设置渠道分组
 }
 
 // Validate 实现 RequestValidator 接口

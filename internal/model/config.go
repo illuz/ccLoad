@@ -117,6 +117,9 @@ type Config struct {
 	Priority                    int      `json:"priority"`
 	RPMLimit                    int      `json:"rpm_limit"`       // 每分钟请求数限制，0表示无限制
 	MaxConcurrency              int      `json:"max_concurrency"` // 最大并发请求数，0表示无限制
+	GroupID                     int64    `json:"group_id"`        // 所属渠道分组ID，0表示未分组（纯管理标签）
+	GroupName                   string   `json:"group_name,omitempty"`
+	GroupColor                  string   `json:"group_color,omitempty"`
 	Enabled                     bool     `json:"enabled"`
 	ScheduledCheckEnabled       bool     `json:"scheduled_check_enabled"`
 	ScheduledCheckModel         string   `json:"scheduled_check_model"`
@@ -161,6 +164,19 @@ type Config struct {
 	indexMu    sync.RWMutex           `json:"-"` // 保护索引的并发访问
 }
 
+// ChannelGroup 表示渠道管理中的纯标签分组。
+//
+// 分组仅用于后台展示、筛选和批量归类，不参与优先级、路由、限流、冷却或健康度计算。
+type ChannelGroup struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Color        string    `json:"color"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	ChannelCount int       `json:"channel_count,omitempty"`
+}
+
 // Clone 返回 Config 的深拷贝。
 // 拷贝所有可变字段（ModelEntries / ProtocolTransforms slice），
 // 重置懒加载索引（modelIndex + indexMu），避免共享 sync.RWMutex 与指向旧 slice 的 map。
@@ -178,6 +194,9 @@ func (c *Config) Clone() *Config {
 		Priority:                    c.Priority,
 		RPMLimit:                    c.RPMLimit,
 		MaxConcurrency:              c.MaxConcurrency,
+		GroupID:                     c.GroupID,
+		GroupName:                   c.GroupName,
+		GroupColor:                  c.GroupColor,
 		Enabled:                     c.Enabled,
 		ScheduledCheckEnabled:       c.ScheduledCheckEnabled,
 		ScheduledCheckModel:         c.ScheduledCheckModel,

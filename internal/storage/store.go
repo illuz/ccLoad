@@ -21,6 +21,12 @@ type Store interface {
 	UpdateConfig(ctx context.Context, id int64, upd *model.Config) (*model.Config, error)
 	UpdateChannelEnabled(ctx context.Context, id int64, enabled bool) (*model.Config, error)
 	DeleteConfig(ctx context.Context, id int64) error
+	CreateChannelGroup(ctx context.Context, group *model.ChannelGroup) error
+	GetChannelGroup(ctx context.Context, id int64) (*model.ChannelGroup, error)
+	ListChannelGroups(ctx context.Context) ([]*model.ChannelGroup, error)
+	UpdateChannelGroup(ctx context.Context, group *model.ChannelGroup) error
+	DeleteChannelGroup(ctx context.Context, id int64) error
+	BatchUpdateChannelGroup(ctx context.Context, ids []int64, groupID int64) (int64, error)
 	GetEnabledChannelsByModel(ctx context.Context, modelName string) ([]*model.Config, error)
 	GetEnabledChannelsByModelAndProtocol(ctx context.Context, modelName, protocol string) ([]*model.Config, error)
 	GetEnabledChannelsByType(ctx context.Context, channelType string) ([]*model.Config, error)

@@ -16,6 +16,9 @@ let channelsTotalCount = 0;
 let allAvailableModels = [];
 let allAvailableChannelNames = [];
 let batchRefreshResultsByChannelId = new Map();
+let channelGroups = [];
+let channelViewMode = localStorage.getItem('channels.viewMode') || 'list';
+let collapsedChannelGroups = new Set(JSON.parse(localStorage.getItem('channels.collapsedGroups') || '[]'));
 
 function normalizeSelectedChannelID(id) {
   const numericID = Number(id);
@@ -32,7 +35,8 @@ let filters = {
   channelType: 'all',
   status: 'all',
   model: 'all',
-  modelExact: false
+  modelExact: false,
+  group: 'all'
 };
 
 // 内联Key表格状态

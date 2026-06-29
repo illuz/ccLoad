@@ -440,6 +440,15 @@ function normalizeProtocolTransformsForDisplay(channelType, protocolTransforms) 
   return window.ChannelProtocolConfig.normalizeProtocolTransformsForChannel(channelType, protocolTransforms);
 }
 
+function buildChannelGroupBadge(channel) {
+  const groupID = Number(channel && channel.group_id) || 0;
+  const name = groupID > 0
+    ? ((typeof getChannelGroupNameByID === 'function' && getChannelGroupNameByID(groupID)) || channel.group_name || `${window.t('channels.group')} #${groupID}`)
+    : window.t('channels.ungrouped');
+  const color = (typeof getChannelGroupColorByID === 'function' && getChannelGroupColorByID(groupID)) || channel.group_color || '#64748b';
+  return `<span class="channel-group-badge" style="--channel-group-color:${escapeChannelRefreshText(color)}" title="${escapeChannelRefreshText(name)}"><span class="channel-group-badge__dot"></span>${escapeChannelRefreshText(name)}</span>`;
+}
+
 function buildProtocolTransformBadges(channelType, protocolTransforms) {
   const transforms = normalizeProtocolTransformsForDisplay(channelType, protocolTransforms);
   if (transforms.length === 0) return '';
@@ -705,6 +714,7 @@ function createChannelCard(channel) {
     id: channel.id,
     name: channel.name,
     nameMultiplierBadge: buildCornerMultiplierBadge(channel.cost_multiplier),
+    groupBadge: buildChannelGroupBadge(channel),
     typeBadge: buildChannelTypeBadge(channelTypeRaw),
     protocolTransformBadges: buildProtocolTransformBadges(channelTypeRaw, channel.protocol_transforms),
     url: channel.url,
@@ -858,8 +868,9 @@ function initChannelEventDelegation() {
   }
 }
 
-function renderChannels(channelsToRender = channels) {
-  const el = document.getElementById('channels-container');
+function renderChannelTable(container, channelsToRender = channels) {
+  const el = container || document.getElementById('channels-container');
+  if (!el) return;
   if (!channelsToRender || channelsToRender.length === 0) {
     el.innerHTML = `<div class="glass-card">${window.t('channels.noChannels')}</div>`;
     if (typeof updateBatchChannelSelectionUI === 'function') {
@@ -909,4 +920,14 @@ function renderChannels(channelsToRender = channels) {
   if (typeof updateBatchChannelSelectionUI === 'function') {
     updateBatchChannelSelectionUI();
   }
+}
+
+function renderChannels(channelsToRender = channels) {
+  const el = document.getElementById('channels-container');
+  if (!el) return;
+  if (channelViewMode === 'group' && typeof renderGroupedChannels === 'function') {
+    renderGroupedChannels(el, channelsToRender);
+    return;
+  }
+  renderChannelTable(el, channelsToRender);
 }

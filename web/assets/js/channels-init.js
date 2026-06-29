@@ -37,7 +37,8 @@ function saveChannelsFilters() {
       model: filters.model,
       modelExact: filters.modelExact,
       search: filters.search,
-      searchExact: filters.searchExact
+      searchExact: filters.searchExact,
+      group: filters.group
     }));
   } catch (_) {}
 }
@@ -111,6 +112,9 @@ window.initPageBootstrap({
     if (typeof initChannelFormDirtyTracking === 'function') {
       initChannelFormDirtyTracking();
     }
+    if (typeof initChannelGroupActions === 'function') {
+      initChannelGroupActions();
+    }
     if (typeof updateBatchChannelSelectionUI === 'function') {
       updateBatchChannelSelectionUI();
     }
@@ -130,6 +134,7 @@ window.initPageBootstrap({
       filters.modelExact = false;
       filters.search = targetChannel?.name || '';
       filters.searchExact = Boolean(filters.search);
+      filters.group = 'all';
       document.getElementById('statusFilter').value = 'all';
       if (typeof modelFilterCombobox !== 'undefined' && modelFilterCombobox) {
         modelFilterCombobox.setValue('all', modelFilterInputValueFromFilterValue('all'));
@@ -147,6 +152,7 @@ window.initPageBootstrap({
       filters.modelExact = filters.model !== 'all' && savedFilters.modelExact !== false;
       filters.search = savedFilters.search || '';
       filters.searchExact = savedFilters.searchExact === true;
+      filters.group = savedFilters.group || 'all';
       document.getElementById('statusFilter').value = filters.status;
       if (typeof modelFilterCombobox !== 'undefined' && modelFilterCombobox) {
         modelFilterCombobox.setValue(filters.model, modelFilterInputValueFromFilterValue(filters.model));
@@ -167,6 +173,9 @@ window.initPageBootstrap({
       filters.modelExact = false;
       filters.search = '';
       filters.searchExact = false;
+      filters.group = 'all';
+      const channelGroupFilterEl = document.getElementById('channelGroupFilter');
+      if (channelGroupFilterEl) channelGroupFilterEl.value = 'all';
       if (typeof modelFilterCombobox !== 'undefined' && modelFilterCombobox) {
         modelFilterCombobox.setValue('all', modelFilterInputValueFromFilterValue('all'));
       } else {
@@ -181,6 +190,9 @@ window.initPageBootstrap({
 
     await loadDefaultTestContent();
     await loadChannelStatsRange();
+    if (typeof loadChannelGroups === 'function') {
+      await loadChannelGroups();
+    }
 
     await Promise.all([
       loadChannelsFilterOptions(initialType, filters.status),
@@ -193,6 +205,7 @@ window.initPageBootstrap({
     window.i18n.onLocaleChange(() => {
       renderChannels();
       updateModelOptions();
+      if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
     });
 
     // 自动刷新（system_settings.auto_refresh_interval_seconds，0=禁用）

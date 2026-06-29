@@ -189,6 +189,32 @@ function isChannelModelFixedPriceEnabled() {
   return document.getElementById('channelModelFixedPriceEnabled')?.checked === true;
 }
 
+function setChannelInputValue(id, value) {
+  const input = document.getElementById(id);
+  if (input) input.value = value;
+}
+
+function setChannelCheckboxChecked(id, checked) {
+  const input = document.getElementById(id);
+  if (input) input.checked = !!checked;
+}
+
+function readChannelInputInt(id, fallback) {
+  const value = parseInt(document.getElementById(id)?.value || '', 10);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readChannelInputFloat(id, fallback) {
+  const value = parseFloat(document.getElementById(id)?.value || '');
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readChannelInputText(id, fallback = '') {
+  const input = document.getElementById(id);
+  if (!input || typeof input.value !== 'string') return fallback;
+  return input.value;
+}
+
 function getRedirectTableColspan() {
   return isChannelModelFixedPriceEnabled() ? 5 : 4;
 }
@@ -514,15 +540,19 @@ async function showAddModal() {
 
   setChannelModalTitle('channels.addChannel');
   document.getElementById('channelForm').reset();
-  document.getElementById('channelEnabled').checked = true;
-  document.getElementById('channelCooldownFixedEnabled').checked = false;
-  document.getElementById('channelCooldownFixedSeconds').value = '10';
-  document.getElementById('channelInputPriorityBonusEnabled').checked = false;
-  document.getElementById('channelInputPriorityThreshold').value = '12000';
-  document.getElementById('channelInputPriorityBonus').value = '100';
-  document.getElementById('channelScheduledCheckEnabled').checked = false;
-  document.getElementById('channelScheduledCheckModel').value = '';
-  document.getElementById('channelModelFixedPriceEnabled').checked = false;
+  setChannelCheckboxChecked('channelEnabled', true);
+  setChannelCheckboxChecked('channelCooldownFixedEnabled', false);
+  setChannelInputValue('channelCooldownFixedSeconds', '10');
+  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', false);
+  setChannelInputValue('channelInputPriorityThreshold', '12000');
+  setChannelInputValue('channelInputPriorityBonus', '100');
+  setChannelCheckboxChecked('channelScheduledCheckEnabled', false);
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
+  const groupSelect = document.getElementById('channelGroup');
+  if (groupSelect) groupSelect.value = '0';
+  setChannelInputValue('channelScheduledCheckModel', '');
+  const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
+  if (fixedPriceEnabled) fixedPriceEnabled.checked = false;
   document.querySelector('input[name="channelType"][value="anthropic"]').checked = true;
   renderProtocolTransformOptions('anthropic', []);
   renderProtocolTransformModeOptions('upstream');
@@ -613,20 +643,24 @@ async function editChannel(id) {
   if (strategyRadio) {
     strategyRadio.checked = true;
   }
-  document.getElementById('channelPriority').value = channel.priority;
-  document.getElementById('channelRPMLimit').value = channel.rpm_limit || 0;
-  document.getElementById('channelMaxConcurrency').value = String(channel.max_concurrency || 0);
-  document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
-  document.getElementById('channelCostMultiplier').value = (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1);
-  document.getElementById('channelEnabled').checked = channel.enabled;
-  document.getElementById('channelCooldownFixedEnabled').checked = !!channel.channel_cooldown_fixed_enabled;
-  document.getElementById('channelCooldownFixedSeconds').value = String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10);
-  document.getElementById('channelInputPriorityBonusEnabled').checked = !!channel.input_priority_bonus_enabled;
-  document.getElementById('channelInputPriorityThreshold').value = String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000);
-  document.getElementById('channelInputPriorityBonus').value = String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100);
-  document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
-  document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
-  document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
+  const groupSelect = document.getElementById('channelGroup');
+  if (groupSelect) groupSelect.value = String(channel.group_id || 0);
+  setChannelInputValue('channelPriority', channel.priority);
+  setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
+  setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
+  setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
+  setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
+  setChannelCheckboxChecked('channelEnabled', channel.enabled);
+  setChannelCheckboxChecked('channelCooldownFixedEnabled', !!channel.channel_cooldown_fixed_enabled);
+  setChannelInputValue('channelCooldownFixedSeconds', String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10));
+  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', !!channel.input_priority_bonus_enabled);
+  setChannelInputValue('channelInputPriorityThreshold', String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000));
+  setChannelInputValue('channelInputPriorityBonus', String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100));
+  setChannelCheckboxChecked('channelScheduledCheckEnabled', !!channel.scheduled_check_enabled);
+  setChannelInputValue('channelScheduledCheckModel', channel.scheduled_check_model || '');
+  const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
+  if (fixedPriceEnabled) fixedPriceEnabled.checked = !!channel.model_fixed_price_enabled;
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
@@ -857,33 +891,34 @@ async function saveChannel(event) {
     protocol_transform_mode: getSelectedProtocolTransformMode(),
     protocol_transforms: getSelectedProtocolTransforms(channelType),
     key_strategy: keyStrategy,
-    priority: parseInt(document.getElementById('channelPriority').value) || 0,
-    rpm_limit: parseInt(document.getElementById('channelRPMLimit').value) || 0,
-    max_concurrency: parseInt(document.getElementById('channelMaxConcurrency').value) || 0,
-    daily_cost_limit: parseFloat(document.getElementById('channelDailyCostLimit').value) || 0,
+    priority: readChannelInputInt('channelPriority', 0) || 0,
+    rpm_limit: readChannelInputInt('channelRPMLimit', 0) || 0,
+    max_concurrency: readChannelInputInt('channelMaxConcurrency', 0) || 0,
+    group_id: parseInt(document.getElementById('channelGroup')?.value || '0', 10) || 0,
+    daily_cost_limit: readChannelInputFloat('channelDailyCostLimit', 0) || 0,
     cost_multiplier: (function () {
-      const v = parseFloat(document.getElementById('channelCostMultiplier').value);
+      const v = readChannelInputFloat('channelCostMultiplier', 1);
       return Number.isFinite(v) && v >= 0 ? v : 1;
     })(),
-    model_fixed_price_enabled: document.getElementById('channelModelFixedPriceEnabled').checked,
+    model_fixed_price_enabled: document.getElementById('channelModelFixedPriceEnabled')?.checked === true,
     models: models,
-    enabled: document.getElementById('channelEnabled').checked,
-    channel_cooldown_fixed_enabled: document.getElementById('channelCooldownFixedEnabled').checked,
+    enabled: document.getElementById('channelEnabled')?.checked !== false,
+    channel_cooldown_fixed_enabled: document.getElementById('channelCooldownFixedEnabled')?.checked === true,
     channel_cooldown_fixed_seconds: (function () {
-      const v = parseInt(document.getElementById('channelCooldownFixedSeconds').value, 10);
+      const v = readChannelInputInt('channelCooldownFixedSeconds', 10);
       return Number.isFinite(v) && v > 0 ? v : 10;
     })(),
-    input_priority_bonus_enabled: document.getElementById('channelInputPriorityBonusEnabled').checked,
+    input_priority_bonus_enabled: document.getElementById('channelInputPriorityBonusEnabled')?.checked === true,
     input_priority_threshold: (function () {
-      const v = parseInt(document.getElementById('channelInputPriorityThreshold').value, 10);
+      const v = readChannelInputInt('channelInputPriorityThreshold', 12000);
       return Number.isFinite(v) && v > 0 ? v : 12000;
     })(),
     input_priority_bonus: (function () {
-      const v = parseInt(document.getElementById('channelInputPriorityBonus').value, 10);
+      const v = readChannelInputInt('channelInputPriorityBonus', 100);
       return Number.isFinite(v) && v !== 0 ? v : 100;
     })(),
-    scheduled_check_enabled: document.getElementById('channelScheduledCheckEnabled').checked,
-    scheduled_check_model: document.getElementById('channelScheduledCheckModel').value.trim(),
+    scheduled_check_enabled: document.getElementById('channelScheduledCheckEnabled')?.checked === true,
+    scheduled_check_model: readChannelInputText('channelScheduledCheckModel', '').trim(),
     custom_request_rules: invokeChannelEditorAction('collectCustomRulesForSubmit') || null,
     proxy_url: (document.getElementById('channelProxyURL')?.value || '').trim()
   };
@@ -1069,7 +1104,6 @@ async function toggleChannel(id, enabled) {
       upsertChannelLocal(resp.data);
     }
     clearChannelsCache();
-    void reloadChannelsList();
     if (window.showSuccess) window.showSuccess(enabled ? window.t('channels.channelEnabled') : window.t('channels.channelDisabled'));
   } catch (e) {
     rollbackLocalChange();
@@ -1176,6 +1210,7 @@ function updateBatchChannelSelectionUI() {
     'batchEnableChannelsBtn',
     'batchDisableChannelsBtn',
     'batchDeleteChannelsBtn',
+    'batchMoveGroupBtn',
     'batchRefreshMergeBtn',
     'batchRefreshReplaceBtn'
   ];
@@ -1550,20 +1585,24 @@ async function copyChannel(id, name) {
   if (strategyRadio) {
     strategyRadio.checked = true;
   }
-  document.getElementById('channelPriority').value = channel.priority;
-  document.getElementById('channelRPMLimit').value = channel.rpm_limit || 0;
-  document.getElementById('channelMaxConcurrency').value = String(channel.max_concurrency || 0);
-  document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
-  document.getElementById('channelCostMultiplier').value = (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1);
-  document.getElementById('channelEnabled').checked = true;
-  document.getElementById('channelCooldownFixedEnabled').checked = !!channel.channel_cooldown_fixed_enabled;
-  document.getElementById('channelCooldownFixedSeconds').value = String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10);
-  document.getElementById('channelInputPriorityBonusEnabled').checked = !!channel.input_priority_bonus_enabled;
-  document.getElementById('channelInputPriorityThreshold').value = String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000);
-  document.getElementById('channelInputPriorityBonus').value = String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100);
-  document.getElementById('channelScheduledCheckEnabled').checked = !!channel.scheduled_check_enabled;
-  document.getElementById('channelScheduledCheckModel').value = channel.scheduled_check_model || '';
-  document.getElementById('channelModelFixedPriceEnabled').checked = !!channel.model_fixed_price_enabled;
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
+  const groupSelect = document.getElementById('channelGroup');
+  if (groupSelect) groupSelect.value = String(channel.group_id || 0);
+  setChannelInputValue('channelPriority', channel.priority);
+  setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
+  setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
+  setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
+  setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
+  setChannelCheckboxChecked('channelEnabled', true);
+  setChannelCheckboxChecked('channelCooldownFixedEnabled', !!channel.channel_cooldown_fixed_enabled);
+  setChannelInputValue('channelCooldownFixedSeconds', String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10));
+  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', !!channel.input_priority_bonus_enabled);
+  setChannelInputValue('channelInputPriorityThreshold', String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000));
+  setChannelInputValue('channelInputPriorityBonus', String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100));
+  setChannelCheckboxChecked('channelScheduledCheckEnabled', !!channel.scheduled_check_enabled);
+  setChannelInputValue('channelScheduledCheckModel', channel.scheduled_check_model || '');
+  const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
+  if (fixedPriceEnabled) fixedPriceEnabled.checked = !!channel.model_fixed_price_enabled;
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
@@ -2143,11 +2182,13 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
     const modelKey = model.toLowerCase();
     if (existingModelKeys.has(modelKey)) return;
     existingModelKeys.add(modelKey);
-    rows.push({
+    const normalized = {
       model,
-      redirect_model: (row?.redirect_model || '').trim(),
-      fixed_cost_per_request: formatFixedCostPerRequestValue(row?.fixed_cost_per_request)
-    });
+      redirect_model: (row?.redirect_model || '').trim()
+    };
+    const fixedCost = formatFixedCostPerRequestValue(row?.fixed_cost_per_request);
+    if (fixedCost !== '') normalized.fixed_cost_per_request = fixedCost;
+    rows.push(normalized);
   });
 
   let added = 0;
@@ -2162,11 +2203,13 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
     const fetchedRedirect = (typeof entry === 'object' && entry?.redirect_model)
       ? String(entry.redirect_model).trim()
       : modelName;
-    rows.push({
+    const normalized = {
       model: modelName,
-      redirect_model: fetchedRedirect,
-      fixed_cost_per_request: ''
-    });
+      redirect_model: fetchedRedirect
+    };
+    const fixedCost = formatFixedCostPerRequestValue(typeof entry === 'object' ? entry?.fixed_cost_per_request : '');
+    if (fixedCost !== '') normalized.fixed_cost_per_request = fixedCost;
+    rows.push(normalized);
     added++;
   }
 

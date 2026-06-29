@@ -266,6 +266,56 @@ func (h *HybridStore) DeleteConfig(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (h *HybridStore) CreateChannelGroup(ctx context.Context, group *model.ChannelGroup) error {
+	if err := h.mysql.CreateChannelGroup(ctx, group); err != nil {
+		return err
+	}
+	h.syncToSQLite("CreateChannelGroup", func() error {
+		return h.sqlite.CreateChannelGroup(ctx, group)
+	})
+	return nil
+}
+
+func (h *HybridStore) GetChannelGroup(ctx context.Context, id int64) (*model.ChannelGroup, error) {
+	return h.sqlite.GetChannelGroup(ctx, id)
+}
+
+func (h *HybridStore) ListChannelGroups(ctx context.Context) ([]*model.ChannelGroup, error) {
+	return h.sqlite.ListChannelGroups(ctx)
+}
+
+func (h *HybridStore) UpdateChannelGroup(ctx context.Context, group *model.ChannelGroup) error {
+	if err := h.mysql.UpdateChannelGroup(ctx, group); err != nil {
+		return err
+	}
+	h.syncToSQLite("UpdateChannelGroup", func() error {
+		return h.sqlite.UpdateChannelGroup(ctx, group)
+	})
+	return nil
+}
+
+func (h *HybridStore) DeleteChannelGroup(ctx context.Context, id int64) error {
+	if err := h.mysql.DeleteChannelGroup(ctx, id); err != nil {
+		return err
+	}
+	h.syncToSQLite("DeleteChannelGroup", func() error {
+		return h.sqlite.DeleteChannelGroup(ctx, id)
+	})
+	return nil
+}
+
+func (h *HybridStore) BatchUpdateChannelGroup(ctx context.Context, ids []int64, groupID int64) (int64, error) {
+	affected, err := h.mysql.BatchUpdateChannelGroup(ctx, ids, groupID)
+	if err != nil {
+		return 0, err
+	}
+	h.syncToSQLite("BatchUpdateChannelGroup", func() error {
+		_, err := h.sqlite.BatchUpdateChannelGroup(ctx, ids, groupID)
+		return err
+	})
+	return affected, nil
+}
+
 func (h *HybridStore) GetEnabledChannelsByModel(ctx context.Context, modelName string) ([]*model.Config, error) {
 	return h.sqlite.GetEnabledChannelsByModel(ctx, modelName)
 }

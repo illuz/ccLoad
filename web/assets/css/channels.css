@@ -158,8 +158,8 @@
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
     }
 
-    html[data-theme="dark"] .channel-enable-switch--off,
-    html[data-theme="system"][data-resolved-theme="dark"] .channel-enable-switch--off {
+    html[data-theme="dark"] .channel-enable-switch--off-dark,
+    html[data-theme="system"][data-resolved-theme="dark"] .channel-enable-switch--off-dark {
       background: rgba(148, 163, 184, 0.28);
       border-color: rgba(148, 163, 184, 0.48);
     }
@@ -498,25 +498,16 @@
     }
 
     .channel-editor-group--primary {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .channel-editor-group--primary .channel-editor-primary-row {
-      min-width: 0;
-    }
-
-    .channel-editor-primary-row--single {
-      display: block;
-    }
-
-    .channel-editor-primary-row--dual {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(320px, max-content);
       column-gap: 20px;
-      row-gap: 8px;
+      row-gap: 2px;
       align-items: start;
+    }
+
+    .channel-editor-group--primary .channel-editor-primary-row {
+      display: contents;
+      min-width: 0;
     }
 
     .channel-editor-primary-field {
@@ -4380,3 +4371,243 @@
       .custom-rules-row .custom-rules-value { grid-area: value; }
       .custom-rules-row .custom-rules-remove-btn { grid-area: remove; justify-self: end; }
     }
+
+/* ===== 渠道分组（纯标签/视图） ===== */
+.channels-view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.channels-view-switch .btn.active {
+  background: var(--primary-500);
+  border-color: var(--primary-500);
+  color: #fff;
+}
+
+.channel-group-badge {
+  --channel-group-color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 92px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--channel-group-color) 36%, transparent);
+  background: color-mix(in srgb, var(--channel-group-color) 10%, transparent);
+  color: var(--neutral-700);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.channel-group-badge__dot,
+.channel-group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--channel-group-color, #64748b);
+  flex: 0 0 auto;
+}
+
+.channel-grouped-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.channel-group-section {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-bg);
+  overflow: visible;
+}
+
+.channel-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface-bg-muted);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.channel-group-section--collapsed .channel-group-header {
+  border-bottom: 0;
+  border-radius: var(--radius-lg);
+}
+
+.channel-group-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--neutral-900);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.channel-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-group-count,
+.channel-group-list-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--neutral-100);
+  color: var(--neutral-600);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.channel-group-content {
+  padding: 0;
+}
+
+.channel-group-content .channel-table-container {
+  border: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: none;
+}
+
+.channel-group-manager-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 18px;
+}
+
+.channel-group-list-panel,
+.channel-group-form-panel {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-bg-muted);
+  padding: 14px;
+}
+
+.channel-group-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.channel-group-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--neutral-900);
+}
+
+.channel-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.channel-group-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-base);
+  background: var(--surface-bg);
+  color: var(--neutral-800);
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.channel-group-list-item.active {
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-500) 16%, transparent);
+}
+
+.channel-group-list-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.channel-group-form-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.channel-group-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-group-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.channel-group-color-option {
+  --channel-group-color: #64748b;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--channel-group-color);
+  cursor: pointer;
+}
+
+.channel-group-color-option.active {
+  border-color: var(--neutral-900);
+  box-shadow: 0 0 0 2px var(--surface-bg), 0 0 0 4px var(--channel-group-color);
+}
+
+.channel-group-count-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px dashed var(--surface-border-strong);
+  border-radius: var(--radius-base);
+  color: var(--neutral-700);
+}
+
+.channel-group-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--neutral-500);
+}
+
+.channel-batch-action--group {
+  color: var(--primary-700);
+  background: var(--primary-50);
+  border-color: var(--primary-200);
+}
+
+@media (max-width: 768px) {
+  .channel-group-manager-body {
+    grid-template-columns: 1fr;
+  }
+  .channel-group-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

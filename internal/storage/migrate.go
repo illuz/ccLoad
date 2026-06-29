@@ -45,6 +45,7 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	// 表定义（顺序重要：外键依赖）
 	tables := []func() *schema.TableBuilder{
 		schema.DefineSchemaMigrationsTable, // 迁移版本表必须最先创建
+		schema.DefineChannelGroupsTable,
 		schema.DefineChannelsTable,
 		schema.DefineAPIKeysTable,
 		schema.DefineChannelModelsTable,
@@ -113,6 +114,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := ensureChannelsMaxConcurrency(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels max_concurrency: %w", err)
+			}
+			if err := ensureChannelsGroupID(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels group_id: %w", err)
 			}
 			if err := ensureChannelsProtocolTransformMode(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels protocol_transform_mode: %w", err)
