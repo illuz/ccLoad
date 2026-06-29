@@ -27,6 +27,8 @@ const (
 	SSEProbeSize = 2 * 1024
 	// softErrorProbeSize 用于探测 HTTP 200 非流响应里的结构化错误。
 	softErrorProbeSize = 512
+	// minSoftErrorProbeBytes 避免底层包装 reader 单次只返回 UTF-8 多字节文本的首字节，导致前缀匹配失败。
+	minSoftErrorProbeBytes = 4
 	// defaultSoftErrorTextPrefixes 是短纯文本软错误前缀的默认配置，一行一个前缀。
 	defaultSoftErrorTextPrefixes = "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用\n本公益 key 仅支持在 AI 编程客户端使用"
 )
@@ -1071,11 +1073,15 @@ func markFirstStreamResponse(reqCtx *requestContext, readStats *streamReadStats,
 	}
 }
 
-func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, channelType string) bool {
+func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, cfg *model.Config, channelType string) bool {
 	if resp.StatusCode != http.StatusOK || reqCtx.isStreaming {
 		return false
 	}
-	if !shouldCheckSoftErrorForChannelType(channelType) {
+	cfgChannelType := ""
+	if cfg != nil {
+		cfgChannelType = cfg.GetChannelType()
+	}
+	if !shouldCheckSoftErrorForChannelType(channelType) && !shouldCheckSoftErrorForChannelType(cfgChannelType) {
 		return false
 	}
 	ct := resp.Header.Get("Content-Type")
@@ -1124,19 +1130,24 @@ func (s *Server) probeSoftErrorResponse(
 	channelType string,
 	readStats *streamReadStats,
 ) (handled bool, res *fwResult, duration float64, err error) {
-	if !shouldProbeSoftError(reqCtx, resp, channelType) {
+	if !shouldProbeSoftError(reqCtx, resp, cfg, channelType) {
 		return false, nil, 0, nil
 	}
 
 	ct := resp.Header.Get("Content-Type")
 	buf := make([]byte, softErrorProbeSize)
-	n, readErr := resp.Body.Read(buf)
+	n, readErr := io.ReadAtLeast(resp.Body, buf, minSoftErrorProbeBytes)
+	if readErr == io.ErrUnexpectedEOF || readErr == io.ErrShortBuffer {
+		readErr = nil
+	}
 	if readErr != nil && readErr != io.EOF {
 		log.Printf("[WARN] 软错误检测读取失败: %v", readErr)
 	}
 
 	validData := buf[:n]
-	if n > 0 && checkSoftError(validData, ct, s.softErrorTextPrefixes()) {
+	prefixes := s.softErrorTextPrefixes()
+	matched := n > 0 && checkSoftError(validData, ct, prefixes)
+	if matched {
 		log.Printf("[WARN] [软错误检测] 渠道ID=%d, 响应200但疑似错误响应: %s", cfg.ID, truncateErr(safeBodyToString(validData)))
 		resp.StatusCode = classifySSEErrorStatus(validData)
 		prependToBody(resp, validData)
