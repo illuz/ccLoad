@@ -1142,6 +1142,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.toLowercase': '转为小写',
   'channels.testApiKey': '测试API Key',
   'channels.copyChannelTitle': '复制渠道',
+  'channels.refreshBalanceTitle': '刷新余额',
   'channels.toggleEnable': '启用渠道',
   'channels.toggleDisable': '禁用渠道',
   // 模态框标题
@@ -1206,6 +1207,9 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.sortSaveFailed': '保存排序失败',
   'channels.priorityUpdateSuccess': '优先级已更新',
   'channels.priorityUpdateFailed': '优先级更新失败',
+  'channels.refreshBalanceSuccess': '余额已刷新',
+  'channels.refreshBalanceFailed': '余额刷新失败',
+  'channels.refreshBalanceUnavailable': '该渠道未配置余额脚本',
   'channels.loadChannelsFailed': '无法加载渠道列表',
   'channels.channelAdded': '渠道已添加',
   'channels.channelUpdated': '渠道已更新',

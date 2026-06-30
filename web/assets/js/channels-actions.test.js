@@ -18,6 +18,16 @@ test('渠道卡片模板包含复制操作按钮', () => {
   assert.match(template, /data-channel-name="\{\{name\}\}"/);
 });
 
+test('渠道卡片模板包含手动刷新余额操作按钮', () => {
+  const templateMatch = html.match(/<template id="tpl-channel-card">[\s\S]*?<\/template>/);
+  assert.ok(templateMatch, '缺少 tpl-channel-card 模板');
+
+  const template = templateMatch[0];
+  assert.match(template, /data-action="refresh-balance"/);
+  assert.match(template, /\{\{\{refreshBalanceButtonAttrs\}\}\}/);
+  assert.match(template, /title="\{\{refreshBalanceTitle\}\}"/);
+});
+
 test('渠道卡片模板保留上游协议徽章并为额外协议标签预留插槽', () => {
   const templateMatch = html.match(/<template id="tpl-channel-card">[\s\S]*?<\/template>/);
   assert.ok(templateMatch, '缺少 tpl-channel-card 模板');
@@ -132,14 +142,14 @@ test('操作列把冷却标记固定到右上角，移动端再退回普通流�
   assert.match(css, /\.channel-table\s+\.ch-action-statuses\s*\{[\s\S]*?position:\s*static;[\s\S]*?justify-content:\s*center;/);
 });
 
-test('操作列为四个操作按钮保留足够宽度', () => {
+test('操作列为五个操作按钮保留足够宽度', () => {
   const actionsColumnStyle = css.match(/\.ch-col-actions\s*\{[^}]+\}/);
   assert.ok(actionsColumnStyle, '缺少 .ch-col-actions 样式');
 
   const styleBlock = actionsColumnStyle[0];
-  assert.match(styleBlock, /width:\s*136px/);
-  assert.match(styleBlock, /min-width:\s*136px/);
-  assert.match(styleBlock, /max-width:\s*136px/);
+  assert.match(styleBlock, /width:\s*168px/);
+  assert.match(styleBlock, /min-width:\s*168px/);
+  assert.match(styleBlock, /max-width:\s*168px/);
 });
 
 test('启用列使用绿色和灰色开关样式', () => {

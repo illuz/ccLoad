@@ -15,6 +15,10 @@ function loadRenderSandbox(overrides = {}) {
         if (key === 'channels.stats.successRate') return `成功率 ${params.rate}`;
         if (key === 'channels.priorityUpdateSuccess') return '优先级已更新';
         if (key === 'channels.priorityUpdateFailed') return '优先级更新失败';
+        if (key === 'channels.refreshBalanceTitle') return '刷新余额';
+        if (key === 'channels.refreshBalanceSuccess') return '余额已刷新';
+        if (key === 'channels.refreshBalanceFailed') return '余额刷新失败';
+        if (key === 'channels.refreshBalanceUnavailable') return '该渠道未配置余额脚本';
         if (key === 'channels.stats.firstByte') return '首字';
         if (key === 'channels.stats.calls') return '调用';
         if (key === 'channels.table.lastSuccess') return '最后成功';
@@ -284,6 +288,129 @@ test('buildChannelUpstreamBalanceHtml 渲染上游余额摘要', () => {
   assert.match(html, /今日已用/);
   assert.match(html, /2\.5/);
   assert.match(html, /已使用 25\.0%/);
+});
+
+test('createChannelCard 仅在配置了余额脚本时显示手动刷新按钮', () => {
+  const { createChannelCard } = loadRenderHelpers();
+
+  const visibleCard = createChannelCard({
+    id: 31,
+    name: '有余额脚本',
+    channel_type: 'openai',
+    protocol_transforms: [],
+    url: 'https://balance.example.com',
+    models: [],
+    priority: 1,
+    enabled: true,
+    balance_query_script: '({ request: { url: "{{baseUrl}}/user/balance" }, extractor: function(response) { return response; } })'
+  });
+  const hiddenCard = createChannelCard({
+    id: 32,
+    name: '无余额脚本',
+    channel_type: 'openai',
+    protocol_transforms: [],
+    url: 'https://plain.example.com',
+    models: [],
+    priority: 1,
+    enabled: true,
+    balance_query_script: ''
+  });
+
+  assert.equal(visibleCard.refreshBalanceButtonAttrs, '');
+  assert.equal(visibleCard.refreshBalanceTitle, '刷新余额');
+  assert.match(hiddenCard.refreshBalanceButtonAttrs, /hidden/);
+});
+
+test('refreshChannelUpstreamBalance 调用接口并更新本地余额快照', async () => {
+  const successMessages = [];
+  const renderSnapshots = [];
+  const channels = [{
+    id: 17,
+    name: '余额渠道',
+    balance_query_script: '({ request: { url: "{{baseUrl}}/user/balance" }, extractor: function(response) { return response; } })',
+    upstream_balance: { status: 'ready', remaining: 1, total: 2, used: 1, unit: 'USD' }
+  }];
+
+  const { refreshChannelUpstreamBalance } = loadRenderSandbox({
+    channels,
+    filteredChannels: channels,
+    fetchDataWithAuth: async (url, options = {}) => {
+      assert.equal(url, '/admin/channels/17/refresh-balance');
+      assert.equal(options.method, 'POST');
+      return {
+        status: 'ready',
+        remaining: 8.5,
+        total: 10,
+        used: 1.5,
+        unit: 'USD',
+        extra: '已使用 15.0%'
+      };
+    },
+    filterChannels() {
+      const snapshot = channels[0].upstream_balance;
+      renderSnapshots.push(snapshot ? { ...snapshot } : snapshot);
+    },
+    window: {
+      t(key) {
+        if (key === 'channels.refreshBalanceSuccess') return '余额已刷新';
+        if (key === 'channels.refreshBalanceFailed') return '余额刷新失败';
+        if (key === 'channels.refreshBalanceUnavailable') return '该渠道未配置余额脚本';
+        return key;
+      },
+      showSuccess(message) {
+        successMessages.push(message);
+      },
+      showError(message) {
+        throw new Error(message);
+      }
+    }
+  });
+
+  await refreshChannelUpstreamBalance(17);
+
+  assert.equal(renderSnapshots[0].status, 'pending');
+  assert.equal(channels[0].upstream_balance.remaining, 8.5);
+  assert.equal(channels[0].upstream_balance.total, 10);
+  assert.equal(renderSnapshots.at(-1).remaining, 8.5);
+  assert.deepEqual(successMessages, ['余额已刷新']);
+});
+
+test('refreshChannelUpstreamBalance 失败时渲染错误快照并提示错误', async () => {
+  const errorMessages = [];
+  const channels = [{
+    id: 19,
+    name: '失败余额渠道',
+    balance_query_script: '({ request: { url: "{{baseUrl}}/api/usage" }, extractor: function(response) { return response; } })',
+    upstream_balance: { status: 'ready', remaining: 4 }
+  }];
+
+  const { refreshChannelUpstreamBalance } = loadRenderSandbox({
+    channels,
+    filteredChannels: channels,
+    fetchDataWithAuth: async () => {
+      throw new Error('HTTP 502');
+    },
+    filterChannels() {},
+    window: {
+      t(key) {
+        if (key === 'channels.refreshBalanceFailed') return '余额刷新失败';
+        if (key === 'channels.refreshBalanceUnavailable') return '该渠道未配置余额脚本';
+        return key;
+      },
+      showSuccess() {
+        throw new Error('should not succeed');
+      },
+      showError(message) {
+        errorMessages.push(message);
+      }
+    }
+  });
+
+  await refreshChannelUpstreamBalance(19);
+
+  assert.equal(channels[0].upstream_balance.status, 'error');
+  assert.equal(channels[0].upstream_balance.error, 'HTTP 502');
+  assert.deepEqual(errorMessages, ['HTTP 502']);
 });
 
 test('copyChannelLastRequestFailure 复制详情里的完整失败日志', async () => {

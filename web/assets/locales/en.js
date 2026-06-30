@@ -1142,6 +1142,7 @@ window.I18N_LOCALES['en'] = {
   'channels.toLowercase': 'Convert to lowercase',
   'channels.testApiKey': 'Test API Key',
   'channels.copyChannelTitle': 'Copy Channel',
+  'channels.refreshBalanceTitle': 'Refresh Balance',
   'channels.toggleEnable': 'Enable Channel',
   'channels.toggleDisable': 'Disable Channel',
   // Modal Titles
@@ -1206,6 +1207,9 @@ window.I18N_LOCALES['en'] = {
   'channels.sortSaveFailed': 'Failed to save sort order',
   'channels.priorityUpdateSuccess': 'Priority updated',
   'channels.priorityUpdateFailed': 'Failed to update priority',
+  'channels.refreshBalanceSuccess': 'Balance refreshed',
+  'channels.refreshBalanceFailed': 'Failed to refresh balance',
+  'channels.refreshBalanceUnavailable': 'This channel has no balance query script configured',
   'channels.loadChannelsFailed': 'Unable to load channel list',
   'channels.channelAdded': 'Channel added',
   'channels.channelUpdated': 'Channel updated',

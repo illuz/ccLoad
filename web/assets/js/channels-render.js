@@ -273,6 +273,89 @@ function updateLocalChannelPriority(channelId, priority) {
   if (typeof filteredChannels !== 'undefined') updateList(filteredChannels);
 }
 
+function getLocalChannelById(channelId) {
+  const numericChannelId = Number(channelId);
+  if (!Number.isFinite(numericChannelId) || numericChannelId <= 0) return null;
+
+  const lists = [];
+  if (typeof channels !== 'undefined') lists.push(channels);
+  if (typeof filteredChannels !== 'undefined') lists.push(filteredChannels);
+
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    const found = list.find((channel) => Number(channel && channel.id) === numericChannelId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function cloneChannelUpstreamBalanceSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot || null;
+  return { ...snapshot };
+}
+
+function updateLocalChannelUpstreamBalance(channelId, upstreamBalance) {
+  const numericChannelId = Number(channelId);
+  if (!Number.isFinite(numericChannelId) || numericChannelId <= 0) return;
+
+  const updateList = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((channel) => {
+      if (Number(channel && channel.id) !== numericChannelId) return;
+      channel.upstream_balance = cloneChannelUpstreamBalanceSnapshot(upstreamBalance);
+    });
+  };
+
+  if (typeof channels !== 'undefined') updateList(channels);
+  if (typeof filteredChannels !== 'undefined') updateList(filteredChannels);
+}
+
+function rerenderChannelsAfterBalanceUpdate() {
+  if (typeof filterChannels === 'function') {
+    filterChannels();
+    return;
+  }
+  if (typeof renderChannels === 'function') {
+    const nextChannels = typeof filteredChannels !== 'undefined' ? filteredChannels : channels;
+    renderChannels(nextChannels);
+  }
+}
+
+function channelHasBalanceQueryScript(channel) {
+  return Boolean(String(channel && channel.balance_query_script || '').trim());
+}
+
+async function refreshChannelUpstreamBalance(channelId) {
+  const numericChannelId = Number(channelId);
+  if (!Number.isFinite(numericChannelId) || numericChannelId <= 0) return;
+
+  const channel = getLocalChannelById(numericChannelId);
+  if (!channelHasBalanceQueryScript(channel)) {
+    if (window.showError) window.showError(window.t('channels.refreshBalanceUnavailable'));
+    return;
+  }
+
+  updateLocalChannelUpstreamBalance(numericChannelId, { status: 'pending' });
+  rerenderChannelsAfterBalanceUpdate();
+
+  try {
+    const snapshot = await fetchDataWithAuth(`/admin/channels/${numericChannelId}/refresh-balance`, {
+      method: 'POST'
+    });
+    updateLocalChannelUpstreamBalance(numericChannelId, snapshot);
+    rerenderChannelsAfterBalanceUpdate();
+    if (window.showSuccess) window.showSuccess(window.t('channels.refreshBalanceSuccess'));
+  } catch (error) {
+    const message = error && error.message ? error.message : window.t('channels.refreshBalanceFailed');
+    updateLocalChannelUpstreamBalance(numericChannelId, {
+      status: 'error',
+      error: message
+    });
+    rerenderChannelsAfterBalanceUpdate();
+    if (window.showError) window.showError(message);
+  }
+}
+
 async function saveInlineChannelPriority(input) {
   if (!input) return;
   const channelId = Number(input.dataset.channelId);
@@ -773,6 +856,12 @@ function createChannelCard(channel) {
   if (batchRefreshResult && batchRefreshResult.status) {
     rowClasses.push(`channel-row-refresh-${batchRefreshResult.status}`);
   }
+  const hasBalanceScript = channelHasBalanceQueryScript(channel);
+  const upstreamBalanceStatus = String(channel && channel.upstream_balance && channel.upstream_balance.status || '').toLowerCase();
+  const refreshBalanceButtonAttrs = [
+    hasBalanceScript ? '' : 'hidden aria-hidden="true" tabindex="-1"',
+    upstreamBalanceStatus === 'pending' ? 'disabled' : ''
+  ].filter(Boolean).join(' ');
 
   // 准备模板数据
   const cardData = {
@@ -786,6 +875,8 @@ function createChannelCard(channel) {
     url: channel.url,
     batchRefreshStatusHtml: buildBatchRefreshStatusHtml(batchRefreshResult),
     upstreamBalanceHtml: buildChannelUpstreamBalanceHtml(channel.upstream_balance),
+    refreshBalanceButtonAttrs,
+    refreshBalanceTitle: window.t('channels.refreshBalanceTitle'),
     modelsText: modelsText,
     priority: channel.priority,
     effectivePriorityHtml: buildEffectivePriorityHtml(channel),
@@ -910,6 +1001,10 @@ function initChannelEventDelegation() {
         break;
       case 'test':
         testChannel(channelId, channelName);
+        break;
+      case 'refresh-balance':
+        btn.disabled = true;
+        void refreshChannelUpstreamBalance(channelId);
         break;
       case 'toggle':
         toggleChannel(channelId, !enabled);
