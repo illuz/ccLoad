@@ -23,6 +23,19 @@ PM2_EXISTS_BEFORE=0
 DEPLOYED_BINARY=0
 OLD_BIN_PRESENT=0
 
+pm2_with_clean_proxy_env() {
+  env \
+    HTTP_PROXY= \
+    HTTPS_PROXY= \
+    ALL_PROXY= \
+    NO_PROXY= \
+    http_proxy= \
+    https_proxy= \
+    all_proxy= \
+    no_proxy= \
+    "$PM2_BIN" "$@"
+}
+
 install_binary_atomically() {
   local src="$1"
   local dst="$2"
@@ -45,8 +58,8 @@ rollback() {
 
   if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
     echo "==> Restoring previous PM2 process"
-    "$PM2_BIN" restart "$APP_NAME" --update-env >/dev/null 2>&1 \
-      || "$PM2_BIN" start "$BIN_PATH" \
+    pm2_with_clean_proxy_env restart "$APP_NAME" --update-env >/dev/null 2>&1 \
+      || pm2_with_clean_proxy_env start "$BIN_PATH" \
         --name "$APP_NAME" \
         --cwd "$RUNTIME_DIR" \
         --interpreter none \
@@ -159,10 +172,10 @@ fi
 
 if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
   echo "==> Restarting PM2 app: $APP_NAME"
-  "$PM2_BIN" restart "$APP_NAME" --update-env
+  pm2_with_clean_proxy_env restart "$APP_NAME" --update-env
 else
   echo "==> Starting PM2 app: $APP_NAME"
-  "$PM2_BIN" start "$BIN_PATH" \
+  pm2_with_clean_proxy_env start "$BIN_PATH" \
     --name "$APP_NAME" \
     --cwd "$RUNTIME_DIR" \
     --interpreter none \
@@ -174,7 +187,7 @@ fi
 if [[ "$ANALYZER_ENABLED" == "1" ]]; then
   echo "==> Starting PM2 debug analyzer: $ANALYZER_NAME"
   "$PM2_BIN" delete "$ANALYZER_NAME" >/dev/null 2>&1 || true
-  "$PM2_BIN" start "$ANALYZER_RUNTIME_SCRIPT" \
+  pm2_with_clean_proxy_env start "$ANALYZER_RUNTIME_SCRIPT" \
     --name "$ANALYZER_NAME" \
     --cwd "$RUNTIME_DIR" \
     --interpreter "$PYTHON_BIN" \

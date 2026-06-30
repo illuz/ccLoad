@@ -16,6 +16,19 @@ if [[ -z "$PM2_BIN" ]]; then
   exit 1
 fi
 
+pm2_with_clean_proxy_env() {
+  env \
+    HTTP_PROXY= \
+    HTTPS_PROXY= \
+    ALL_PROXY= \
+    NO_PROXY= \
+    http_proxy= \
+    https_proxy= \
+    all_proxy= \
+    no_proxy= \
+    "$PM2_BIN" "$@"
+}
+
 install_binary_atomically() {
   local src="$1"
   local dst="$2"
@@ -60,10 +73,10 @@ install_binary_atomically "$LATEST_BACKUP" "$BIN_PATH"
 
 if "$PM2_BIN" describe "$APP_NAME" >/dev/null 2>&1; then
   echo "==> Restarting existing PM2 app: $APP_NAME"
-  "$PM2_BIN" restart "$APP_NAME" --update-env
+  pm2_with_clean_proxy_env restart "$APP_NAME" --update-env
 else
   echo "==> Starting PM2 app: $APP_NAME"
-  "$PM2_BIN" start "$BIN_PATH" \
+  pm2_with_clean_proxy_env start "$BIN_PATH" \
     --name "$APP_NAME" \
     --cwd "$RUNTIME_DIR" \
     --interpreter none \
