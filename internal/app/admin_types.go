@@ -42,6 +42,7 @@ type ChannelRequest struct {
 	DailyCostLimit              float64                   `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
 	CostMultiplier              float64                   `json:"cost_multiplier"`  // 成本倍率（默认1，0=免费，>=0）
 	CustomRequestRules          *model.CustomRequestRules `json:"custom_request_rules,omitempty"`
+	BalanceQueryScript          string                    `json:"balance_query_script,omitempty"`
 	ProxyURL                    string                    `json:"proxy_url,omitempty"` // 渠道级代理（http/https/socks5/socks5h）
 }
 
@@ -203,6 +204,10 @@ func (cr *ChannelRequest) Validate() error {
 	if cr.CustomRequestRules != nil && cr.CustomRequestRules.IsEmpty() {
 		cr.CustomRequestRules = nil
 	}
+	cr.BalanceQueryScript = strings.TrimSpace(cr.BalanceQueryScript)
+	if err := validateChannelBalanceQueryScript(cr.BalanceQueryScript); err != nil {
+		return err
+	}
 
 	cr.ProxyURL = strings.TrimSpace(cr.ProxyURL)
 	if cr.ProxyURL != "" {
@@ -280,6 +285,7 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		DailyCostLimit:              cr.DailyCostLimit,
 		CostMultiplier:              cr.CostMultiplier,
 		CustomRequestRules:          cr.CustomRequestRules,
+		BalanceQueryScript:          cr.BalanceQueryScript,
 		ProxyURL:                    cr.ProxyURL,
 	}
 }
@@ -458,12 +464,13 @@ type KeyCooldownInfo struct {
 // ChannelWithCooldown 带冷却状态的渠道响应结构
 type ChannelWithCooldown struct {
 	*model.Config
-	KeyStrategy         string            `json:"key_strategy,omitempty"` // [INFO] 修复 (2025-10-11): 添加key_strategy字段
-	CooldownUntil       *time.Time        `json:"cooldown_until,omitempty"`
-	CooldownRemainingMS int64             `json:"cooldown_remaining_ms,omitempty"`
-	KeyCooldowns        []KeyCooldownInfo `json:"key_cooldowns,omitempty"`
-	EffectivePriority   *float64          `json:"effective_priority,omitempty"` // 健康度模式下的有效优先级
-	SuccessRate         *float64          `json:"success_rate,omitempty"`       // 成功率(0-1)
+	KeyStrategy         string                  `json:"key_strategy,omitempty"` // [INFO] 修复 (2025-10-11): 添加key_strategy字段
+	CooldownUntil       *time.Time              `json:"cooldown_until,omitempty"`
+	CooldownRemainingMS int64                   `json:"cooldown_remaining_ms,omitempty"`
+	KeyCooldowns        []KeyCooldownInfo       `json:"key_cooldowns,omitempty"`
+	EffectivePriority   *float64                `json:"effective_priority,omitempty"` // 健康度模式下的有效优先级
+	SuccessRate         *float64                `json:"success_rate,omitempty"`       // 成功率(0-1)
+	UpstreamBalance     *ChannelUpstreamBalance `json:"upstream_balance,omitempty"`
 }
 
 // ChannelImportSummary 导入结果统计

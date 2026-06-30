@@ -22,6 +22,9 @@ func TestValidateSettingValue(t *testing.T) {
 		{name: "int_channel_check_interval_ok_0", key: "channel_check_interval_hours", valueType: "int", value: "0", wantErr: false},
 		{name: "int_channel_check_interval_ok_1", key: "channel_check_interval_hours", valueType: "int", value: "1", wantErr: false},
 		{name: "int_channel_check_interval_reject_negative", key: "channel_check_interval_hours", valueType: "int", value: "-1", wantErr: true},
+		{name: "int_channel_balance_refresh_ok_0", key: "channel_balance_refresh_interval_seconds", valueType: "int", value: "0", wantErr: false},
+		{name: "int_channel_balance_refresh_ok_300", key: "channel_balance_refresh_interval_seconds", valueType: "int", value: "300", wantErr: false},
+		{name: "int_channel_balance_refresh_reject_negative", key: "channel_balance_refresh_interval_seconds", valueType: "int", value: "-1", wantErr: true},
 
 		{name: "int_log_retention_days_ok_disabled", key: "log_retention_days", valueType: "int", value: "-1", wantErr: false},
 		{name: "int_log_retention_days_reject_0", key: "log_retention_days", valueType: "int", value: "0", wantErr: true},

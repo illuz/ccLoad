@@ -22,7 +22,7 @@ func (s *SQLStore) ListConfigs(ctx context.Context) ([]*model.Config, error) {
 	query := `
 			SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency, c.channel_type, c.protocol_transform_mode, c.enabled,
 			       c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 			       SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -58,7 +58,7 @@ func (s *SQLStore) GetConfig(ctx context.Context, id int64) (*model.Config, erro
 	query := `
 			SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency, c.channel_type, c.protocol_transform_mode, c.enabled,
 			       c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 			       SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -97,7 +97,7 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 		query = `
 	            SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency,
 	                   c.channel_type, c.protocol_transform_mode, c.enabled, c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 	                   SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 	                   c.created_at, c.updated_at
 	            FROM channels c
@@ -112,7 +112,7 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 		query = `
 	            SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency,
 	                   c.channel_type, c.protocol_transform_mode, c.enabled, c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 	                   SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 	                   c.created_at, c.updated_at
 	            FROM channels c
@@ -153,7 +153,7 @@ func (s *SQLStore) GetEnabledChannelsByType(ctx context.Context, channelType str
 	query := `
 	       SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency,
 		       c.channel_type, c.protocol_transform_mode, c.enabled, c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-		       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+		       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 			       SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -196,7 +196,7 @@ func (s *SQLStore) GetEnabledChannelsByModelAndProtocol(ctx context.Context, mod
 	query := `
 		SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency,
 		       c.channel_type, c.protocol_transform_mode, c.enabled, c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
-		       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.proxy_url,
+		       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit, c.cost_multiplier, c.model_fixed_price_enabled, c.custom_request_rules, c.balance_query_script, c.proxy_url,
 		       SUM(CASE WHEN k.id IS NOT NULL AND k.disabled = 0 THEN 1 ELSE 0 END) as key_count,
 		       c.created_at, c.updated_at
 		FROM channels c
@@ -278,16 +278,17 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 	if err != nil {
 		return nil, err
 	}
+	balanceQueryScript := sql.NullString{String: strings.TrimSpace(c.BalanceQueryScript), Valid: strings.TrimSpace(c.BalanceQueryScript) != ""}
 
 	id := c.ID
 	err = s.WithTransaction(ctx, func(tx *sql.Tx) error {
 		if id == 0 {
 			// 插入渠道记录（数据库生成自增 id）
 			res, err := tx.ExecContext(ctx, `
-			INSERT INTO channels(name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, proxy_url, created_at, updated_at)
-				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO channels(name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, balance_query_script, proxy_url, created_at, updated_at)
+				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`, c.Name, c.GroupID, c.URL, c.Priority, c.RPMLimit, c.MaxConcurrency, channelType, protocolTransformMode,
-				boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, c.ProxyURL, nowUnix, nowUnix)
+				boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, balanceQueryScript, c.ProxyURL, nowUnix, nowUnix)
 			if err != nil {
 				return err
 			}
@@ -300,17 +301,17 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 			// 显式主键：用于混合存储同步/恢复，保证两端主键一致
 			if s.IsSQLite() {
 				_, err := tx.ExecContext(ctx, `
-				INSERT INTO channels(id, name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, proxy_url, created_at, updated_at)
-					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO channels(id, name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, balance_query_script, proxy_url, created_at, updated_at)
+					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				`, id, c.Name, c.GroupID, c.URL, c.Priority, c.RPMLimit, c.MaxConcurrency, channelType, protocolTransformMode,
-					boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, c.ProxyURL, nowUnix, nowUnix)
+					boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, balanceQueryScript, c.ProxyURL, nowUnix, nowUnix)
 				if err != nil {
 					return err
 				}
 			} else {
 				_, err := tx.ExecContext(ctx, `
-				INSERT INTO channels(id, name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, proxy_url, created_at, updated_at)
-					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO channels(id, name, group_id, url, priority, rpm_limit, max_concurrency, channel_type, protocol_transform_mode, enabled, scheduled_check_enabled, scheduled_check_model, channel_cooldown_fixed_enabled, channel_cooldown_fixed_seconds, input_priority_bonus_enabled, input_priority_threshold, input_priority_bonus, daily_cost_limit, cost_multiplier, model_fixed_price_enabled, custom_request_rules, balance_query_script, proxy_url, created_at, updated_at)
+					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					ON DUPLICATE KEY UPDATE
 						name = VALUES(name),
 						group_id = VALUES(group_id),
@@ -332,10 +333,11 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 					cost_multiplier = VALUES(cost_multiplier),
 					model_fixed_price_enabled = VALUES(model_fixed_price_enabled),
 						custom_request_rules = VALUES(custom_request_rules),
+						balance_query_script = VALUES(balance_query_script),
 						proxy_url = VALUES(proxy_url),
 						updated_at = VALUES(updated_at)
 				`, id, c.Name, c.GroupID, c.URL, c.Priority, c.RPMLimit, c.MaxConcurrency, channelType, protocolTransformMode,
-					boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, c.ProxyURL, nowUnix, nowUnix)
+					boolToInt(c.Enabled), boolToInt(c.ScheduledCheckEnabled), c.ScheduledCheckModel, boolToInt(c.ChannelCooldownFixedEnabled), max(c.ChannelCooldownFixedSeconds, 1), boolToInt(c.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(c.InputPriorityThreshold), normalizeInputPriorityBonus(c.InputPriorityBonus), c.DailyCostLimit, normalizeCostMultiplier(c.CostMultiplier), boolToInt(c.ModelFixedPriceEnabled), customRules, balanceQueryScript, c.ProxyURL, nowUnix, nowUnix)
 				if err != nil {
 					return err
 				}
@@ -396,16 +398,17 @@ func (s *SQLStore) UpdateConfig(ctx context.Context, id int64, upd *model.Config
 	if err != nil {
 		return nil, err
 	}
+	balanceQueryScript := sql.NullString{String: strings.TrimSpace(upd.BalanceQueryScript), Valid: strings.TrimSpace(upd.BalanceQueryScript) != ""}
 	updatedAtUnix := timeToUnix(time.Now())
 
 	err = s.WithTransaction(ctx, func(tx *sql.Tx) error {
 		// 更新渠道记录
 		_, err := tx.ExecContext(ctx, `
 			UPDATE channels
-			SET name=?, group_id=?, url=?, priority=?, rpm_limit=?, max_concurrency=?, channel_type=?, protocol_transform_mode=?, enabled=?, scheduled_check_enabled=?, scheduled_check_model=?, channel_cooldown_fixed_enabled=?, channel_cooldown_fixed_seconds=?, input_priority_bonus_enabled=?, input_priority_threshold=?, input_priority_bonus=?, daily_cost_limit=?, cost_multiplier=?, model_fixed_price_enabled=?, custom_request_rules=?, proxy_url=?, updated_at=?
+			SET name=?, group_id=?, url=?, priority=?, rpm_limit=?, max_concurrency=?, channel_type=?, protocol_transform_mode=?, enabled=?, scheduled_check_enabled=?, scheduled_check_model=?, channel_cooldown_fixed_enabled=?, channel_cooldown_fixed_seconds=?, input_priority_bonus_enabled=?, input_priority_threshold=?, input_priority_bonus=?, daily_cost_limit=?, cost_multiplier=?, model_fixed_price_enabled=?, custom_request_rules=?, balance_query_script=?, proxy_url=?, updated_at=?
 		WHERE id=?
 		`, name, upd.GroupID, url, upd.Priority, upd.RPMLimit, upd.MaxConcurrency, channelType, protocolTransformMode,
-			boolToInt(upd.Enabled), boolToInt(upd.ScheduledCheckEnabled), upd.ScheduledCheckModel, boolToInt(upd.ChannelCooldownFixedEnabled), max(upd.ChannelCooldownFixedSeconds, 1), boolToInt(upd.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(upd.InputPriorityThreshold), normalizeInputPriorityBonus(upd.InputPriorityBonus), upd.DailyCostLimit, normalizeCostMultiplier(upd.CostMultiplier), boolToInt(upd.ModelFixedPriceEnabled), customRules, upd.ProxyURL, updatedAtUnix, id)
+			boolToInt(upd.Enabled), boolToInt(upd.ScheduledCheckEnabled), upd.ScheduledCheckModel, boolToInt(upd.ChannelCooldownFixedEnabled), max(upd.ChannelCooldownFixedSeconds, 1), boolToInt(upd.InputPriorityBonusEnabled), normalizeInputPriorityThreshold(upd.InputPriorityThreshold), normalizeInputPriorityBonus(upd.InputPriorityBonus), upd.DailyCostLimit, normalizeCostMultiplier(upd.CostMultiplier), boolToInt(upd.ModelFixedPriceEnabled), customRules, balanceQueryScript, upd.ProxyURL, updatedAtUnix, id)
 		if err != nil {
 			return err
 		}

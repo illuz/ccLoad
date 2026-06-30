@@ -404,9 +404,19 @@ async function handleChannelSaveSuccess({ isNewChannel, newChannelType, savedCha
   }
   if (typeof saveChannelsFilters === 'function') saveChannelsFilters();
 
+  const effectiveSavedChannelId = Number(response?.data?.id || savedChannelId) || 0;
   const savedChannel = response && response.data
-    ? { ...response.data, id: Number(response.data.id || savedChannelId) || 0 }
+    ? { ...response.data, id: effectiveSavedChannelId }
     : null;
+  if (savedChannel && savedChannel.balance_query_script && effectiveSavedChannelId > 0) {
+    try {
+      await fetchAPIWithAuth(`/admin/channels/${effectiveSavedChannelId}/refresh-balance`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      console.warn('Failed to refresh upstream balance after save', error);
+    }
+  }
   if (savedChannel && typeof upsertChannelLocal === 'function') {
     upsertChannelLocal(savedChannel, { type: nextType });
   }
@@ -581,6 +591,10 @@ async function showAddModal() {
   renderInlineKeyTable();
 
   invokeChannelEditorAction('resetCustomRulesState', null);
+  const proxyUrlInput = document.getElementById('channelProxyURL');
+  if (proxyUrlInput) proxyUrlInput.value = '';
+  const balanceScriptInput = document.getElementById('channelBalanceQueryScript');
+  if (balanceScriptInput) balanceScriptInput.value = '';
 
   resetChannelFormDirty();
   document.getElementById('channelModal').classList.add('show');
@@ -682,6 +696,8 @@ async function editChannel(id) {
 
   const proxyUrlInput = document.getElementById('channelProxyURL');
   if (proxyUrlInput) proxyUrlInput.value = channel.proxy_url || '';
+  const balanceScriptInput = document.getElementById('channelBalanceQueryScript');
+  if (balanceScriptInput) balanceScriptInput.value = channel.balance_query_script || '';
 
   resetChannelFormDirty();
   document.getElementById('channelModal').classList.add('show');
@@ -920,6 +936,7 @@ async function saveChannel(event) {
     scheduled_check_enabled: document.getElementById('channelScheduledCheckEnabled')?.checked === true,
     scheduled_check_model: readChannelInputText('channelScheduledCheckModel', '').trim(),
     custom_request_rules: invokeChannelEditorAction('collectCustomRulesForSubmit') || null,
+    balance_query_script: (document.getElementById('channelBalanceQueryScript')?.value || '').trim(),
     proxy_url: (document.getElementById('channelProxyURL')?.value || '').trim()
   };
 
@@ -1619,6 +1636,11 @@ async function copyChannel(id, name) {
   syncChannelCooldownFixedState();
   syncInputPriorityBonusState();
   syncScheduledCheckModelState();
+  invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
+  const proxyUrlInput = document.getElementById('channelProxyURL');
+  if (proxyUrlInput) proxyUrlInput.value = channel.proxy_url || '';
+  const balanceScriptInput = document.getElementById('channelBalanceQueryScript');
+  if (balanceScriptInput) balanceScriptInput.value = channel.balance_query_script || '';
 
   resetChannelFormDirty();
   document.getElementById('channelModal').classList.add('show');

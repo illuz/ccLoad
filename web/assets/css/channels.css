@@ -1368,6 +1368,84 @@
       display: none;
     }
 
+    .channel-upstream-balance {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-top: 6px;
+      padding: 6px 8px;
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      background: var(--surface-bg-muted);
+      max-width: 100%;
+      font-size: 12px;
+      line-height: 1.35;
+      color: var(--neutral-700);
+    }
+
+    .channel-upstream-balance--invalid {
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+
+    .channel-upstream-balance--pending,
+    .channel-upstream-balance--disabled,
+    .channel-upstream-balance--error {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .channel-upstream-balance__row {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .channel-upstream-balance__label {
+      color: var(--neutral-500);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .channel-upstream-balance__value {
+      color: var(--neutral-800);
+      font-weight: 600;
+    }
+
+    .channel-upstream-balance__unit {
+      color: var(--neutral-500);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .channel-upstream-balance__pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--neutral-100);
+      color: var(--neutral-700);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .channel-upstream-balance__hint {
+      color: var(--neutral-500);
+      font-size: 11px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .channel-upstream-balance__hint--error {
+      color: var(--error-600);
+    }
+
     .ch-last-request-slot {
       margin-top: 5px;
       max-width: 100%;
@@ -4366,6 +4444,33 @@
 
     .custom-rules-anyrouter-hint-list li {
       margin-bottom: 2px;
+    }
+
+    .custom-rules-balance-script {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .custom-rules-balance-script__label {
+      margin: 0;
+    }
+
+    .custom-rules-balance-script__editor {
+      min-height: 156px;
+      resize: vertical;
+      font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      white-space: pre;
+      overflow: auto;
+    }
+
+    .custom-rules-balance-script__hint {
+      color: var(--text-500, #64748b);
+      font-size: 0.78rem;
+      line-height: 1.55;
     }
 
     .custom-rules-footer {

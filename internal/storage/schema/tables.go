@@ -26,6 +26,7 @@ func DefineChannelsTable() *TableBuilder {
 		Column("cost_multiplier DOUBLE NOT NULL DEFAULT 1").
 		Column("model_fixed_price_enabled TINYINT NOT NULL DEFAULT 0").
 		Column("custom_request_rules TEXT").
+		Column("balance_query_script TEXT").
 		Column("proxy_url VARCHAR(255) NOT NULL DEFAULT ''").
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").

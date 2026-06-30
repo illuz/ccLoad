@@ -433,6 +433,7 @@
 
           <!-- 隐藏的input用于表单验证和提交 -->
           <input type="hidden" id="channelApiKey" required>
+          <input type="hidden" id="channelBalanceQueryScript" value="">
 
           <!-- Key表格容器（最多显示5行+滚动） -->
           <div class="inline-table-container mobile-inline-table-container">
@@ -693,6 +694,17 @@
         <input type="text" id="channelProxyURL" class="form-input" value="" style="flex: 1;"
           data-i18n-placeholder="channels.proxyURLPlaceholder"
           placeholder="http:// | socks5://">
+      </div>
+      <div class="custom-rules-balance-script">
+        <label class="form-label custom-rules-balance-script__label" for="channelBalanceQueryScriptEditor"
+          data-i18n="channels.balanceQueryScript">余额脚本</label>
+        <textarea id="channelBalanceQueryScriptEditor" class="form-input custom-rules-balance-script__editor"
+          spellcheck="false"
+          data-i18n-placeholder="channels.balanceQueryScriptPlaceholder"
+          placeholder="({ request: { url: &quot;{{baseUrl}}/user/balance&quot;, method: &quot;GET&quot; }, extractor: function(response) { return { remaining: response.balance, unit: &quot;USD&quot; }; } })"></textarea>
+        <div class="custom-rules-balance-script__hint" data-i18n="channels.balanceQueryScriptHint">
+          使用 () 包裹对象字面量，支持 {{apiKey}} / {{baseUrl}} / {{channelId}} / {{channelName}} / {{keyIndex}} 变量。
+        </div>
       </div>
       <div class="custom-rules-tabs" role="tablist">
         <button type="button" class="custom-rules-tab-button active" data-custom-rules-tab="headers"
@@ -1322,6 +1334,7 @@
             {{{groupBadge}}}
           </div>
           <div class="ch-refresh-result-slot">{{{batchRefreshStatusHtml}}}</div>
+          {{{upstreamBalanceHtml}}}
           {{{healthHtml}}}
           <div class="ch-last-request-slot ch-last-request-slot--desktop">{{{lastRequestFailureHtml}}}</div>
           {{{nameMultiplierBadge}}}

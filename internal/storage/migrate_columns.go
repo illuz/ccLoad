@@ -527,6 +527,10 @@ func ensureChannelsCustomRequestRules(ctx context.Context, db *sql.DB, dialect D
 	return ensureColumn(ctx, db, dialect, "channels", "custom_request_rules", "TEXT", "TEXT")
 }
 
+func ensureChannelsBalanceQueryScript(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "balance_query_script", "TEXT", "TEXT")
+}
+
 func ensureChannelsProxyURL(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "proxy_url",
 		"VARCHAR(255) NOT NULL DEFAULT ''",

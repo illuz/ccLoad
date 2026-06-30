@@ -55,6 +55,7 @@ type Server struct {
 	skipTLSVerify                 bool                  // 透传给渠道级 Transport
 	activeRequests                *activeRequestManager // 进行中请求（内存状态，不持久化）
 	scheduledChannelChecksRunning atomic.Bool
+	channelBalanceRefreshRunning  atomic.Bool
 
 	// 异步统计（有界队列，避免每请求起goroutine）
 	tokenStatsCh        chan tokenStatsUpdate
@@ -87,6 +88,9 @@ type Server struct {
 	channelMetaCache     map[int64]ChannelMeta
 	channelMetaCacheTime time.Time
 	channelMetaCacheMu   sync.RWMutex
+
+	channelBalanceCacheMu sync.RWMutex
+	channelBalanceCache   map[int64]*channelBalanceCacheEntry
 }
 
 // NewServer 创建并初始化一个新的 Server 实例
@@ -179,6 +183,7 @@ func NewServer(store storage.Store) *Server {
 		activeRequests:            newActiveRequestManager(),
 		channelRPMLimiter:         newChannelRPMLimiter(time.Now),
 		channelConcurrencyLimiter: newChannelConcurrencyLimiter(),
+		channelBalanceCache:       make(map[int64]*channelBalanceCacheEntry),
 	}
 
 	reg := protocol.NewRegistry()
@@ -257,8 +262,16 @@ func NewServer(store storage.Store) *Server {
 		s.startScheduledChannelCheckLoop(time.Duration(channelCheckIntervalHours) * time.Hour)
 	}
 
-	return s
+	channelBalanceRefreshIntervalSeconds := normalizeChannelBalanceRefreshIntervalSeconds(
+		configService.GetInt("channel_balance_refresh_interval_seconds", defaultChannelBalanceRefreshIntervalSeconds),
+	)
+	if channelBalanceRefreshIntervalSeconds == 0 {
+		log.Print("[INFO] 渠道余额定时刷新未启用（channel_balance_refresh_interval_seconds=0）")
+	} else {
+		s.startChannelBalanceRefreshLoop(time.Duration(channelBalanceRefreshIntervalSeconds) * time.Second)
+	}
 
+	return s
 }
 
 type channelTypeTimeoutConfig struct {
@@ -789,6 +802,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/channels/:id/url-enable", s.HandleURLEnable)
 		admin.POST("/channels/:id/key-disable", s.HandleAPIKeyDisable)
 		admin.POST("/channels/:id/key-enable", s.HandleAPIKeyEnable)
+		admin.POST("/channels/:id/refresh-balance", s.HandleRefreshChannelBalance)
 		admin.POST("/channels/models/fetch", s.HandleFetchModelsPreview) // 临时渠道配置获取模型列表
 		admin.POST("/channels/models/refresh-batch", s.HandleBatchRefreshModels)
 		admin.GET("/channels/:id/models/fetch", s.HandleFetchModels) // 获取渠道可用模型列表(新增)

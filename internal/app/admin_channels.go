@@ -122,6 +122,7 @@ func (s *Server) handleListChannels(c *gin.Context) {
 	}
 
 	ectx := &channelEnrichmentContext{
+		server:              s,
 		now:                 now,
 		healthEnabled:       healthEnabled,
 		priorityMap:         priorityMap,
@@ -286,6 +287,7 @@ func paginateChannels(cfgs []*model.Config, c *gin.Context) []*model.Config {
 
 // channelEnrichmentContext 聚合 enrichChannel 所需的批量预计算数据，避免长参数列表。
 type channelEnrichmentContext struct {
+	server              *Server
 	now                 time.Time
 	healthEnabled       bool
 	priorityMap         map[int64]float64
@@ -333,6 +335,9 @@ func (ectx *channelEnrichmentContext) enrichChannel(cfg *model.Config) ChannelWi
 		keyCooldowns = append(keyCooldowns, keyInfo)
 	}
 	oc.KeyCooldowns = keyCooldowns
+	if ectx.server != nil {
+		ectx.server.attachChannelBalanceInfo(&oc, cfg)
+	}
 	return oc
 }
 
@@ -503,6 +508,7 @@ func (s *Server) createChannelFromRequest(ctx context.Context, req ChannelReques
 		}
 	}
 
+	s.clearChannelBalanceCache(created.ID)
 	s.InvalidateChannelListCache()
 	return created, nil
 }
@@ -566,10 +572,12 @@ func (s *Server) handleGetChannel(c *gin.Context, id int64) {
 	}
 
 	// 渠道详情返回配置和策略，但仍不返回明文 Key；API Keys 继续走 /keys 端点。
-	RespondJSON(c, http.StatusOK, ChannelWithCooldown{
+	response := ChannelWithCooldown{
 		Config:      cfg,
 		KeyStrategy: channelKeyStrategy(apiKeys),
-	})
+	}
+	s.attachChannelBalanceInfo(&response, cfg)
+	RespondJSON(c, http.StatusOK, response)
 }
 
 // handleGetChannelKeys 获取渠道的所有 API Keys
@@ -714,6 +722,7 @@ func (s *Server) handleAPIKeyToggle(c *gin.Context, disable bool) {
 
 	s.InvalidateAPIKeysCache(id)
 	s.invalidateCooldownCache()
+	s.clearChannelBalanceCache(id)
 	s.InvalidateChannelListCache()
 
 	RespondJSON(c, http.StatusOK, gin.H{"ok": true})
@@ -741,6 +750,7 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 				return
 			}
 			// enabled 状态变更影响渠道选择，必须立即失效缓存
+			s.clearChannelBalanceCache(id)
 			s.InvalidateChannelListCache()
 			RespondJSON(c, http.StatusOK, upd)
 			return
@@ -853,6 +863,7 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	s.invalidateCooldownCache()
 
 	// 渠道更新后刷新缓存，确保选择器立即生效
+	s.clearChannelBalanceCache(id)
 	s.InvalidateChannelListCache()
 
 	// Key变更时必须失效API Keys缓存，否则再次编辑会读到旧缓存
@@ -886,6 +897,7 @@ func (s *Server) handleDeleteChannel(c *gin.Context, id int64) {
 	// 删除渠道后必须同步失效该渠道的 API Keys 缓存，
 	// 否则若后续以同 ID 重新创建渠道（显式主键路径，例如混合存储恢复），可能读到旧 keys。
 	s.InvalidateAPIKeysCache(id)
+	s.clearChannelBalanceCache(id)
 	RespondJSON(c, http.StatusOK, gin.H{"id": id})
 }
 
@@ -959,6 +971,7 @@ func (s *Server) HandleDeleteAPIKey(c *gin.Context) {
 	// 失效缓存
 	s.InvalidateAPIKeysCache(channelID)
 	s.invalidateCooldownCache()
+	s.clearChannelBalanceCache(channelID)
 
 	RespondJSON(c, http.StatusOK, gin.H{
 		"remaining_keys": remaining,

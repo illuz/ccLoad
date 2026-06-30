@@ -47,6 +47,13 @@ function loadRenderSandbox(overrides = {}) {
         if (key === 'channels.batchRefreshDetail') return '展开详情';
         if (key === 'channels.batchRefreshClear') return '清除';
         if (key === 'channels.batchRefreshCopied') return '已复制';
+        if (key === 'channels.upstreamBalance.pending') return '余额查询中';
+        if (key === 'channels.upstreamBalance.disabled') return '余额查询未启用';
+        if (key === 'channels.upstreamBalance.error') return '余额查询失败';
+        if (key === 'channels.upstreamBalance.limit') return '限额';
+        if (key === 'channels.upstreamBalance.usedToday') return '今日已用';
+        if (key === 'channels.upstreamBalance.plan') return '套餐';
+        if (key === 'channels.upstreamBalance.updatedAt') return `更新于 ${params.time}`;
         return key;
       }
     },
@@ -258,6 +265,25 @@ test('buildChannelLastRequestFailureHtml 在最后一次请求失败时生成紧
   assert.doesNotMatch(html, /从未成功/);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test('buildChannelUpstreamBalanceHtml 渲染上游余额摘要', () => {
+  const { buildChannelUpstreamBalanceHtml } = loadRenderHelpers();
+  const html = buildChannelUpstreamBalanceHtml({
+    status: 'ready',
+    remaining: 7.5,
+    total: 10,
+    used: 2.5,
+    unit: 'USD',
+    extra: '已使用 25.0%',
+    updated_at: new Date(Date.now() - 60 * 1000).toISOString()
+  });
+
+  assert.match(html, /限额/);
+  assert.match(html, /7\.5 \/ 10/);
+  assert.match(html, /今日已用/);
+  assert.match(html, /2\.5/);
+  assert.match(html, /已使用 25\.0%/);
 });
 
 test('copyChannelLastRequestFailure 复制详情里的完整失败日志', async () => {

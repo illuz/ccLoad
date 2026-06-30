@@ -476,6 +476,72 @@ function buildProtocolTransformBadges(channelType, protocolTransforms) {
   }).join('')}</span>`;
 }
 
+function formatChannelBalanceDisplayValue(value, fallback = '-') {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, '');
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    const num = Number(trimmed);
+    if (Number.isFinite(num)) {
+      return Number.isInteger(num) ? String(num) : num.toFixed(4).replace(/\.?0+$/, '');
+    }
+    return trimmed;
+  }
+  return String(value);
+}
+
+function buildChannelUpstreamBalanceHtml(balance) {
+  if (!balance || typeof balance !== 'object') return '';
+
+  const status = String(balance.status || '').toLowerCase();
+  const unit = escapeChannelRefreshText(balance.unit || 'USD');
+  const updatedAtMs = balance.updated_at ? Date.parse(balance.updated_at) : 0;
+  const updatedText = Number.isFinite(updatedAtMs) && updatedAtMs > 0
+    ? formatChannelRelativeTime(updatedAtMs)
+    : '';
+
+  if (status === 'pending') {
+    return `<div class="channel-upstream-balance channel-upstream-balance--pending"><span class="channel-upstream-balance__pill">${escapeChannelRefreshText(window.t('channels.upstreamBalance.pending'))}</span></div>`;
+  }
+  if (status === 'disabled') {
+    return `<div class="channel-upstream-balance channel-upstream-balance--disabled"><span class="channel-upstream-balance__pill">${escapeChannelRefreshText(window.t('channels.upstreamBalance.disabled'))}</span></div>`;
+  }
+  if (status === 'error') {
+    const message = escapeChannelRefreshText(balance.error || window.t('common.failed'));
+    return `<div class="channel-upstream-balance channel-upstream-balance--error"><span class="channel-upstream-balance__pill">${escapeChannelRefreshText(window.t('channels.upstreamBalance.error'))}</span><span class="channel-upstream-balance__hint" title="${message}">${message}</span></div>`;
+  }
+
+  const remaining = formatChannelBalanceDisplayValue(balance.remaining);
+  const total = formatChannelBalanceDisplayValue(balance.total);
+  const used = formatChannelBalanceDisplayValue(balance.used);
+  const extra = balance.extra ? String(balance.extra).trim() : '';
+  const planName = balance.plan_name ? String(balance.plan_name).trim() : '';
+  const invalidMessage = balance.invalid_message ? String(balance.invalid_message).trim() : '';
+  const isValid = balance.is_valid;
+
+  const rows = [
+    `<div class="channel-upstream-balance__row"><span class="channel-upstream-balance__label">${escapeChannelRefreshText(window.t('channels.upstreamBalance.limit'))}</span><span class="channel-upstream-balance__value">${escapeChannelRefreshText(`${remaining} / ${total}`)}${unit ? ` <span class="channel-upstream-balance__unit">${unit}</span>` : ''}</span></div>`,
+    `<div class="channel-upstream-balance__row"><span class="channel-upstream-balance__label">${escapeChannelRefreshText(window.t('channels.upstreamBalance.usedToday'))}</span><span class="channel-upstream-balance__value">${escapeChannelRefreshText(used)}${unit ? ` <span class="channel-upstream-balance__unit">${unit}</span>` : ''}</span></div>`
+  ];
+
+  if (planName) {
+    rows.push(`<div class="channel-upstream-balance__row"><span class="channel-upstream-balance__label">${escapeChannelRefreshText(window.t('channels.upstreamBalance.plan'))}</span><span class="channel-upstream-balance__value">${escapeChannelRefreshText(planName)}</span></div>`);
+  }
+  if (extra) {
+    rows.push(`<div class="channel-upstream-balance__hint">${escapeChannelRefreshText(extra)}</div>`);
+  }
+  if (isValid === false && invalidMessage) {
+    rows.push(`<div class="channel-upstream-balance__hint channel-upstream-balance__hint--error">${escapeChannelRefreshText(invalidMessage)}</div>`);
+  } else if (updatedText) {
+    rows.push(`<div class="channel-upstream-balance__hint">${escapeChannelRefreshText(window.t('channels.upstreamBalance.updatedAt', { time: updatedText }))}</div>`);
+  }
+
+  return `<div class="channel-upstream-balance${isValid === false ? ' channel-upstream-balance--invalid' : ''}">${rows.join('')}</div>`;
+}
+
 /**
  * 构建渠道健康状态指示器 HTML（参考 stats.js buildHealthIndicator）
  * @param {Array} timeline - health_timeline 数组
@@ -719,6 +785,7 @@ function createChannelCard(channel) {
     protocolTransformBadges: buildProtocolTransformBadges(channelTypeRaw, channel.protocol_transforms),
     url: channel.url,
     batchRefreshStatusHtml: buildBatchRefreshStatusHtml(batchRefreshResult),
+    upstreamBalanceHtml: buildChannelUpstreamBalanceHtml(channel.upstream_balance),
     modelsText: modelsText,
     priority: channel.priority,
     effectivePriorityHtml: buildEffectivePriorityHtml(channel),

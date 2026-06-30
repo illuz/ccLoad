@@ -96,7 +96,8 @@ function createHarness({
   channelCheckIntervalResponse = null,
   apiKeysResponse = null,
   saveResponse = null,
-  duplicateResponses = null
+  duplicateResponses = null,
+  disableChannelModalHooks = false
 } = {}) {
   let protocolTransformInputs = [];
   let protocolTransformModeInputs = [];
@@ -225,6 +226,8 @@ function createHarness({
   elements.channelDuplicateHint = createElement({ id: 'channelDuplicateHint', hidden: true, textContent: '' });
   elements.channelModal = createElement({ id: 'channelModal' });
   elements.channelSaveBtn = createElement({ id: 'channelSaveBtn', disabled: false });
+  elements.channelProxyURL = createElement({ id: 'channelProxyURL', value: channel ? channel.proxy_url || '' : '' });
+  elements.channelBalanceQueryScript = createElement({ id: 'channelBalanceQueryScript', value: channel ? channel.balance_query_script || '' : '' });
   elements.inlineEyeIcon = createElement({ id: 'inlineEyeIcon', style: {} });
   elements.inlineEyeOffIcon = createElement({ id: 'inlineEyeOffIcon', style: {} });
   elements.modelFilterInput = createElement({ id: 'modelFilterInput', value: '' });
@@ -388,7 +391,7 @@ function createHarness({
           setCheckedRadio('channelType', currentType || 'anthropic');
         }
       },
-      ChannelModalHooks: {
+      ChannelModalHooks: disableChannelModalHooks ? undefined : {
         async afterSave(payload) {
           afterSavePayload = payload;
         }
@@ -781,6 +784,28 @@ test('保存渠道时 payload 带上 protocol_transforms', async () => {
     savedChannelId: null,
     response: { success: true }
   });
+});
+
+test('保存渠道时会提交余额脚本并在成功后触发余额刷新', async () => {
+  const harness = createHarness({
+    disableChannelModalHooks: true,
+    saveResponse: {
+      success: true,
+      data: {
+        id: 17,
+        balance_query_script: '({ request: { url: "{{baseUrl}}/user/balance" }, extractor: function(response) { return response; } })'
+      }
+    }
+  });
+  harness.api.initChannelEditorActions();
+  harness.elements.channelBalanceQueryScript.value = '({ request: { url: "{{baseUrl}}/user/balance" }, extractor: function(response) { return response; } })';
+
+  await harness.submitForm();
+
+  const payload = JSON.parse(harness.fetchCalls[1].options.body);
+  assert.equal(payload.balance_query_script, harness.elements.channelBalanceQueryScript.value);
+  assert.equal(harness.fetchCalls[2].path, '/admin/channels/17/refresh-balance');
+  assert.equal(harness.fetchCalls[2].options.method, 'POST');
 });
 
 test('保存渠道提交后立即禁用保存按钮，避免慢请求期间没有反馈', async () => {

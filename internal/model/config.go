@@ -147,6 +147,9 @@ type Config struct {
 	// 自定义请求规则（nil 表示无改写）
 	CustomRequestRules *CustomRequestRules `json:"custom_request_rules,omitempty"`
 
+	// 上游余额查询脚本（空表示未配置）
+	BalanceQueryScript string `json:"balance_query_script,omitempty"`
+
 	// 渠道级代理（http/https/socks5/socks5h），空串=环境变量代理
 	ProxyURL string `json:"proxy_url,omitempty"`
 
@@ -210,6 +213,7 @@ func (c *Config) Clone() *Config {
 		DailyCostLimit:              c.DailyCostLimit,
 		CostMultiplier:              c.CostMultiplier,
 		CustomRequestRules:          c.CustomRequestRules,
+		BalanceQueryScript:          c.BalanceQueryScript,
 		ProxyURL:                    c.ProxyURL,
 		CreatedAt:                   c.CreatedAt,
 		UpdatedAt:                   c.UpdatedAt,

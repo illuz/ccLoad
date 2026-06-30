@@ -128,6 +128,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	var scheduledCheckModel string
 	var channelCooldownFixedSeconds int
 	var customRequestRules sql.NullString
+	var balanceQueryScript sql.NullString
 	var groupName sql.NullString
 	var groupColor sql.NullString
 	var createdAtRaw, updatedAtRaw any // 使用any接受任意类型（兼容字符串、整数或RFC3339）
@@ -136,7 +137,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	// 注意：不再包含 models 和 model_redirects 字段
 	if err := scanner.Scan(&c.ID, &c.Name, &c.GroupID, &groupName, &groupColor, &c.URL, &c.Priority,
 		&c.RPMLimit, &c.MaxConcurrency, &c.ChannelType, &c.ProtocolTransformMode, &enabledInt, &scheduledCheckEnabledInt, &scheduledCheckModel,
-		&channelCooldownFixedEnabledInt, &channelCooldownFixedSeconds, &inputPriorityBonusEnabledInt, &c.InputPriorityThreshold, &c.InputPriorityBonus, &c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &c.ProxyURL, &c.KeyCount,
+		&channelCooldownFixedEnabledInt, &channelCooldownFixedSeconds, &inputPriorityBonusEnabledInt, &c.InputPriorityThreshold, &c.InputPriorityBonus, &c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit, &c.CostMultiplier, &modelFixedPriceEnabledInt, &customRequestRules, &balanceQueryScript, &c.ProxyURL, &c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
 		return nil, err
 	}
@@ -164,6 +165,9 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 		c.GroupColor = model.CanonicalAuthTokenGroupColor(groupColor.String)
 	}
 	c.CustomRequestRules = parseCustomRequestRules(c.ID, customRequestRules)
+	if balanceQueryScript.Valid {
+		c.BalanceQueryScript = balanceQueryScript.String
+	}
 	if c.CostMultiplier < 0 {
 		c.CostMultiplier = 1
 	}

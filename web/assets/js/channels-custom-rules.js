@@ -224,11 +224,27 @@
     return payload;
   }
 
+  function getBalanceScriptHiddenInput() {
+    return hasDocument ? document.getElementById('channelBalanceQueryScript') : null;
+  }
+
+  function getBalanceScriptEditor() {
+    return hasDocument ? document.getElementById('channelBalanceQueryScriptEditor') : null;
+  }
+
+  function syncBalanceScriptEditorFromHidden() {
+    const hidden = getBalanceScriptHiddenInput();
+    const editor = getBalanceScriptEditor();
+    if (!hidden || !editor) return;
+    editor.value = hidden.value || '';
+  }
+
   // ===== 以下函数依赖 DOM，仅在浏览器中生效 =====
 
   function openCustomRulesModal() {
     if (!hasDocument) return;
     _draft = cloneRules(getState());
+    syncBalanceScriptEditorFromHidden();
     renderRuleList('headers');
     renderRuleList('body');
     switchTab('headers');
@@ -431,10 +447,18 @@
       showError(errors.join(' · '));
       return;
     }
+    const previousStateJSON = JSON.stringify(getState());
+    const hiddenBalanceScript = getBalanceScriptHiddenInput();
+    const balanceScriptEditor = getBalanceScriptEditor();
+    const nextBalanceScript = balanceScriptEditor ? String(balanceScriptEditor.value || '').trim() : '';
+    const balanceScriptChanged = hiddenBalanceScript && hiddenBalanceScript.value !== nextBalanceScript;
     _state = normalized;
     if (hasWindow) {
       window.channelCustomRulesState = _state;
-      if (typeof window.markChannelFormDirty === 'function') {
+      if (hiddenBalanceScript) {
+        hiddenBalanceScript.value = nextBalanceScript;
+      }
+      if (typeof window.markChannelFormDirty === 'function' && (balanceScriptChanged || previousStateJSON !== JSON.stringify(_state))) {
         window.markChannelFormDirty();
       }
     }

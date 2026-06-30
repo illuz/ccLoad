@@ -9,12 +9,16 @@ require (
 )
 
 require (
+	github.com/dop251/goja v0.0.0-20260629171413-2a84ae0cf10d
 	github.com/klauspost/compress v1.18.6
 	golang.org/x/term v0.43.0
 )
 
 require (
+	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.6.0 // indirect
