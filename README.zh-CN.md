@@ -556,6 +556,98 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
+### API Key 额度 / 用量查询
+
+支持让 API 访问令牌按自身 Key 直接查询额度/用量，可兼容常见的 `/balance`、`/usage` 脚本写法。
+
+**支持的接口**：
+- `GET /user/balance`
+- `POST /user/balance`
+- `GET /api/usage`
+- `POST /api/usage`
+- 简短别名：`GET/POST /balance`、`GET/POST /usage`
+
+**认证方式**：
+- 推荐：`Authorization: Bearer <api-token>`
+- 也支持：`X-API-Key`、`x-goog-api-key`、`?key=<api-token>`
+
+**返回规则**：
+- 直接返回原始 JSON，不套 `status/data` 外层结构
+- 兼容简单脚本依赖的字段：`is_active`、`balance`、`error`
+- 同时返回扩展字段：`isValid`、`remaining`、`total`、`used`、`unit`、`planName`、`extra`
+- `used` 始终表示**当日已使用金额**
+- `unit` 始终为 `USD`
+- 若配置了**每日费用限额**，则 `total` / `remaining` / `balance` 取每日限额口径
+- 否则，若配置了**总费用上限**，则 `total` / `remaining` / `balance` 取总上限口径
+- 若当前 Key **无限制**，则 `total`、`remaining`、`balance` 返回 `"-"`
+- `extra` 为展示字段：
+  - 无限制：`"无限制"`
+  - 有限制：`"已使用 X.Y%"`
+- 当 Key 已停用、已过期或已超限时，`is_active` / `isValid` 会变为 `false`，并返回 `error` / `invalidMessage`
+
+**调用示例**：
+```bash
+curl http://localhost:8080/user/balance \
+  -H "Authorization: Bearer your-api-token"
+```
+
+存在每日限额时，返回示例：
+
+```json
+{
+  "is_active": true,
+  "isValid": true,
+  "balance": 7.5,
+  "remaining": 7.5,
+  "total": 10,
+  "used": 2.5,
+  "unit": "USD",
+  "extra": "已使用 25.0%"
+}
+```
+
+**cc-switch 兼容配置示例**：
+
+```js
+({
+  request: {
+    url: "{{baseUrl}}/user/balance",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
+    }
+  },
+  extractor: function(response) {
+    return {
+      isValid: response.is_active || true,
+      remaining: response.balance,
+      unit: "USD"
+    };
+  }
+})
+```
+
+```js
+({
+  request: {
+    url: "{{baseUrl}}/api/usage",
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
+    }
+  },
+  extractor: function(response) {
+    return {
+      isValid: !response.error,
+      remaining: response.balance,
+      unit: "USD"
+    };
+  }
+})
+```
+
 ### 本地 Token 计数
 
 发送请求前可用本地 Token 估算接口预估消耗，不调用上游 API：

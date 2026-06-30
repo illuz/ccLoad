@@ -733,6 +733,16 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	// 健康检查（公开访问，无需认证，K8s liveness/readiness probe）
 	r.GET("/health", s.HandleHealth)
 
+	// Key 用量/余额查询（兼容 cc-switch 等脚本）
+	r.GET("/user/balance", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.POST("/user/balance", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.GET("/balance", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.POST("/balance", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.GET("/api/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.POST("/api/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.GET("/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.POST("/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+
 	// 公开访问的API
 	// - /public/summary: 需要后台登录态，避免未登录页面先看到运营数据
 	// - 其他 public 端点：保留公开，供前端加载静态配置/版本信息

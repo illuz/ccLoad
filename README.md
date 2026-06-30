@@ -526,6 +526,98 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
+### API Token Balance / Usage Query
+
+You can query quota/usage for the current API access token directly. This is compatible with common `/balance` or `/usage` script conventions.
+
+**Supported endpoints**:
+- `GET /user/balance`
+- `POST /user/balance`
+- `GET /api/usage`
+- `POST /api/usage`
+- Aliases: `GET/POST /balance`, `GET/POST /usage`
+
+**Authentication**:
+- Recommended: `Authorization: Bearer <api-token>`
+- Also supported: `X-API-Key`, `x-goog-api-key`, or `?key=<api-token>`
+
+**Response behavior**:
+- Returns raw JSON directly (not wrapped in a `status/data` envelope)
+- Keeps compatibility with simple fields like `is_active`, `balance`, `error`
+- Also returns richer fields such as `isValid`, `remaining`, `total`, `used`, `unit`, `planName`, `extra`
+- `used` is always **today's / daily used amount**
+- `unit` is always `USD`
+- If a **daily cost limit** exists, `total` / `remaining` / `balance` use the daily limit
+- Otherwise, if a **total cost limit** exists, `total` / `remaining` / `balance` use the total limit
+- If the token is **unlimited**, `total`, `remaining`, and `balance` return `"-"`
+- `extra` is a display string:
+  - unlimited: `"无限制"`
+  - limited: `"已使用 X.Y%"`
+- If the token is inactive, expired, or over limit, `is_active` / `isValid` become `false` and `error` / `invalidMessage` are populated
+
+**Example**:
+```bash
+curl http://localhost:8080/user/balance \
+  -H "Authorization: Bearer your-api-token"
+```
+
+Example response for a token with a daily limit:
+
+```json
+{
+  "is_active": true,
+  "isValid": true,
+  "balance": 7.5,
+  "remaining": 7.5,
+  "total": 10,
+  "used": 2.5,
+  "unit": "USD",
+  "extra": "已使用 25.0%"
+}
+```
+
+**cc-switch compatible config examples**:
+
+```js
+({
+  request: {
+    url: "{{baseUrl}}/user/balance",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
+    }
+  },
+  extractor: function(response) {
+    return {
+      isValid: response.is_active || true,
+      remaining: response.balance,
+      unit: "USD"
+    };
+  }
+})
+```
+
+```js
+({
+  request: {
+    url: "{{baseUrl}}/api/usage",
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
+    }
+  },
+  extractor: function(response) {
+    return {
+      isValid: !response.error,
+      remaining: response.balance,
+      unit: "USD"
+    };
+  }
+})
+```
+
 ### Local Token Counting
 
 Quickly estimate request token consumption (no upstream API call needed):
