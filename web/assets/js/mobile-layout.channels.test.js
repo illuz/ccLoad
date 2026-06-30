@@ -262,3 +262,9 @@ test('channels 编辑弹窗手机端 URL 状态退化为纯指示点，延迟和
   assert.match(channelsCss, /\.inline-url-table\s+tbody\s+\.mobile-inline-row\s+td\.inline-url-col-latency::before,/);
   assert.match(channelsCss, /\.inline-url-table\s+tbody\s+\.mobile-inline-row\s+td\.inline-url-col-requests::before,/);
 });
+
+test('channels 编辑弹窗手机端底部操作按钮完整显示', () => {
+  assert.match(channelsCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?#channelModal\s+\.channel-editor-footer\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
+  assert.match(channelsCss, /#channelModal\s+\.channel-editor-footer-actions\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(96px,\s*1fr\)\);[\s\S]*?overflow:\s*visible;/);
+  assert.match(channelsCss, /#channelModal\s+\.channel-editor-footer-actions\s+\.btn\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;/);
+});

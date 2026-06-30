@@ -3250,6 +3250,12 @@
         border-top: 1px solid var(--neutral-200);
       }
 
+      #channelModal .channel-editor-checkbox-label {
+        grid-column: 1;
+        grid-row: 1;
+        width: auto;
+      }
+
       #channelModal .channel-editor-footer > .channel-editor-checkbox-label {
         grid-column: 1;
         grid-row: 1;
@@ -3257,6 +3263,12 @@
         align-self: center;
         white-space: nowrap;
         flex-shrink: 0;
+      }
+
+      #channelModal .channel-editor-footer-fields .channel-editor-checkbox-label {
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
       }
 
       .channel-editor-footer-fields {
@@ -3367,6 +3379,41 @@
         flex: 0 0 auto;
         min-width: 84px;
         padding: 9px 14px;
+      }
+
+      /* 手机端底部操作区不再和开关挤在同一行，避免“高级 / 取消 / 保存”被裁切 */
+      #channelModal .channel-editor-footer {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+
+      #channelModal .channel-editor-footer > .channel-editor-checkbox-label {
+        grid-column: 1;
+        grid-row: auto;
+        width: 100%;
+      }
+
+      #channelModal .channel-editor-footer > .channel-editor-inline-field,
+      #channelModal .channel-editor-footer-fields {
+        grid-column: 1;
+        grid-row: auto;
+      }
+
+      #channelModal .channel-editor-footer-actions {
+        grid-column: 1 / -1;
+        grid-row: auto;
+        width: 100%;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+        justify-content: stretch;
+        overflow: visible;
+      }
+
+      #channelModal .channel-editor-footer-actions .btn {
+        width: 100%;
+        min-width: 0;
+        padding: 9px 10px;
       }
 
       .channel-table-container {
