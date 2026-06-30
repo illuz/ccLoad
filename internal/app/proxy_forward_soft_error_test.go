@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"ccLoad/internal/model"
@@ -115,7 +114,7 @@ func TestShouldCheckSoftErrorForChannelType(t *testing.T) {
 func TestShouldProbeSoftErrorUsesConfigChannelTypeFallback(t *testing.T) {
 	t.Parallel()
 
-	reqCtx := &requestContext{isStreaming: false}
+	reqCtx := &requestContext{isStreaming: true}
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}},
@@ -123,7 +122,7 @@ func TestShouldProbeSoftErrorUsesConfigChannelTypeFallback(t *testing.T) {
 	cfg := &model.Config{ChannelType: "codex"}
 
 	if !shouldProbeSoftError(reqCtx, resp, cfg, "openai") {
-		t.Fatal("shouldProbeSoftError()=false, want true for OpenAI entrypoint on Codex channel")
+		t.Fatal("shouldProbeSoftError()=false, want true for streaming OpenAI entrypoint on Codex channel")
 	}
 }
 
@@ -138,9 +137,8 @@ func TestProbeSoftErrorResponseReadsPastPrependedFirstByte(t *testing.T) {
 	}
 	prependToBody(resp, body[:1])
 
-	reqCtx := &requestContext{ctx: t.Context(), isStreaming: false}
+	reqCtx := &requestContext{ctx: t.Context(), isStreaming: true}
 	cfg := &model.Config{ID: 53, ChannelType: "codex"}
-	rec := httptest.NewRecorder()
 
 	handled, res, _, err := (&Server{}).probeSoftErrorResponse(reqCtx, resp, resp.Header.Clone(), cfg, "openai", &streamReadStats{})
 	if err != nil {
@@ -152,5 +150,4 @@ func TestProbeSoftErrorResponseReadsPastPrependedFirstByte(t *testing.T) {
 	if res == nil || res.Status != 597 {
 		t.Fatalf("result status=%v, want 597", res)
 	}
-	_ = rec
 }

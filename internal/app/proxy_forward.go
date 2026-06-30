@@ -1081,7 +1081,7 @@ func markFirstStreamResponse(reqCtx *requestContext, readStats *streamReadStats,
 }
 
 func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, cfg *model.Config, channelType string) bool {
-	if resp.StatusCode != http.StatusOK || reqCtx.isStreaming {
+	if resp.StatusCode != http.StatusOK {
 		return false
 	}
 	cfgChannelType := ""
