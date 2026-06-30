@@ -28,7 +28,8 @@ test('channels 页顶部筛选控件不再写死桌面宽度', () => {
 
 test('channels 页手机端将渠道名称和模型放在同一行并把清空归入操作区', () => {
   assert.match(channelsHtml, /class="filter-group channel-search-filter-group"[\s\S]*class="channel-search-control"[\s\S]*id="searchInput"/);
-  assert.match(channelsHtml, /class="channel-filter-summary"[\s\S]*id="filterInfo"[\s\S]*id="exportCsvBtn"[\s\S]*id="importCsvBtn"[\s\S]*id="clearSearchBtn"[\s\S]*id="btn_sort"/);
+  assert.match(channelsHtml, /class="channel-filter-summary"[\s\S]*id="filterInfo"[\s\S]*id="exportCsvBtn"[\s\S]*id="importCsvBtn"[\s\S]*id="btn_sort"[\s\S]*id="clearSearchBtn"/);
+  assert.match(channelsHtml, /class="channel-toolbar-actions"[\s\S]*channel-toolbar-group--create[\s\S]*show-add-modal[\s\S]*show-quick-add-modal[\s\S]*channel-toolbar-group--data[\s\S]*exportCsvBtn[\s\S]*importCsvBtn[\s\S]*btn_sort[\s\S]*channel-toolbar-group--view[\s\S]*channelGroupViewBtn[\s\S]*show-channel-group-manager[\s\S]*clearSearchBtn/);
   assert.match(channelsCss, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.channels-filter-controls\s+\.filter-label\s*\{[\s\S]*?font-size:\s*0\.72rem;[\s\S]*?font-weight:\s*500;/);
   assert.match(channelsCss, /\.channels-filter-controls\s+\.filter-select\s*\{[\s\S]*?font-size:\s*0\.8rem;[\s\S]*?padding:\s*6px\s+10px;/);
   assert.match(channelsCss, /\.channels-filter-controls\s+\.channel-search-filter-group\s*\{[\s\S]*?order:\s*3;[\s\S]*?grid-column:\s*auto;/);
@@ -37,18 +38,36 @@ test('channels 页手机端将渠道名称和模型放在同一行并把清空�
   assert.match(channelsCss, /\.channel-search-control\s*\{[\s\S]*?display:\s*flex;[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;/);
   assert.match(channelsCss, /\.channel-search-control\s+\.filter-select\s*\{[\s\S]*?width:\s*100%;/);
   assert.doesNotMatch(channelsCss, /\.channel-search-control\s+#clearSearchBtn\s*\{/);
-  assert.match(channelsCss, /\.channel-filter-summary\s+#clearSearchBtn\s*\{[\s\S]*?width:\s*auto;[\s\S]*?font-size:\s*0\.8rem;[\s\S]*?padding:\s*6px\s+10px;/);
-  assert.match(channelsCss, /\.channel-filter-summary\s+\.channel-filter-action-btn\s*\{[\s\S]*?font-size:\s*0\.8rem;[\s\S]*?padding:\s*6px\s+10px;/);
+  assert.match(channelsCss, /\.channel-filter-summary\s+#clearSearchBtn\s*\{[\s\S]*?width:\s*auto;[\s\S]*?font-size:\s*0\.8rem;[\s\S]*?padding:\s*6px\s+8px;/);
+  assert.match(channelsCss, /\.channel-filter-summary\s+\.channel-filter-action-btn\s*\{[\s\S]*?font-size:\s*0\.8rem;[\s\S]*?padding:\s*6px\s+8px;/);
+});
+
+test('channels 页超小屏顶部筛选保持一行两个选项', () => {
+  assert.match(channelsCss, /@media\s*\(max-width:\s*480px\)\s*\{[\s\S]*?\.channels-filter-controls\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(channelsCss, /@media\s*\(max-width:\s*480px\)\s*\{[\s\S]*?\.channels-filter-controls\s+\.channel-search-filter-group,\s*[\r\n\s]*\.channels-filter-controls\s+\.channel-model-filter-group\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
 });
 
 test('channels 页手机端头部和导入导出操作保持紧凑', () => {
   assert.doesNotMatch(channelsHtml, /channels\.description/);
   assert.match(channelsCss, /\.channel-page-action-btn\s*\{[\s\S]*?font-size:\s*var\(--text-xs\);/);
   assert.match(channelsCss, /\.channel-page-action-btn\s*\{[\s\S]*?padding:\s*6px\s+8px;/);
+  assert.match(channelsCss, /\.filter-bar\s*\{[\s\S]*?padding:\s*0\.85rem\s+0\.95rem;[\s\S]*?border-radius:\s*1\.25rem;/);
+  assert.match(channelsCss, /\.channels-filter-controls\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*max-content\)\)\s+minmax\(220px,\s*1fr\)\s+minmax\(220px,\s*1\.15fr\);[\s\S]*?gap:\s*12px;/);
+  assert.match(channelsCss, /\.channels-filter-controls\s+\.filter-group\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*64px\s+minmax\(0,\s*1fr\);[\s\S]*?align-items:\s*center;/);
+  assert.match(channelsCss, /\.channels-filter-controls\s+\.filter-label\s*\{[\s\S]*?text-align:\s*right;[\s\S]*?font-size:\s*0\.78rem;[\s\S]*?font-weight:\s*600;/);
+  assert.match(channelsCss, /\.channel-filter-summary\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
+  assert.match(channelsCss, /\.channel-filter-action-btn\s*\{[\s\S]*?padding:\s*7px\s+12px;[\s\S]*?font-size:\s*13px;/);
 });
 
 test('channels 页将数量、排序和筛选归到同一个移动端摘要行', () => {
   assert.match(channelsHtml, /class="channel-filter-summary"[\s\S]*id="filterInfo"[\s\S]*id="btn_sort"/);
+  assert.match(channelsCss, /\.channel-toolbar-group\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?gap:\s*8px;[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(channelsCss, /\.channel-toolbar-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*8px;[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(channelsCss, /\.channel-toolbar-actions\s*>\s*\.btn,\s*[\r\n\s]*\.channel-toolbar-actions\s*>\s*\.channels-view-switch,\s*[\r\n\s]*\.channel-toolbar-actions\s*>\s*\.channel-toolbar-group\s*\{[\s\S]*?flex:\s*0\s+0\s+auto;/);
+  assert.match(channelsCss, /\.channel-toolbar-group--data,\s*[\r\n\s]*\.channel-toolbar-group--view\s*\{[\s\S]*?border:\s*1px solid var\(--surface-border\);[\s\S]*?border-radius:\s*10px;[\s\S]*?background:\s*var\(--surface-bg-muted\);/);
+  assert.match(channelsCss, /\.channels-view-switch\s*\{[\s\S]*?padding:\s*2px;[\s\S]*?border:\s*1px solid var\(--neutral-200\);[\s\S]*?border-radius:\s*8px;[\s\S]*?background:\s*var\(--surface-bg-muted\);/);
+  assert.match(channelsCss, /\.channels-view-switch\s+\.btn,\s*[\r\n\s]*\.channel-toolbar-actions\s+\.btn-sm\s*\{[\s\S]*?min-height:\s*34px;[\s\S]*?padding:\s*6px\s+10px;[\s\S]*?font-size:\s*12px;/);
+  assert.match(channelsCss, /\.channels-view-switch\s+\.btn\.active\s*\{[\s\S]*?background:\s*var\(--primary-500\);[\s\S]*?border-color:\s*var\(--primary-500\);[\s\S]*?color:\s*#fff;/);
 });
 
 test('channels 页去掉底部分页区域', () => {

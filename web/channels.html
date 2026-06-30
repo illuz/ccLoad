@@ -90,35 +90,41 @@
               </div>
 
               <div class="channel-toolbar-actions">
-                <button id="exportCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
-                  data-i18n-title="channels.exportCsvTitle"
-                  title="导出渠道列表为CSV">
-                  <span data-i18n="channels.exportCsv">导出 CSV</span>
-                </button>
-                <button id="importCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
-                  data-i18n-title="channels.importCsvTitle"
-                  title="从CSV导入渠道">
-                  <span data-i18n="channels.importCsv">导入 CSV</span>
-                </button>
-                <button type="button" data-action="show-add-modal" class="btn btn-primary channel-filter-action-btn"
-                  data-i18n-title="channels.addChannelTitle" title="添加新渠道">
-                  <span data-i18n="channels.addChannel">+ 添加渠道</span>
-                </button>
-                <button type="button" data-action="show-quick-add-modal" class="btn btn-secondary channel-filter-action-btn"
-                  title="粘贴 URL + Key 快速添加渠道">
-                  <span>快速添加</span>
-                </button>
-                <span class="channels-view-switch" role="group" aria-label="渠道视图切换">
-                  <button id="channelGroupViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-group" data-i18n="channels.groupView">分组视图</button>
-                  <button id="channelListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-list" data-i18n="channels.listView">列表视图</button>
-                </span>
-                <button type="button" data-action="show-channel-group-manager" class="btn btn-secondary btn-sm" data-i18n="channels.groupManager">分组管理</button>
-                <button id="clearSearchBtn" type="button" class="btn btn-secondary btn-sm"
-                  data-i18n="common.clear" data-i18n-title="common.clearSearch" title="清空搜索">
-                  清空
-                </button>
-                <button id="btn_sort" type="button" class="btn btn-secondary channel-filter-action-btn"
-                  data-i18n="channels.sortBtn">排序</button>
+                <div class="channel-toolbar-group channel-toolbar-group--create">
+                  <button type="button" data-action="show-add-modal" class="btn btn-primary channel-filter-action-btn"
+                    data-i18n-title="channels.addChannelTitle" title="添加新渠道">
+                    <span data-i18n="channels.addChannel">+ 添加渠道</span>
+                  </button>
+                  <button type="button" data-action="show-quick-add-modal" class="btn btn-secondary channel-filter-action-btn"
+                    title="粘贴 URL + Key 快速添加渠道">
+                    <span>快速添加</span>
+                  </button>
+                </div>
+                <div class="channel-toolbar-group channel-toolbar-group--data">
+                  <button id="exportCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
+                    data-i18n-title="channels.exportCsvTitle"
+                    title="导出渠道列表为CSV">
+                    <span data-i18n="channels.exportCsv">导出 CSV</span>
+                  </button>
+                  <button id="importCsvBtn" type="button" class="btn btn-secondary channel-filter-action-btn"
+                    data-i18n-title="channels.importCsvTitle"
+                    title="从CSV导入渠道">
+                    <span data-i18n="channels.importCsv">导入 CSV</span>
+                  </button>
+                  <button id="btn_sort" type="button" class="btn btn-secondary channel-filter-action-btn"
+                    data-i18n="channels.sortBtn">排序</button>
+                </div>
+                <div class="channel-toolbar-group channel-toolbar-group--view">
+                  <span class="channels-view-switch" role="group" aria-label="渠道视图切换">
+                    <button id="channelGroupViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-group" data-i18n="channels.groupView">分组视图</button>
+                    <button id="channelListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-channel-view-list" data-i18n="channels.listView">列表视图</button>
+                  </span>
+                  <button type="button" data-action="show-channel-group-manager" class="btn btn-secondary btn-sm" data-i18n="channels.groupManager">分组管理</button>
+                  <button id="clearSearchBtn" type="button" class="btn btn-secondary btn-sm"
+                    data-i18n="common.clear" data-i18n-title="common.clearSearch" title="清空搜索">
+                    清空
+                  </button>
+                </div>
                 <!-- 已改为即时筛选，保留隐藏按钮占位以兼容旧测试/脚本 -->
                 <button id="btn_filter" type="button" class="btn btn-primary channel-filter-action-btn display-none"
                   data-i18n="channels.filterBtn" aria-hidden="true" tabindex="-1">筛选</button>
