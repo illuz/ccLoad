@@ -198,7 +198,20 @@ func buildCodexReasoningConfig(conv conversation) map[string]any {
 		}
 	}
 	thinking := conv.Thinking
-	if thinking == nil || strings.ToLower(strings.TrimSpace(thinking.Type)) != "enabled" {
+	if thinking == nil {
+		return nil
+	}
+	typ := strings.ToLower(strings.TrimSpace(thinking.Type))
+	if typ == "adaptive" {
+		if effort := normalizeAnthropicOutputEffort(thinking.Effort); effort != "" {
+			return map[string]any{
+				"effort":  normalizeOpenAIEffort(effort),
+				"summary": "auto",
+			}
+		}
+		return nil
+	}
+	if typ != "enabled" {
 		return nil
 	}
 	return map[string]any{
