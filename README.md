@@ -549,7 +549,7 @@ You can query quota/usage for the current API access token directly. This is com
 - `unit` is always `USD`
 - If a **daily cost limit** exists, `total` / `remaining` / `balance` use the daily limit
 - Otherwise, if a **total cost limit** exists, `total` / `remaining` / `balance` use the total limit
-- If the token is **unlimited**, `total`, `remaining`, and `balance` return `"-"`
+- If the token is **unlimited**, `total`, `remaining`, and `balance` return `null`
 - `extra` is a display string:
   - unlimited: `"无限制"`
   - limited: `"已使用 X.Y%"`

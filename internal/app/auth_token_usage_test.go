@@ -106,9 +106,9 @@ func TestHandleAuthTokenUsage_Unlimited(t *testing.T) {
 	assertString(t, resp["unit"], "USD")
 	assertString(t, resp["extra"], "无限制")
 	assertString(t, resp["limit_type"], "unlimited")
-	assertString(t, resp["balance"], "-")
-	assertString(t, resp["remaining"], "-")
-	assertString(t, resp["total"], "-")
+	assertNull(t, resp["balance"])
+	assertNull(t, resp["remaining"])
+	assertNull(t, resp["total"])
 	if _, exists := resp["error"]; exists {
 		t.Fatalf("unexpected error field: %#v", resp["error"])
 	}
@@ -176,6 +176,14 @@ func assertString(t *testing.T, got any, want string) {
 	value, ok := got.(string)
 	if !ok || value != want {
 		t.Fatalf("string = %#v, want %q", got, want)
+	}
+}
+
+func assertNull(t *testing.T, got any) {
+	t.Helper()
+	if got != nil {
+		payload, _ := json.Marshal(got)
+		t.Fatalf("value = %s, want null", payload)
 	}
 }
 

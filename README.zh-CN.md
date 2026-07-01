@@ -579,7 +579,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 - `unit` 始终为 `USD`
 - 若配置了**每日费用限额**，则 `total` / `remaining` / `balance` 取每日限额口径
 - 否则，若配置了**总费用上限**，则 `total` / `remaining` / `balance` 取总上限口径
-- 若当前 Key **无限制**，则 `total`、`remaining`、`balance` 返回 `"-"`
+- 若当前 Key **无限制**，则 `total`、`remaining`、`balance` 返回 `null`
 - `extra` 为展示字段：
   - 无限制：`"无限制"`
   - 有限制：`"已使用 X.Y%"`
