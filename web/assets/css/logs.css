@@ -900,6 +900,15 @@
       font-weight: 600;
     }
 
+    .log-cost-effective--warning {
+      color: var(--error-600);
+    }
+
+    .log-cost-effective--critical {
+      color: #7c3aed;
+      font-weight: 700;
+    }
+
     .log-cost-badges {
       position: absolute;
       top: 0;
@@ -1328,3 +1337,94 @@
     .logs-table tr.pending-row:hover td {
       background: var(--logs-pending-row-hover-bg);
     }
+
+.logs-usage-popover {
+  position: fixed;
+  z-index: 1200;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: var(--surface-bg-strong);
+  color: var(--neutral-800);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+.logs-usage-popover[hidden] {
+  display: none !important;
+}
+
+.logs-usage-popover__section + .logs-usage-popover__section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.logs-usage-popover__title {
+  margin-bottom: 5px;
+  color: var(--neutral-900);
+  font-weight: 700;
+}
+
+.logs-usage-popover__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.logs-usage-popover__label {
+  color: var(--neutral-500);
+  white-space: nowrap;
+}
+
+.logs-usage-popover__value {
+  color: var(--neutral-800);
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.logs-usage-popover__value--success,
+.logs-usage-popover__success {
+  color: var(--success-600);
+}
+
+.logs-usage-popover__value--warning {
+  color: var(--warning-600);
+}
+
+.logs-usage-popover__value--primary {
+  color: var(--primary-600);
+}
+
+.logs-usage-popover__value--muted {
+  color: var(--neutral-500);
+}
+
+.logs-usage-popover__unit {
+  color: var(--neutral-500);
+  font-weight: 500;
+}
+
+.logs-usage-popover__hint {
+  margin-top: 5px;
+  color: var(--neutral-500);
+  font-size: 0.92em;
+}
+
+.logs-usage-popover__error {
+  color: var(--error-600);
+}
+
+.logs-usage-popover__loading,
+.logs-usage-popover__empty {
+  color: var(--neutral-500);
+  white-space: nowrap;
+}

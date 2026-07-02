@@ -16,6 +16,15 @@ let logsExactModelValue = '';
 let logsDefaultTestContent = 'sonnet 4.0的发布日期是什么'; // 默认测试内容（从设置加载）
 let logChannelClickAction = 'edit'; // 日志页渠道名点击行为：edit|navigate
 
+let logsUsagePopover = null;
+let logsUsagePopoverHideTimer = null;
+let logsUsageStatsCache = null;
+let logsUsageStatsCacheKey = '';
+let logsUsageTokensCache = null;
+let logsUsageTokensCacheKey = '';
+let logsUsageChannelsCache = {};
+let logsUsageHoverSeq = 0;
+
 let latestActiveRequests = []; // 缓存 ui.js 最近一次推送的活动请求，供 load() 即时刷新
 let lastActiveRequestStates = null; // Map<id, fingerprint>：上次活跃请求状态，用于检测请求结束/渠道切换
 let logsLoadInFlight = false;
@@ -318,7 +327,7 @@ function buildChannelTrigger(channelId, channelName, baseURL = '') {
   }
 
   const channelTooltip = baseURL ? ` title="${escapeHtml(baseURL)}"` : '';
-  return `<button type="button" class="channel-link" data-channel-id="${channelId}"${channelTooltip}>${escapeHtml(channelName)}</button>`;
+  return `<button type="button" class="channel-link" data-usage-popover="channel" data-channel-id="${channelId}"${channelTooltip}>${escapeHtml(channelName)}</button>`;
 }
 
 function buildActiveRequestChannelDisplay(req) {
@@ -468,7 +477,7 @@ function buildLogTokenDescDisplay(label, tokenId = 0) {
   const title = escapeHtml(text);
   const numericTokenID = Number(tokenId) || 0;
   if (numericTokenID > 0) {
-    return `<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="${numericTokenID}" title="${title}">${content}</button>`;
+    return `<button type="button" class="channel-link token-link logs-token-desc-text" data-usage-popover="token" data-token-id="${numericTokenID}" title="${title}">${content}</button>`;
   }
   return `<span class="logs-token-desc-text" title="${title}">${content}</span>`;
 }
@@ -524,21 +533,27 @@ function buildLogCostDisplay(entry) {
       badgeParts.push('<sup class="log-cost-badge log-cost-badge--flex">0.5x</sup>');
       break;
     case 'fast':
-      badgeParts.push('<sup class="log-cost-badge log-cost-badge--fast">\u26A16x</sup>');
+      badgeParts.push('<sup class="log-cost-badge log-cost-badge--fast">⚡6x</sup>');
       break;
   }
 
   const badgesHtml = badgeParts.length
     ? `<span class="log-cost-badges">${badgeParts.join('')}</span>`
     : '';
-  const costClasses = `log-cost${hasMultiplier ? ' log-cost--with-multiplier' : ''}${badgeParts.length ? ' log-cost--with-badges' : ''}`;
+  const highlightClass = effectiveCost > 1
+    ? ' log-cost--critical'
+    : (effectiveCost > 0.3 ? ' log-cost--warning' : '');
+  const effectiveClasses = `log-cost-effective${effectiveCost > 1
+    ? ' log-cost-effective--critical'
+    : (effectiveCost > 0.3 ? ' log-cost-effective--warning' : '')}`;
+  const costClasses = `log-cost${hasMultiplier ? ' log-cost--with-multiplier' : ''}${badgeParts.length ? ' log-cost--with-badges' : ''}${highlightClass}`;
   const openingTag = `<span class="${costClasses}">`;
 
   if (!hasMultiplier) {
-    return `${openingTag}${badgesHtml}<span class="log-cost-effective">${formatCost(standardCost)}</span></span>`;
+    return `${openingTag}${badgesHtml}<span class="${effectiveClasses}">${formatCost(standardCost)}</span></span>`;
   }
 
-  return `${openingTag}${badgesHtml}<span class="log-cost-standard">${formatCost(standardCost)}</span><span class="log-cost-effective">${formatCost(effectiveCost)}</span></span>`;
+  return `${openingTag}${badgesHtml}<span class="log-cost-standard">${formatCost(standardCost)}</span><span class="${effectiveClasses}">${formatCost(effectiveCost)}</span></span>`;
 }
 
 function formatDebugSettingValue(setting) {
@@ -619,6 +634,13 @@ async function loadLogChannelClickAction() {
 }
 
 async function load(skipLoading = false) {
+  logsUsageStatsCache = null;
+  logsUsageStatsCacheKey = '';
+  logsUsageTokensCache = null;
+  logsUsageTokensCacheKey = '';
+  logsUsageChannelsCache = {};
+  hideLogsUsagePopover();
+
   if (logsLoadInFlight) {
     logsLoadPending = true;
     return;
@@ -1425,7 +1447,490 @@ async function initFilters(restoredFilters) {
   });
 }
 
+function getLogsUsageCacheKey() {
+  const filters = getLogsFilters();
+  const params = new URLSearchParams();
+  appendLogsTimeRangeParams(params, filters);
+  return params.toString() || 'range=today';
+}
+
+function buildLogsUsageRangeQuery(extraParams = {}) {
+  const filters = getLogsFilters();
+  const params = new URLSearchParams();
+  appendLogsTimeRangeParams(params, filters);
+  Object.entries(extraParams).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  });
+  return params;
+}
+
+function compactUsageNumber(value) {
+  const num = Number(value) || 0;
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000) return `${(num / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`;
+  if (abs >= 1_000) return `${(num / 1_000).toFixed(1).replace(/\.?0+$/, '')}K`;
+  return String(Math.trunc(num));
+}
+
+function formatLogsTooltipCost(costUsd) {
+  const value = Number(costUsd) || 0;
+  if (value <= 0) return '$0';
+  const decimals = value >= 1 ? 2 : 4;
+  return `$${value.toFixed(decimals).replace(/\.?0+$/, '')}`;
+}
+
+function logsTooltipRow(label, value, tone = '') {
+  const toneClass = tone ? ` logs-usage-popover__value--${tone}` : '';
+  return `<div class="logs-usage-popover__row"><span class="logs-usage-popover__label">${escapeHtml(label)}</span><span class="logs-usage-popover__value${toneClass}">${value}</span></div>`;
+}
+
+function formatLogsChannelCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
+  const input = Number(inputTokens) || 0;
+  const cacheRead = Number(cacheReadTokens) || 0;
+  const cacheCreation = Number(cacheCreationTokens) || 0;
+  const denominator = input + cacheRead + cacheCreation;
+  if (denominator <= 0 || cacheRead <= 0) return '';
+  return `${((cacheRead / denominator) * 100).toFixed(1)}%`;
+}
+
+function formatLogsChannelBalanceDisplayValue(value, fallback = '-') {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, '');
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    const num = Number(trimmed);
+    if (Number.isFinite(num)) {
+      return Number.isInteger(num) ? String(num) : num.toFixed(4).replace(/\.?0+$/, '');
+    }
+    return trimmed;
+  }
+  return String(value);
+}
+
+function formatLogsUsageRelativeTime(timestampMs, nowMs = Date.now()) {
+  const ts = Number(timestampMs);
+  if (!Number.isFinite(ts) || ts <= 0) return '';
+
+  const seconds = Math.max(1, Math.floor((nowMs - ts) / 1000));
+  if (seconds < 60) return t('channels.lastSuccess.secondsAgo', { count: seconds });
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t('channels.lastSuccess.minutesAgo', { count: minutes });
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('channels.lastSuccess.hoursAgo', { count: hours });
+
+  const days = Math.floor(hours / 24);
+  return t('channels.lastSuccess.daysAgo', { count: days });
+}
+
+function aggregateLogsChannelStats(statsEntries = []) {
+  const result = {};
+  for (const entry of statsEntries || []) {
+    const channelId = Number(entry.channel_id || entry.channelID);
+    if (!Number.isFinite(channelId) || channelId <= 0) continue;
+    if (!result[channelId]) {
+      result[channelId] = {
+        success: 0,
+        error: 0,
+        total: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadInputTokens: 0,
+        totalCacheCreationInputTokens: 0,
+        totalCost: 0,
+        effectiveCost: 0,
+        channelType: entry.channel_type || '',
+        _firstByteWeightedSum: 0,
+        _firstByteWeight: 0,
+        _durationWeightedSum: 0,
+        _durationWeight: 0
+      };
+    }
+
+    const stats = result[channelId];
+    const success = Number(entry.success) || 0;
+    const error = Number(entry.error) || 0;
+    const total = Number(entry.total) || 0;
+    const weight = success || total || 0;
+    stats.success += success;
+    stats.error += error;
+    stats.total += total;
+    stats.totalInputTokens += Number(entry.total_input_tokens) || 0;
+    stats.totalOutputTokens += Number(entry.total_output_tokens) || 0;
+    stats.totalCacheReadInputTokens += Number(entry.total_cache_read_input_tokens) || 0;
+    stats.totalCacheCreationInputTokens += Number(entry.total_cache_creation_input_tokens) || 0;
+    stats.totalCost += Number(entry.total_cost) || 0;
+    stats.effectiveCost += entry.effective_cost === undefined || entry.effective_cost === null
+      ? (Number(entry.total_cost) || 0)
+      : (Number(entry.effective_cost) || 0);
+    if (!stats.channelType && entry.channel_type) stats.channelType = entry.channel_type;
+
+    const firstByte = Number(entry.avg_first_byte_time_seconds);
+    if (Number.isFinite(firstByte) && firstByte > 0 && weight > 0) {
+      stats._firstByteWeightedSum += firstByte * weight;
+      stats._firstByteWeight += weight;
+    }
+    const duration = Number(entry.avg_duration_seconds);
+    if (Number.isFinite(duration) && duration > 0 && weight > 0) {
+      stats._durationWeightedSum += duration * weight;
+      stats._durationWeight += weight;
+    }
+  }
+
+  Object.values(result).forEach((stats) => {
+    stats.avgFirstByteTimeSeconds = stats._firstByteWeight > 0 ? stats._firstByteWeightedSum / stats._firstByteWeight : 0;
+    stats.avgDurationSeconds = stats._durationWeight > 0 ? stats._durationWeightedSum / stats._durationWeight : 0;
+    delete stats._firstByteWeightedSum;
+    delete stats._firstByteWeight;
+    delete stats._durationWeightedSum;
+    delete stats._durationWeight;
+  });
+  return result;
+}
+
+async function getLogsUsageChannelStats() {
+  const cacheKey = getLogsUsageCacheKey();
+  if (logsUsageStatsCache && logsUsageStatsCacheKey === cacheKey) return logsUsageStatsCache;
+
+  const params = buildLogsUsageRangeQuery({ limit: '500', offset: '0' });
+  const data = await fetchDataWithAuth(`/admin/stats?${params.toString()}`);
+  logsUsageStatsCache = aggregateLogsChannelStats((data && data.stats) || []);
+  logsUsageStatsCacheKey = cacheKey;
+  return logsUsageStatsCache;
+}
+
+async function getLogsUsageTokens() {
+  const cacheKey = getLogsUsageCacheKey();
+  if (logsUsageTokensCache && logsUsageTokensCacheKey === cacheKey) return logsUsageTokensCache;
+
+  const params = buildLogsUsageRangeQuery();
+  const data = await fetchDataWithAuth(`/admin/auth-tokens?${params.toString()}`);
+  logsUsageTokensCache = (data && data.tokens) || [];
+  logsUsageTokensCacheKey = cacheKey;
+  return logsUsageTokensCache;
+}
+
+async function getLogsUsageChannel(channelId) {
+  const numericId = Number(channelId);
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+
+  const key = String(Math.trunc(numericId));
+  if (logsUsageChannelsCache[key]) return logsUsageChannelsCache[key];
+
+  const promise = fetchDataWithAuth(`/admin/channels/${key}`).catch((error) => {
+    delete logsUsageChannelsCache[key];
+    throw error;
+  });
+  logsUsageChannelsCache[key] = promise;
+  return promise;
+}
+
+function buildLogsChannelCostHtml(stats) {
+  if (!stats) {
+    return `<div class="logs-usage-popover__empty">${escapeHtml(t('logs.usageNoData'))}</div>`;
+  }
+
+  const totalCost = Number(stats.totalCost) || 0;
+  const effectiveCost = stats.effectiveCost === undefined || stats.effectiveCost === null
+    ? totalCost
+    : (Number(stats.effectiveCost) || 0);
+  const hasCost = totalCost > 0 || effectiveCost > 0;
+  return logsTooltipRow(
+    t('channels.stats.cost'),
+    escapeHtml(formatCostPair(totalCost, effectiveCost)),
+    hasCost ? 'success' : 'muted'
+  );
+}
+
+function buildLogsChannelBalanceHtml(channel) {
+  const balance = channel && typeof channel === 'object' ? channel.upstream_balance : null;
+  if (!balance || typeof balance !== 'object') {
+    return logsTooltipRow(t('common.status'), escapeHtml(t('channels.upstreamBalance.disabled')), 'muted');
+  }
+
+  const status = String(balance.status || '').toLowerCase();
+  if (status === 'pending') {
+    return logsTooltipRow(t('common.status'), escapeHtml(t('channels.upstreamBalance.pending')), 'primary');
+  }
+  if (status === 'disabled') {
+    return logsTooltipRow(t('common.status'), escapeHtml(t('channels.upstreamBalance.disabled')), 'muted');
+  }
+  if (status === 'error') {
+    const message = balance.error ? String(balance.error).trim() : t('common.failed');
+    return [
+      logsTooltipRow(t('common.status'), escapeHtml(t('channels.upstreamBalance.error')), 'warning'),
+      `<div class="logs-usage-popover__hint logs-usage-popover__error">${escapeHtml(message)}</div>`
+    ].join('');
+  }
+
+  const unit = String(balance.unit || 'USD').trim();
+  const unitHtml = unit ? ` <span class="logs-usage-popover__unit">${escapeHtml(unit)}</span>` : '';
+  const remaining = formatLogsChannelBalanceDisplayValue(balance.remaining);
+  const total = formatLogsChannelBalanceDisplayValue(balance.total);
+  const used = formatLogsChannelBalanceDisplayValue(balance.used);
+  const rows = [
+    logsTooltipRow(
+      t('channels.upstreamBalance.limit'),
+      `${escapeHtml(`${remaining} / ${total}`)}${unitHtml}`,
+      balance.is_valid === false ? 'warning' : 'success'
+    ),
+    logsTooltipRow(
+      t('channels.upstreamBalance.usedToday'),
+      `${escapeHtml(used)}${unitHtml}`,
+      'warning'
+    )
+  ];
+
+  const planName = balance.plan_name ? String(balance.plan_name).trim() : '';
+  if (planName) {
+    rows.push(logsTooltipRow(t('channels.upstreamBalance.plan'), escapeHtml(planName), 'primary'));
+  }
+
+  const extra = balance.extra ? String(balance.extra).trim() : '';
+  if (extra) {
+    rows.push(`<div class="logs-usage-popover__hint">${escapeHtml(extra)}</div>`);
+  }
+
+  const invalidMessage = balance.invalid_message ? String(balance.invalid_message).trim() : '';
+  if (balance.is_valid === false && invalidMessage) {
+    rows.push(`<div class="logs-usage-popover__hint logs-usage-popover__error">${escapeHtml(invalidMessage)}</div>`);
+  } else {
+    const updatedAtMs = balance.updated_at ? Date.parse(balance.updated_at) : 0;
+    const updatedText = Number.isFinite(updatedAtMs) && updatedAtMs > 0
+      ? formatLogsUsageRelativeTime(updatedAtMs)
+      : '';
+    if (updatedText) {
+      rows.push(`<div class="logs-usage-popover__hint">${escapeHtml(t('channels.upstreamBalance.updatedAt', { time: updatedText }))}</div>`);
+    }
+  }
+
+  return rows.join('');
+}
+
+function buildLogsChannelUsagePopoverHtml(channelId) {
+  const channelPromise = getLogsUsageChannel(channelId).catch((error) => {
+    console.error('Failed to load logs usage channel detail', error);
+    return null;
+  });
+
+  return Promise.all([getLogsUsageChannelStats(), channelPromise]).then(([statsById, channel]) => {
+    const stats = statsById[Number(channelId)];
+    const sections = [];
+
+    if (stats) {
+      const durationRows = [];
+      if (stats.avgFirstByteTimeSeconds > 0) {
+        durationRows.push(logsTooltipRow(t('channels.stats.firstByte'), `${stats.avgFirstByteTimeSeconds.toFixed(2)}${t('common.seconds')}`, 'success'));
+      }
+      if (stats.avgDurationSeconds > 0) {
+        durationRows.push(logsTooltipRow(t('stats.tooltipDuration'), `${stats.avgDurationSeconds.toFixed(2)}${t('common.seconds')}`, 'success'));
+      }
+      durationRows.push(logsTooltipRow(
+        t('channels.stats.calls'),
+        `<span class="logs-usage-popover__success">${stats.success}</span>/<span class="logs-usage-popover__error">${stats.error}</span>${escapeHtml(t('stats.unitTimes'))}`
+      ));
+
+      const usageRows = [
+        logsTooltipRow(t('channels.stats.input'), compactUsageNumber(stats.totalInputTokens), 'warning'),
+        logsTooltipRow(t('channels.stats.output'), compactUsageNumber(stats.totalOutputTokens), 'warning')
+      ];
+      const channelType = String(stats.channelType || channel?.channel_type || '').toLowerCase();
+      if (channelType === 'anthropic' || channelType === 'codex') {
+        usageRows.push(logsTooltipRow(t('channels.stats.cacheRead'), compactUsageNumber(stats.totalCacheReadInputTokens), 'success'));
+        if (stats.totalCacheCreationInputTokens > 0) {
+          usageRows.push(logsTooltipRow(t('channels.stats.cacheCreate'), compactUsageNumber(stats.totalCacheCreationInputTokens), 'primary'));
+        }
+        const cacheHitRate = formatLogsChannelCacheHitRate(
+          stats.totalInputTokens,
+          stats.totalCacheReadInputTokens,
+          stats.totalCacheCreationInputTokens
+        );
+        if (cacheHitRate) {
+          usageRows.push(logsTooltipRow(t('channels.stats.cacheHitRate'), escapeHtml(cacheHitRate), 'success'));
+        }
+      }
+
+      sections.push(`
+        <div class="logs-usage-popover__section">
+          <div class="logs-usage-popover__title">${escapeHtml(t('channels.table.duration'))}</div>
+          ${durationRows.join('')}
+        </div>
+      `);
+      sections.push(`
+        <div class="logs-usage-popover__section">
+          <div class="logs-usage-popover__title">${escapeHtml(t('channels.table.usage'))}</div>
+          ${usageRows.join('')}
+        </div>
+      `);
+      sections.push(`
+        <div class="logs-usage-popover__section">
+          <div class="logs-usage-popover__title">${escapeHtml(t('channels.stats.cost'))}</div>
+          ${buildLogsChannelCostHtml(stats)}
+        </div>
+      `);
+    } else {
+      sections.push(`<div class="logs-usage-popover__empty">${escapeHtml(t('logs.usageNoData'))}</div>`);
+    }
+
+    if (channel) {
+      sections.push(`
+      <div class="logs-usage-popover__section">
+        <div class="logs-usage-popover__title">${escapeHtml(t('channels.upstreamBalance.title'))}</div>
+        ${buildLogsChannelBalanceHtml(channel)}
+      </div>
+      `);
+    }
+
+    return sections.join('');
+  });
+}
+
+function getTokenEffectiveDailyCostLimitForPopover(token) {
+  if (token && token.effective_daily_cost_limit_usd !== undefined) {
+    return Number(token.effective_daily_cost_limit_usd) || 0;
+  }
+  return Number(token?.daily_cost_limit_usd) || 0;
+}
+
+function buildLogsTokenUsageHtml(token) {
+  const rows = [];
+  const push = (count, label, tone) => {
+    if (!count || count <= 0) return;
+    rows.push(logsTooltipRow(label, compactUsageNumber(count), tone));
+  };
+  push(token.prompt_tokens_total || 0, t('tokens.input'), 'warning');
+  push(token.completion_tokens_total || 0, t('tokens.output'), 'warning');
+  push(token.cache_read_tokens_total || 0, t('tokens.cacheRead'), 'success');
+  push(token.cache_creation_tokens_total || 0, t('tokens.cacheCreate'), 'primary');
+  return rows.length ? rows.join('') : `<div class="logs-usage-popover__empty">${escapeHtml(t('logs.usageNoData'))}</div>`;
+}
+
+function buildLogsTokenCostHtml(token) {
+  const totalCost = Number(token?.total_cost_usd) || 0;
+  const dailyCost = Number(token?.daily_cost_used_usd) || 0;
+  const dailyLimit = getTokenEffectiveDailyCostLimitForPopover(token);
+  const dailyValue = dailyLimit > 0
+    ? `${formatLogsTooltipCost(dailyCost)}/${formatLogsTooltipCost(dailyLimit)}`
+    : formatLogsTooltipCost(dailyCost);
+  return [
+    logsTooltipRow(t('tokens.table.totalCost'), formatLogsTooltipCost(totalCost), totalCost > 0 ? 'warning' : 'muted'),
+    logsTooltipRow(t('tokens.table.dailyCost'), dailyValue, dailyCost > 0 ? 'primary' : 'muted')
+  ].join('');
+}
+
+function buildLogsTokenUsagePopoverHtml(tokenId) {
+  return getLogsUsageTokens().then((tokens) => {
+    const token = tokens.find((item) => Number(item.id) === Number(tokenId));
+    if (!token) {
+      return `<div class="logs-usage-popover__empty">${escapeHtml(t('logs.usageNoData'))}</div>`;
+    }
+
+    return `
+      <div class="logs-usage-popover__section">
+        <div class="logs-usage-popover__title">${escapeHtml(t('tokens.table.tokenUsage'))}</div>
+        ${buildLogsTokenUsageHtml(token)}
+      </div>
+      <div class="logs-usage-popover__section">
+        <div class="logs-usage-popover__title">${escapeHtml(t('tokens.costSummary'))}</div>
+        ${buildLogsTokenCostHtml(token)}
+      </div>
+    `;
+  });
+}
+
+function ensureLogsUsagePopover() {
+  if (logsUsagePopover) return logsUsagePopover;
+  logsUsagePopover = document.createElement('div');
+  logsUsagePopover.className = 'logs-usage-popover';
+  logsUsagePopover.hidden = true;
+  logsUsagePopover.addEventListener('mouseenter', () => {
+    if (logsUsagePopoverHideTimer) clearTimeout(logsUsagePopoverHideTimer);
+  });
+  logsUsagePopover.addEventListener('mouseleave', scheduleHideLogsUsagePopover);
+  document.body.appendChild(logsUsagePopover);
+  return logsUsagePopover;
+}
+
+function positionLogsUsagePopover(anchor) {
+  const popover = ensureLogsUsagePopover();
+  const rect = anchor.getBoundingClientRect();
+  const popRect = popover.getBoundingClientRect();
+  const margin = 8;
+  const left = Math.max(margin, Math.min(rect.left, window.innerWidth - popRect.width - margin));
+  const top = rect.bottom + popRect.height + margin <= window.innerHeight
+    ? rect.bottom + margin
+    : Math.max(margin, rect.top - popRect.height - margin);
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+}
+
+function showLogsUsagePopover(anchor, contentHtml) {
+  const popover = ensureLogsUsagePopover();
+  popover.innerHTML = contentHtml;
+  popover.hidden = false;
+  positionLogsUsagePopover(anchor);
+}
+
+function hideLogsUsagePopover() {
+  logsUsageHoverSeq++;
+  if (!logsUsagePopover) return;
+  logsUsagePopover.hidden = true;
+  logsUsagePopover.innerHTML = '';
+}
+
+function scheduleHideLogsUsagePopover() {
+  if (logsUsagePopoverHideTimer) clearTimeout(logsUsagePopoverHideTimer);
+  logsUsagePopoverHideTimer = setTimeout(hideLogsUsagePopover, 120);
+}
+
+function handleLogsUsagePopoverEnter(target) {
+  if (!target) return;
+  if (logsUsagePopoverHideTimer) clearTimeout(logsUsagePopoverHideTimer);
+  const seq = ++logsUsageHoverSeq;
+  showLogsUsagePopover(target, `<div class="logs-usage-popover__loading">${escapeHtml(t('common.loading'))}</div>`);
+
+  const kind = target.dataset.usagePopover;
+  const contentPromise = kind === 'channel'
+    ? buildLogsChannelUsagePopoverHtml(target.dataset.channelId)
+    : buildLogsTokenUsagePopoverHtml(target.dataset.tokenId);
+
+  contentPromise
+    .then((content) => {
+      if (seq !== logsUsageHoverSeq) return;
+      showLogsUsagePopover(target, content);
+    })
+    .catch((error) => {
+      console.error('Failed to load logs usage popover', error);
+      if (seq !== logsUsageHoverSeq) return;
+      showLogsUsagePopover(target, `<div class="logs-usage-popover__empty">${escapeHtml(t('logs.usageLoadFailed'))}</div>`);
+    });
+}
+
+function initLogsUsagePopover() {
+  const tbody = document.getElementById('tbody');
+  if (!tbody || tbody.dataset.usagePopoverBound) return;
+  tbody.dataset.usagePopoverBound = '1';
+  tbody.addEventListener('mouseover', (event) => {
+    const target = event.target.closest('[data-usage-popover]');
+    if (!target || !tbody.contains(target)) return;
+    if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+    handleLogsUsagePopoverEnter(target);
+  });
+  tbody.addEventListener('mouseout', (event) => {
+    const target = event.target.closest('[data-usage-popover]');
+    if (!target || !tbody.contains(target)) return;
+    if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+    scheduleHideLogsUsagePopover();
+  });
+}
+
 function initLogsPageActions() {
+  initLogsUsagePopover();
+
   if (typeof window.initDelegatedActions === 'function') {
     window.initDelegatedActions({
       boundKey: 'logsPageActionsBound',

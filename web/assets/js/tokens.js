@@ -937,6 +937,7 @@
       const displayToken = token.plain_token || '';
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
+      const batteryHtml = buildTokenBatteryHtml(token);
       const isActive = !!token.is_active;
       const toggleTitle = getTokenToggleTitle(token);
       const tokenID = normalizeSelectedTokenID(token.id);
@@ -952,6 +953,7 @@
         copyTokenTitle: copyTokenTitle,
         copyTokenDisabledAttr: copyTokenValue ? '' : 'disabled',
         groupHtml: groupHtml,
+        batteryHtml: batteryHtml,
         statusClass: status.class,
         createdAt: createdAt,
         createdLabel: t('tokens.createdSuffix'),
@@ -1128,10 +1130,12 @@
       return `$${value.toFixed(decimals)}`;
     }
 
-    function formatCostDisplay(costUsd) {
+    function formatCostDisplay(costUsd, decimals = 0) {
       const value = Number(costUsd) || 0;
       if (value <= 0) return '$0';
-      const decimals = value >= 1 ? 2 : 4;
+      if (decimals <= 0) {
+        return `$${Math.round(value)}`;
+      }
       return `$${value.toFixed(decimals).replace(/\.?0+$/, '')}`;
     }
 
@@ -1189,6 +1193,70 @@
         return Number(token.effective_daily_cost_limit_usd) || 0;
       }
       return Number(token?.daily_cost_limit_usd) || 0;
+    }
+
+
+    function getTokenEffectiveCostLimit(token) {
+      if (token && token.effective_cost_limit_usd !== undefined) {
+        return Number(token.effective_cost_limit_usd) || 0;
+      }
+      return Number(token?.cost_limit_usd) || 0;
+    }
+
+    function getTokenBatteryState(token) {
+      const dailyLimitUsd = getTokenEffectiveDailyCostLimit(token);
+      const totalLimitUsd = getTokenEffectiveCostLimit(token);
+      const source = dailyLimitUsd > 0 ? 'daily' : (totalLimitUsd > 0 ? 'total' : 'unlimited');
+      const limitUsd = source === 'daily' ? dailyLimitUsd : (source === 'total' ? totalLimitUsd : 0);
+      const usedUsd = source === 'daily'
+        ? (Number(token?.daily_cost_used_usd) || 0)
+        : (source === 'total' ? (Number(token?.total_cost_usd) || 0) : 0);
+
+      if (limitUsd <= 0) {
+        return {
+          source,
+          ratio: 1,
+          remainingUsd: Infinity,
+          limitUsd: 0,
+          usedUsd: 0,
+          levelClass: 'token-battery--good',
+          fillClass: 'token-battery__fill--good',
+          title: t('tokens.batteryUnlimited')
+        };
+      }
+
+      const remainingUsd = Math.max(0, limitUsd - usedUsd);
+      const ratio = Math.max(0, Math.min(1, remainingUsd / limitUsd));
+      const isLow = ratio <= 0.2;
+      const remainingText = formatCostDisplay(remainingUsd);
+      const limitText = formatCostDisplay(limitUsd);
+      const title = source === 'daily'
+        ? t('tokens.batteryDailyRemaining', { remaining: remainingText, limit: limitText })
+        : t('tokens.batteryTotalRemaining', { remaining: remainingText, limit: limitText });
+
+      return {
+        source,
+        ratio,
+        remainingUsd,
+        limitUsd,
+        usedUsd,
+        levelClass: isLow ? 'token-battery--low' : 'token-battery--good',
+        fillClass: isLow ? 'token-battery__fill--low' : 'token-battery__fill--good',
+        title
+      };
+    }
+
+    function buildTokenBatteryHtml(token) {
+      const state = getTokenBatteryState(token);
+      const percent = Math.round(state.ratio * 100);
+      return `
+        <span class="token-battery ${state.levelClass}" title="${escapeHtml(state.title)}" aria-label="${escapeHtml(state.title)}">
+          <span class="token-battery__body" aria-hidden="true">
+            <span class="token-battery__fill ${state.fillClass}" style="width: ${percent}%;"></span>
+          </span>
+          <span class="token-battery__cap" aria-hidden="true"></span>
+        </span>
+      `;
     }
 
     function buildTokenGroupBadgeHtml(token) {
@@ -1287,6 +1355,7 @@
       const displayToken = token.plain_token || '';
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
+      const batteryHtml = buildTokenBatteryHtml(token);
       const enableSwitchHtml = buildTokenEnableSwitchHtml(token);
       const tokenID = normalizeSelectedTokenID(token.id);
       const copyTokenValue = getTokenCopyValue(token);
@@ -1300,7 +1369,7 @@
               aria-label="${escapeHtml(t('tokens.selectionLabel', { name: token.description || maskedToken }))}">
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
-            <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span></div>
+            <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span>${batteryHtml}</div>
             <div class="token-row-meta">${groupHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
             <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>

@@ -31,7 +31,7 @@ test('tokens 页为手机卡片布局补齐模板标签和按钮布局', () => {
   assert.match(tokensHtml, /<template id="tpl-token-row">[\s\S]*?class="mobile-card-row token-card-row"/);
   assert.doesNotMatch(tokensHtml, /class="[^"]*tokens-col-description/);
   assert.match(tokensHtml, /class="tokens-col-checkbox mobile-card-no-label"[\s\S]*class="token-select-checkbox" data-token-id="\{\{id\}\}"/);
-  assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span><\/div>/);
+  assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span>\{\{\{batteryHtml\}\}\}<\/div>/);
   assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*>\{\{maskedToken\}\}<\/button>/);
   assert.match(tokensHtml, /class="token-mobile-details-toggle"[\s\S]*data-action="toggle-token-mobile-details"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-enabled[^"]*"[^>]*data-mobile-label="\{\{mobileLabelEnabled\}\}"/);
@@ -104,10 +104,23 @@ test('tokens 页手机卡片将 token 用量压成紧凑二维指标块', () => 
 test('tokens 页总费用使用调用统计同款 warning 两行成本组件', () => {
   assert.match(tokensScript, /function\s+buildCostSummaryHtml[\s\S]*?buildCostMetricRow\([\s\S]*?tokens\.table\.totalCost[\s\S]*?tone:\s*totalCostUsd > 0 \? 'warning' : 'muted'/);
   assert.match(tokensScript, /buildCostMetricRow\([\s\S]*?tokens\.table\.dailyCost[\s\S]*?tone:\s*dailyCostUsd > 0 \? 'primary' : 'muted'/);
+  assert.match(tokensScript, /function\s+formatCostDisplay\(costUsd, decimals = 0\)/);
   assert.match(tokensCss, /\.token-cost\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
   assert.match(tokensCss, /\.token-cost-summary\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
   assert.match(tokensCss, /\.token-cost-summary__value--warning\s*\{[\s\S]*?color:\s*var\(--warning-700\);/);
   assert.doesNotMatch(tokensCss, /\.token-cost-summary__value\s*\{[^}]*color:\s*var\(--success-700\);/);
+});
+
+
+
+test('tokens 页令牌名旁显示电池进度图标，按剩余额度切换绿红', () => {
+  assert.match(tokensHtml, /class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span>\{\{\{batteryHtml\}\}\}<\/div>/);
+  assert.match(tokensScript, /const batteryHtml = buildTokenBatteryHtml\(token\);/);
+  assert.match(tokensScript, /function\s+getTokenBatteryState\(token\)/);
+  assert.match(tokensScript, /ratio <= 0\.2/);
+  assert.match(tokensCss, /\.token-battery\s*\{[\s\S]*?display:\s*inline-flex;/);
+  assert.match(tokensCss, /\.token-battery--good\s*\{[\s\S]*?color:\s*var\(--success-600\);/);
+  assert.match(tokensCss, /\.token-battery--low\s*\{[\s\S]*?color:\s*var\(--error-600\);/);
 });
 
 test('tokens 页调用次数和 token 用量指标退化为纯文字样式', () => {

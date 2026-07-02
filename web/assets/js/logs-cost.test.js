@@ -75,6 +75,35 @@ ${extractFunction(logsSource, 'buildLogCostDisplay')}`,
   assert.doesNotMatch(costHtml, /log-cost-badge--multiplier/);
 });
 
+
+test('日志页高成本按阈值高亮：大于 0.3 变红，大于 1 变紫', () => {
+  const sandbox = {
+    formatCost(cost) {
+      const value = Number(cost);
+      if (!Number.isFinite(value)) return '';
+      if (value === 0) return '$0';
+      return '$' + value.toFixed(3);
+    }
+  };
+
+  vm.runInNewContext(
+    `${extractFunction(logsSource, 'buildLogCostDisplay')}`,
+    sandbox
+  );
+
+  const warningHtml = sandbox.buildLogCostDisplay({
+    cost: 0.31,
+    cost_multiplier: 1
+  });
+  const criticalHtml = sandbox.buildLogCostDisplay({
+    cost: 1.01,
+    cost_multiplier: 1
+  });
+
+  assert.match(warningHtml, /class="[^"]*log-cost-effective[^"]*log-cost-effective--warning[^"]*"/);
+  assert.match(criticalHtml, /class="[^"]*log-cost-effective[^"]*log-cost-effective--critical[^"]*"/);
+});
+
 test('日志页普通成本保持单值显示且不追加原价删除线', () => {
   const sandbox = {
     formatCost(cost) {
@@ -149,6 +178,8 @@ test('日志页倍率成本样式把原价变灰但不显示删除线，角标�
   assert.match(logsCss, /\.log-channel-cell\s*\{[\s\S]*?position:\s*relative;[\s\S]*?display:\s*flex;[\s\S]*?width:\s*100%;/);
   assert.match(logsCss, /\.log-channel-multiplier-badge\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*[^;]+;[\s\S]*?right:\s*[^;]+;/);
   assert.match(logsCss, /\.log-cost-standard\s*\{[\s\S]*?color:\s*var\(--neutral-500\);/);
+  assert.match(logsCss, /\.log-cost-effective--warning\s*\{[\s\S]*?color:\s*var\(--error-600\);/);
+  assert.match(logsCss, /\.log-cost-effective--critical\s*\{[\s\S]*?color:\s*#7c3aed;[\s\S]*?font-weight:\s*700;/);
   assert.doesNotMatch(logsCss, /\.log-cost-standard\s*\{[\s\S]*?text-decoration:\s*line-through;/, '日志页标准成本不应有删除线');
 });
 

@@ -344,6 +344,52 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    .token-battery {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-left: 8px;
+    }
+    .token-battery__body {
+      position: relative;
+      width: 18px;
+      height: 10px;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+      overflow: hidden;
+      box-sizing: border-box;
+      background: transparent;
+    }
+    .token-battery__fill {
+      position: absolute;
+      top: 1px;
+      bottom: 1px;
+      left: 1px;
+      max-width: calc(100% - 2px);
+      border-radius: 1px;
+      transition: width 0.2s ease, background-color 0.2s ease;
+    }
+    .token-battery__cap {
+      width: 3px;
+      height: 6px;
+      border-radius: 0 2px 2px 0;
+      background: currentColor;
+      opacity: 0.9;
+    }
+    .token-battery--good {
+      color: var(--success-600);
+    }
+    .token-battery--low {
+      color: var(--error-600);
+    }
+    .token-battery__fill--good {
+      background: var(--success-500);
+    }
+    .token-battery__fill--low {
+      background: var(--error-500);
+    }
     .token-row-meta {
       margin-top: 3px;
       display: flex;
