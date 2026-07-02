@@ -358,6 +358,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	}
 
 	ctx = contextWithEstimatedInputTokens(ctx, estimateRequestInputTokens(all))
+	ctx = contextWithTokenHash(ctx, tokenHashStr)
 
 	cands, err := s.selectRouteCandidates(ctx, c, originalModel, string(clientProtocol))
 	if err != nil {

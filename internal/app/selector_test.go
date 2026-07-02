@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1343,6 +1344,89 @@ func TestSortChannelsByHealth_WeightedByEffectiveKeyCount(t *testing.T) {
 	}
 	if ratioB < 40 || ratioB > 60 {
 		t.Errorf("冷却感知加权分布异常: channel-B出现%.1f%%，期望40%%-60%%", ratioB)
+	}
+}
+
+func TestBalanceSamePriorityChannels_WeightedRendezvousStickyPerToken(t *testing.T) {
+	server := &Server{channelBalancer: NewSmoothWeightedRR()}
+	now := time.Now()
+	channels := []*model.Config{
+		{ID: 11, Name: "channel-a", Priority: 10, KeyCount: 1},
+		{ID: 22, Name: "channel-b", Priority: 10, KeyCount: 1},
+	}
+
+	ctxA := contextWithTokenHash(context.Background(), "token-a")
+	ctxB := contextWithTokenHash(context.Background(), "token-b")
+
+	firstA := server.balanceSamePriorityChannelsWithToken(channels, nil, now, 0, tokenHashFromContext(ctxA))[0].Name
+	for i := 0; i < 50; i++ {
+		got := server.balanceSamePriorityChannelsWithToken(channels, nil, now, 0, tokenHashFromContext(ctxA))[0].Name
+		if got != firstA {
+			t.Fatalf("token-a 首选不稳定: first=%s now=%s", firstA, got)
+		}
+	}
+
+	seen := map[string]bool{firstA: true}
+	for i := 0; i < 64; i++ {
+		tokenHash := tokenHashFromContext(ctxB)
+		if i > 0 {
+			tokenHash = fmt.Sprintf("token-b-%d", i)
+		}
+		first := server.balanceSamePriorityChannelsWithToken(channels, nil, now, 0, tokenHash)[0].Name
+		seen[first] = true
+		if len(seen) == 2 {
+			break
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("不同 token 未产生分流: seen=%v", seen)
+	}
+}
+
+func TestOrderChannelsByWeightedRendezvous_WeightedDistribution(t *testing.T) {
+	now := time.Now()
+	channels := []*model.Config{
+		{ID: 1, Name: "channel-a", KeyCount: 3},
+		{ID: 2, Name: "channel-b", KeyCount: 1},
+	}
+
+	firstCount := map[string]int{}
+	for i := 0; i < 2000; i++ {
+		tokenHash := fmt.Sprintf("token-%d", i)
+		ordered := orderChannelsByWeightedRendezvous(channels, tokenHash, nil, now)
+		firstCount[ordered[0].Name]++
+	}
+
+	if firstCount["channel-a"] <= firstCount["channel-b"] {
+		t.Fatalf("加权分布异常: A=%d B=%d", firstCount["channel-a"], firstCount["channel-b"])
+	}
+}
+
+func TestOrderChannelsByWeightedRendezvous_MinimalRemapOnChannelRemoval(t *testing.T) {
+	now := time.Now()
+	three := []*model.Config{
+		{ID: 1, Name: "A", KeyCount: 1},
+		{ID: 2, Name: "B", KeyCount: 1},
+		{ID: 3, Name: "C", KeyCount: 1},
+	}
+	two := []*model.Config{
+		{ID: 1, Name: "A", KeyCount: 1},
+		{ID: 2, Name: "B", KeyCount: 1},
+	}
+
+	changedWithoutC := 0
+	samples := 1000
+	for i := 0; i < samples; i++ {
+		tokenHash := fmt.Sprintf("token-%d", i)
+		before := orderChannelsByWeightedRendezvous(three, tokenHash, nil, now)[0].Name
+		after := orderChannelsByWeightedRendezvous(two, tokenHash, nil, now)[0].Name
+		if before != "C" && before != after {
+			changedWithoutC++
+		}
+	}
+
+	if changedWithoutC != 0 {
+		t.Fatalf("删除未命中渠道后发生额外漂移: %d", changedWithoutC)
 	}
 }
 

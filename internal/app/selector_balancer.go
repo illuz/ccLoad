@@ -31,6 +31,7 @@ func effectivePriorityForSort(ch *modelpkg.Config, inputTokens int) int {
 }
 
 type inputTokensContextKey struct{}
+type tokenHashContextKey struct{}
 
 func contextWithEstimatedInputTokens(ctx context.Context, tokens int) context.Context {
 	if tokens <= 0 {
@@ -47,6 +48,23 @@ func estimatedInputTokensFromContext(ctx context.Context) int {
 		return v
 	}
 	return 0
+}
+
+func contextWithTokenHash(ctx context.Context, tokenHash string) context.Context {
+	if tokenHash == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, tokenHashContextKey{}, tokenHash)
+}
+
+func tokenHashFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(tokenHashContextKey{}).(string); ok {
+		return v
+	}
+	return ""
 }
 
 func effPriorityBucket(p float64) int64 {
@@ -74,7 +92,7 @@ func (s *Server) sortChannelsByHealth(
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
 ) []*modelpkg.Config {
-	return s.sortChannelsByHealthWithInputTokens(channels, keyCooldowns, now, 0)
+	return s.sortChannelsByHealthWithToken(channels, keyCooldowns, now, 0, "")
 }
 
 func (s *Server) sortChannelsByHealthWithInputTokens(
@@ -83,12 +101,22 @@ func (s *Server) sortChannelsByHealthWithInputTokens(
 	now time.Time,
 	inputTokens int,
 ) []*modelpkg.Config {
+	return s.sortChannelsByHealthWithToken(channels, keyCooldowns, now, inputTokens, "")
+}
+
+func (s *Server) sortChannelsByHealthWithToken(
+	channels []*modelpkg.Config,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	inputTokens int,
+	tokenHash string,
+) []*modelpkg.Config {
 	if len(channels) == 0 {
 		return channels
 	}
 
 	if s == nil || s.healthCache == nil {
-		return s.balanceSamePriorityChannelsWithInputTokens(channels, keyCooldowns, now, inputTokens)
+		return s.balanceSamePriorityChannelsWithToken(channels, keyCooldowns, now, inputTokens, tokenHash)
 	}
 
 	cfg := s.healthCache.Config()
@@ -115,7 +143,7 @@ func (s *Server) sortChannelsByHealthWithInputTokens(
 	for i := 1; i <= len(scored); i++ {
 		if i == len(scored) || effPriorityBucket(scored[i].effPriority) != effPriorityBucket(scored[groupStart].effPriority) {
 			if i-groupStart > 1 {
-				s.balanceScoredChannelsInPlace(scored[groupStart:i], keyCooldowns, now)
+				s.balanceScoredChannelsInPlace(scored[groupStart:i], keyCooldowns, now, tokenHash)
 			}
 			groupStart = i
 		}
@@ -173,7 +201,7 @@ func (s *Server) balanceSamePriorityChannels(
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
 ) []*modelpkg.Config {
-	return s.balanceSamePriorityChannelsWithInputTokens(channels, keyCooldowns, now, 0)
+	return s.balanceSamePriorityChannelsWithToken(channels, keyCooldowns, now, 0, "")
 }
 
 func (s *Server) balanceSamePriorityChannelsWithInputTokens(
@@ -181,6 +209,16 @@ func (s *Server) balanceSamePriorityChannelsWithInputTokens(
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
 	inputTokens int,
+) []*modelpkg.Config {
+	return s.balanceSamePriorityChannelsWithToken(channels, keyCooldowns, now, inputTokens, "")
+}
+
+func (s *Server) balanceSamePriorityChannelsWithToken(
+	channels []*modelpkg.Config,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	inputTokens int,
+	tokenHash string,
 ) []*modelpkg.Config {
 	n := len(channels)
 	if n <= 1 {
@@ -209,7 +247,7 @@ func (s *Server) balanceSamePriorityChannelsWithInputTokens(
 		if i == n || effectivePriorityForSort(result[i], inputTokens) != effectivePriorityForSort(result[groupStart], inputTokens) {
 			if i-groupStart > 1 {
 				group := result[groupStart:i]
-				balanced := s.channelBalancer.SelectWithCooldown(group, keyCooldowns, now)
+				balanced := s.balanceChannelsInGroup(group, keyCooldowns, now, tokenHash)
 				copy(result[groupStart:i], balanced)
 			}
 			groupStart = i
@@ -225,13 +263,10 @@ func (s *Server) balanceScoredChannelsInPlace(
 	items []channelWithScore,
 	keyCooldowns map[int64]map[int]time.Time,
 	now time.Time,
+	tokenHash string,
 ) {
 	n := len(items)
 	if n <= 1 {
-		return
-	}
-
-	if s == nil || s.channelBalancer == nil {
 		return
 	}
 
@@ -241,8 +276,10 @@ func (s *Server) balanceScoredChannelsInPlace(
 		configs[i] = item.config
 	}
 
-	// 使用平滑加权轮询获取排序后的结果
-	balanced := s.channelBalancer.SelectWithCooldown(configs, keyCooldowns, now)
+	balanced := s.balanceChannelsInGroup(configs, keyCooldowns, now, tokenHash)
+	if len(balanced) == 0 {
+		return
+	}
 
 	// 按轮询结果重排 items（O(n) 交换）
 	// balanced[0] 是选中的渠道，需要把它移到 items[0]
@@ -253,4 +290,22 @@ func (s *Server) balanceScoredChannelsInPlace(
 			break
 		}
 	}
+}
+
+func (s *Server) balanceChannelsInGroup(
+	channels []*modelpkg.Config,
+	keyCooldowns map[int64]map[int]time.Time,
+	now time.Time,
+	tokenHash string,
+) []*modelpkg.Config {
+	if len(channels) <= 1 {
+		return channels
+	}
+	if tokenHash != "" {
+		return orderChannelsByWeightedRendezvous(channels, tokenHash, keyCooldowns, now)
+	}
+	if s == nil || s.channelBalancer == nil {
+		return channels
+	}
+	return s.channelBalancer.SelectWithCooldown(channels, keyCooldowns, now)
 }

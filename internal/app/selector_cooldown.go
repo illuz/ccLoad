@@ -40,6 +40,7 @@ func (s *Server) filterCooldownChannelsInternal(ctx context.Context, channels []
 
 	now := time.Now()
 	inputTokens := estimatedInputTokensFromContext(ctx)
+	tokenHash := tokenHashFromContext(ctx)
 
 	// === 成本限额过滤（在冷却过滤之前）===
 	channels = s.filterCostLimitExceededChannels(channels)
@@ -90,11 +91,11 @@ func (s *Server) filterCooldownChannelsInternal(ctx context.Context, channels []
 
 	// 启用健康度排序：对"已通过冷却过滤"的渠道按健康度排序
 	if s.healthCache != nil && s.healthCache.Config().Enabled {
-		return s.sortChannelsByHealthWithInputTokens(filtered, keyCooldowns, now, inputTokens), nil
+		return s.sortChannelsByHealthWithToken(filtered, keyCooldowns, now, inputTokens, tokenHash), nil
 	}
 
 	// healthCache 关闭时：按优先级分组，使用平滑加权轮询
-	return s.balanceSamePriorityChannelsWithInputTokens(filtered, keyCooldowns, now, inputTokens), nil
+	return s.balanceSamePriorityChannelsWithToken(filtered, keyCooldowns, now, inputTokens, tokenHash), nil
 }
 
 func cooldownFallbackCandidate(cfg *modelpkg.Config) *modelpkg.Config {
