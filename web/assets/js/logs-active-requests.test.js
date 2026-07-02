@@ -29,7 +29,10 @@ test('全部日志视图仍会保留进行中请求轮询', () => {
 
 test('进行中请求令牌列按 token_id 显示令牌描述', () => {
   const buildActiveRequestTokenDescDisplay = vm.runInNewContext(
-    `(${extractFunction(logsSource, 'buildActiveRequestTokenDescDisplay')})`,
+    `${extractFunction(logsSource, 'formatLogTokenDescLabel')}
+     ${extractFunction(logsSource, 'buildLogTokenDescDisplay')}
+     ${extractFunction(logsSource, 'buildActiveRequestTokenDescDisplay')}
+     buildActiveRequestTokenDescDisplay`,
     {
       authTokens: [{ id: 7, description: 'Ops <Main>' }],
       escapeHtml: (value) => String(value)
@@ -43,11 +46,11 @@ test('进行中请求令牌列按 token_id 显示令牌描述', () => {
 
   assert.equal(
     buildActiveRequestTokenDescDisplay({ token_id: 7 }),
-    '<span title="Ops &lt;Main&gt;">Ops.in&gt;</span>'
+    '<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="7" title="Ops &lt;Main&gt;">Ops.in&gt;</button>'
   );
   assert.equal(
     buildActiveRequestTokenDescDisplay({ token_id: 8 }),
-    '<span title="Token #8">Token #8</span>'
+    '<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="8" title="Token #8">Tok. #8</button>'
   );
   assert.equal(buildActiveRequestTokenDescDisplay({ token_id: 0 }), '');
 });

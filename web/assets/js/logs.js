@@ -453,11 +453,7 @@ function buildActiveRequestTokenDescDisplay(req) {
   const token = (Array.isArray(authTokens) ? authTokens : [])
     .find(item => Number(item?.id) === tokenId);
   const label = token?.description || `Token #${tokenId}`;
-  const labelText = String(label || '');
-  const displayLabel = token?.description && labelText.length > 7
-    ? `${labelText.slice(0, 3)}.${labelText.slice(-3)}`
-    : labelText;
-  return `<span title="${escapeHtml(label)}">${escapeHtml(displayLabel)}</span>`;
+  return buildLogTokenDescDisplay(label, tokenId);
 }
 
 function formatLogTokenDescLabel(label) {
@@ -465,10 +461,16 @@ function formatLogTokenDescLabel(label) {
   return text.length > 7 ? `${text.slice(0, 3)}.${text.slice(-3)}` : text;
 }
 
-function buildLogTokenDescDisplay(label) {
+function buildLogTokenDescDisplay(label, tokenId = 0) {
   const text = String(label || '');
   if (!text) return '<span style="color: var(--neutral-500);">-</span>';
-  return `<span class="logs-token-desc-text" title="${escapeHtml(text)}">${escapeHtml(formatLogTokenDescLabel(text))}</span>`;
+  const content = escapeHtml(formatLogTokenDescLabel(text));
+  const title = escapeHtml(text);
+  const numericTokenID = Number(tokenId) || 0;
+  if (numericTokenID > 0) {
+    return `<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="${numericTokenID}" title="${title}">${content}</button>`;
+  }
+  return `<span class="logs-token-desc-text" title="${title}">${content}</span>`;
 }
 
 function renderLogSourceBadge(logSource) {
@@ -924,7 +926,7 @@ function renderLogs(data) {
       '<span style="color: var(--neutral-400);">-</span>';
 
     // 0.5. API访问令牌描述
-    const tokenDescDisplay = buildLogTokenDescDisplay(entry.auth_token_description);
+    const tokenDescDisplay = buildLogTokenDescDisplay(entry.auth_token_description, entry.auth_token_id);
 
     // 1. 渠道信息显示（鼠标移上去时显示URL）
     const configDisplay = buildLogChannelDisplay(entry);
@@ -1787,6 +1789,15 @@ window.initPageBootstrap({
           } else if (typeof openLogChannelEditor === 'function') {
             openLogChannelEditor(channelId);
           }
+        }
+        return;
+      }
+
+      const tokenBtn = e.target.closest('.token-link[data-token-id]');
+      if (tokenBtn) {
+        const tokenId = parseInt(tokenBtn.dataset.tokenId, 10);
+        if (Number.isFinite(tokenId) && tokenId > 0 && typeof openLogTokenEditor === 'function') {
+          openLogTokenEditor(tokenId);
         }
         return;
       }

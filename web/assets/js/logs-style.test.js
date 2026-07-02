@@ -329,10 +329,10 @@ test('日志页令牌列超过 7 个字符时显示首尾三位并保留完整 t
   assert.match(logsSource, /String\(label\s*\|\|\s*''\)/);
   assert.match(logsSource, /text\.length\s*>\s*7/);
   assert.match(logsSource, /text\.slice\(0,\s*3\).*text\.slice\(-3\)/s);
-  assert.match(logsSource, /function\s+buildLogTokenDescDisplay\(label\)/);
-  assert.match(logsSource, /title="\$\{escapeHtml\(text\)\}"/);
+  assert.match(logsSource, /function\s+buildLogTokenDescDisplay\(label,\s*tokenId = 0\)/);
+  assert.match(logsSource, /title="\$\{title\}"/);
   assert.match(logsSource, /escapeHtml\(formatLogTokenDescLabel\(text\)\)/);
-  assert.match(logsSource, /const tokenDescDisplay = buildLogTokenDescDisplay\(entry\.auth_token_description\);/);
+  assert.match(logsSource, /const tokenDescDisplay = buildLogTokenDescDisplay\(entry\.auth_token_description,\s*entry\.auth_token_id\);/);
 });
 
 test('进行中请求复用日志表格列类名和共享字体类', () => {
