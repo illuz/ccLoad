@@ -1225,11 +1225,12 @@
         return {
           source,
           ratio: 1,
+          percent: 100,
           remainingUsd: Infinity,
           limitUsd: 0,
           usedUsd: 0,
-          levelClass: 'token-battery--good',
-          fillClass: 'token-battery__fill--good',
+          levelClass: 'token-battery--full',
+          fillClass: 'token-battery__fill--full',
           title: t('tokens.batteryUnlimited')
         };
       }

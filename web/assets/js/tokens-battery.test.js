@@ -92,6 +92,28 @@ test('tokens 页电池图标根据剩余额度显示多档颜色和百分比', (
   assert.match(critical, />15%<\/span>/);
 });
 
+test('tokens 页电池图标在无限额或缺少数据时不显示 undefined', () => {
+  const sandbox = {
+    escapeHtml(value) { return String(value ?? ''); },
+    t(key) {
+      if (key === 'tokens.batteryUnlimited') return '无限额';
+      return key;
+    }
+  };
+
+  vm.runInNewContext(joinFunctions([
+    'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveCostLimit',
+    'getTokenBatteryState',
+    'buildTokenBatteryHtml'
+  ]), sandbox);
+
+  const html = sandbox.buildTokenBatteryHtml({});
+  assert.doesNotMatch(html, /undefined/);
+  assert.match(html, /width: 100%/);
+  assert.match(html, />100%<\/span>/);
+});
+
 test('tokens 页当日翻倍开关会把每日限额按 2 倍展示', () => {
   const sandbox = {};
   vm.runInNewContext(joinFunctions([
