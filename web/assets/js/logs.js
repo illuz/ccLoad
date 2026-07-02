@@ -2615,6 +2615,8 @@ function renderDebugAnalysis(targetId, data) {
   const toolTree = data.tool_file_tree || {};
   const paths = Array.isArray(toolTree.paths) ? toolTree.paths : [];
   const calls = Array.isArray(data.tool_calls) ? data.tool_calls : [];
+  const aiTexts = Array.isArray(data.ai_texts) ? data.ai_texts : [];
+  const finalAiText = String(data.final_ai_text || (aiTexts.length ? aiTexts[aiTexts.length - 1].content : '') || '').trim();
   const errors = Array.isArray(data.errors) ? data.errors : [];
   const treeText = String(toolTree.tree_text || '').trim();
 
@@ -2631,6 +2633,21 @@ function renderDebugAnalysis(targetId, data) {
           <div class="debug-analysis-text">${escapeHtml(q.content || '')}</div>
         </details>`).join('')
     : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const aiTextHtml = finalAiText
+    ? `<div class="debug-analysis-ai-text">${escapeHtml(finalAiText)}</div>`
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
+  const aiTextHistoryHtml = aiTexts.length > 1
+    ? `<details class="debug-analysis-item debug-analysis-ai-history">
+        <summary>${escapeHtml(t('logs.debugAnalysisAITextHistory') || 'All AI text fragments')} (${aiTexts.length})</summary>
+        ${aiTexts.map((item, i) => `
+          <div class="debug-analysis-text debug-analysis-text--fragment">
+            <div class="debug-analysis-fragment-title">#${i + 1} ${escapeHtml(item.source || '')}</div>
+            ${escapeHtml(item.content || '')}
+          </div>`).join('')}
+      </details>`
+    : '';
 
   const treeHtml = treeText
     ? `<pre class="debug-analysis-tree">${escapeHtml(treeText)}</pre>`
@@ -2659,11 +2676,13 @@ function renderDebugAnalysis(targetId, data) {
   el.innerHTML = `
     <div class="debug-analysis-summary">
       <div class="debug-analysis-stat"><b>${questions.length}</b><span>${escapeHtml(t('logs.debugAnalysisQuestions') || 'Questions')}</span></div>
+      <div class="debug-analysis-stat"><b>${finalAiText ? 1 : 0}</b><span>${escapeHtml(t('logs.debugAnalysisAIText') || 'AI Text')}</span></div>
       <div class="debug-analysis-stat"><b>${paths.length}</b><span>${escapeHtml(t('logs.debugAnalysisPaths') || 'Paths')}</span></div>
       <div class="debug-analysis-stat"><b>${calls.length}</b><span>${escapeHtml(t('logs.debugAnalysisToolCalls') || 'Tool calls')}</span></div>
     </div>
     <div class="debug-analysis-meta">${meta.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v ?? '-'))}</strong></div>`).join('')}</div>
     ${warningHtml}
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisAIText') || 'AI Text')}</h3>${aiTextHtml}${aiTextHistoryHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisQuestions') || 'User Questions')}</h3>${questionHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisFileTree') || 'File Tree')}</h3>${treeHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisPaths') || 'Paths')}</h3>${pathHtml}</section>

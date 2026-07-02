@@ -137,6 +137,86 @@ def safe_json_arg(value: Any) -> Any:
     return value
 
 
+
+def append_unique_text(out: list[dict[str, Any]], text: str, source: str) -> None:
+    text = (text or "").strip()
+    if not text:
+        return
+    if any(item.get("content") == text for item in out):
+        return
+    out.append({"index": len(out), "source": source, "content": text})
+
+
+def extract_ai_texts(obj: Any, out: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Extract assistant-visible text from non-stream JSON response objects.
+
+    The analyzer intentionally records text only, not code edits as separate
+    structured content. If the model's final answer contains code fences they
+    remain part of the text because that is what the user saw.
+    """
+    if out is None:
+        out = []
+    if isinstance(obj, dict):
+        # Chat Completions full response: choices[].message.content
+        choices = obj.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                msg = choice.get("message")
+                if isinstance(msg, dict) and msg.get("role") == "assistant":
+                    append_unique_text(out, text_from_content(msg.get("content")), "choices.message")
+
+        obj_type = obj.get("type")
+        # Responses API message object: {type:"message", role:"assistant", content:[...]}
+        if obj_type == "message" and obj.get("role") == "assistant":
+            append_unique_text(out, text_from_content(obj.get("content")), "response.message")
+
+        # Responses content part: {type:"output_text", text:"..."}
+        if obj_type == "output_text" and isinstance(obj.get("text"), str):
+            append_unique_text(out, obj["text"], "output_text")
+
+        # Streaming Responses done event: {type:"response.output_text.done", text:"..."}
+        if obj_type == "response.output_text.done" and isinstance(obj.get("text"), str):
+            append_unique_text(out, obj["text"], "response.output_text.done")
+
+        # Streaming output item wrapper.
+        if obj_type == "response.output_item.done" and isinstance(obj.get("item"), dict):
+            extract_ai_texts(obj["item"], out)
+
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                extract_ai_texts(v, out)
+    elif isinstance(obj, list):
+        for item in obj:
+            extract_ai_texts(item, out)
+    return out
+
+
+def extract_ai_texts_from_events(events: list[Any]) -> list[dict[str, Any]]:
+    out = extract_ai_texts(events)
+
+    # Fallback for streams that only include deltas and no done/message object.
+    buffers: dict[str, list[str]] = {}
+    order: list[str] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") != "response.output_text.delta":
+            continue
+        delta = event.get("delta")
+        if not isinstance(delta, str):
+            continue
+        item_id = str(event.get("item_id") or event.get("output_index") or "default")
+        if item_id not in buffers:
+            buffers[item_id] = []
+            order.append(item_id)
+        buffers[item_id].append(delta)
+    for item_id in order:
+        append_unique_text(out, "".join(buffers[item_id]), f"response.output_text.delta:{item_id}")
+    return out
+
+
 def collect_tool_calls(obj: Any, out: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     if out is None:
         out = []
@@ -270,6 +350,13 @@ def analyze_row(row: sqlite3.Row, db_path: str) -> dict[str, Any]:
     if resp_events:
         tool_calls.extend(collect_tool_calls(resp_events))
 
+    ai_texts: list[dict[str, Any]] = []
+    if resp_obj is not None:
+        ai_texts = extract_ai_texts(resp_obj)
+    if resp_events:
+        ai_texts = extract_ai_texts_from_events(resp_events)
+    final_ai_text = ai_texts[-1]["content"] if ai_texts else ""
+
     seen_paths: dict[str, dict[str, Any]] = {}
     for tc in tool_calls:
         for p in paths_from_value(tc.get("arguments")):
@@ -287,6 +374,8 @@ def analyze_row(row: sqlite3.Row, db_path: str) -> dict[str, Any]:
             "paths": [seen_paths[p] for p in paths],
             "tree_text": build_tree(paths),
         },
+        "ai_texts": ai_texts,
+        "final_ai_text": final_ai_text,
         "tool_calls": tool_calls,
         "errors": errors,
     }

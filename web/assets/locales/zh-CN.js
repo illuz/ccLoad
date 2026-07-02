@@ -892,6 +892,8 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.debugAnalysisNotFound': '暂无分析结果，请先运行 scripts/analyze_debug_logs.py。',
   'logs.debugAnalysisUnavailableActive': '活跃请求暂不支持分析结果，请等待请求完成并运行分析器。',
   'logs.debugAnalysisQuestions': '用户问题',
+  'logs.debugAnalysisAIText': 'AI 回复文本',
+  'logs.debugAnalysisAITextHistory': '全部 AI 文本片段',
   'logs.debugAnalysisQuestion': '问题',
   'logs.debugAnalysisPaths': '文件路径',
   'logs.debugAnalysisToolCalls': '工具调用',

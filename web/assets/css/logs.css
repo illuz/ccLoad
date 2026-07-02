@@ -686,7 +686,7 @@
 
     .debug-analysis-summary {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: var(--space-3);
       margin-bottom: var(--space-4);
     }
@@ -761,6 +761,7 @@
       color: var(--neutral-800);
     }
 
+    .debug-analysis-ai-text,
     .debug-analysis-text,
     .debug-analysis-tree,
     .debug-analysis-json {
@@ -774,6 +775,27 @@
       color: var(--neutral-800);
       background: rgba(15, 23, 42, 0.04);
       border-top: 1px solid var(--surface-border);
+    }
+
+    .debug-analysis-ai-text {
+      border: 1px solid var(--surface-border);
+      border-radius: 10px;
+      border-top: 1px solid var(--surface-border);
+      background: var(--surface-bg-muted);
+      font-family: inherit;
+      font-size: 0.92rem;
+      line-height: 1.7;
+    }
+
+    .debug-analysis-ai-history {
+      margin-top: var(--space-3);
+    }
+
+    .debug-analysis-fragment-title {
+      margin-bottom: var(--space-2);
+      font-family: inherit;
+      font-weight: var(--font-semibold);
+      color: var(--neutral-600);
     }
 
     .debug-analysis-tree {
@@ -834,9 +856,11 @@
       border: 1px solid var(--warning-200, #fde68a);
     }
 
+    html[data-theme="dark"] .debug-analysis-ai-text,
     html[data-theme="dark"] .debug-analysis-text,
     html[data-theme="dark"] .debug-analysis-tree,
     html[data-theme="dark"] .debug-analysis-json,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-ai-text,
     html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-text,
     html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-tree,
     html[data-theme="system"][data-resolved-theme="dark"] .debug-analysis-json {

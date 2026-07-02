@@ -892,6 +892,8 @@ window.I18N_LOCALES['en'] = {
   'logs.debugAnalysisNotFound': 'No analysis yet. Run scripts/analyze_debug_logs.py first.',
   'logs.debugAnalysisUnavailableActive': 'Analysis is unavailable for active requests. Wait until the request finishes and run the analyzer.',
   'logs.debugAnalysisQuestions': 'User Questions',
+  'logs.debugAnalysisAIText': 'AI Response Text',
+  'logs.debugAnalysisAITextHistory': 'All AI text fragments',
   'logs.debugAnalysisQuestion': 'Question',
   'logs.debugAnalysisPaths': 'Paths',
   'logs.debugAnalysisToolCalls': 'Tool Calls',
