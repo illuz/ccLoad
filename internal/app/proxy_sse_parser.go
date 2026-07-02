@@ -61,6 +61,11 @@ type sseUsageParser struct {
 	// hasStreamOutput 表示已经看到应转发给客户端的非心跳流事件。
 	// ping 只是上游保活，不能让 200 空流被误判为成功。
 	hasStreamOutput bool
+
+	// hasTextOutput 表示已经看到第一个可见文本增量。它比 hasStreamOutput 更接近
+	// 用户体感的“首 token”，因为 Responses API 的 response.created /
+	// response.in_progress 等元事件不包含可见文本。
+	hasTextOutput bool
 }
 
 type jsonUsageParser struct {
@@ -109,6 +114,7 @@ type usageParser interface {
 	GetLastError() []byte   // [INFO] 返回SSE流中检测到的最后一个error事件（用于1308等错误的延迟处理）
 	IsStreamComplete() bool // [INFO] 返回是否检测到流结束标志（[DONE]/message_stop）
 	HasStreamOutput() bool  // 返回是否已经看到非心跳的可见响应内容
+	HasTextOutput() bool    // 返回是否已经看到可见文本 token
 }
 
 // GetCacheBreakdown 由 sseUsageParser/jsonUsageParser 通过嵌入共享。
@@ -502,6 +508,9 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	if err := json.Unmarshal([]byte(data), &event); err != nil {
 		return fmt.Errorf("json unmarshal failed: %w", err)
 	}
+	if eventHasTextOutput(eventType, event) {
+		p.hasTextOutput = true
+	}
 
 	// 提取 service_tier（OpenAI Chat/Responses API 顶层字段）
 	if tier, ok := event["service_tier"].(string); ok && tier != "" {
@@ -573,6 +582,10 @@ func (p *sseUsageParser) HasStreamOutput() bool {
 	return p.hasStreamOutput
 }
 
+func (p *sseUsageParser) HasTextOutput() bool {
+	return p.hasTextOutput
+}
+
 func isHeartbeatEvent(eventType, data string) bool {
 	if eventType == "ping" {
 		return true
@@ -584,6 +597,93 @@ func isHeartbeatEvent(eventType, data string) bool {
 		Type string `json:"type"`
 	}
 	return json.Unmarshal([]byte(data), &event) == nil && event.Type == "ping"
+}
+
+func eventHasTextOutput(eventType string, event map[string]any) bool {
+	if event == nil {
+		return false
+	}
+	if eventType == "" {
+		eventType, _ = event["type"].(string)
+	}
+
+	switch eventType {
+	case "response.output_text.delta":
+		return nonEmptyStringValue(event["delta"])
+	case "content_block_delta":
+		if delta, _ := event["delta"].(map[string]any); delta != nil {
+			return nonEmptyStringValue(delta["text"])
+		}
+	case "message":
+		return contentValueHasText(event["content"])
+	}
+
+	// OpenAI chat/completions SSE shape.
+	if choices, _ := event["choices"].([]any); len(choices) > 0 {
+		for _, choiceAny := range choices {
+			choice, _ := choiceAny.(map[string]any)
+			if choice == nil {
+				continue
+			}
+			if delta, _ := choice["delta"].(map[string]any); delta != nil {
+				if contentValueHasText(delta["content"]) {
+					return true
+				}
+			}
+			if nonEmptyStringValue(choice["text"]) || contentValueHasText(choice["message"]) {
+				return true
+			}
+		}
+	}
+
+	// Gemini SSE shape.
+	if candidates, _ := event["candidates"].([]any); len(candidates) > 0 {
+		for _, candAny := range candidates {
+			candidate, _ := candAny.(map[string]any)
+			if candidate == nil {
+				continue
+			}
+			if contentValueHasText(candidate["content"]) {
+				return true
+			}
+		}
+	}
+
+	// Responses final/item events can carry completed output arrays.  This is
+	// usually later than response.output_text.delta, but it keeps the metric
+	// useful for non-standard upstreams that skip delta events.
+	if response, _ := event["response"].(map[string]any); response != nil {
+		if contentValueHasText(response["output"]) {
+			return true
+		}
+	}
+	return contentValueHasText(event["output"]) || contentValueHasText(event["content"])
+}
+
+func contentValueHasText(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x) != ""
+	case []any:
+		for _, item := range x {
+			if contentValueHasText(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		if nonEmptyStringValue(x["text"]) || nonEmptyStringValue(x["delta"]) {
+			return true
+		}
+		if contentValueHasText(x["content"]) || contentValueHasText(x["parts"]) || contentValueHasText(x["output"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyStringValue(v any) bool {
+	s, _ := v.(string)
+	return strings.TrimSpace(s) != ""
 }
 
 func (p *jsonUsageParser) Feed(data []byte) error {
@@ -851,6 +951,10 @@ func (p *jsonUsageParser) IsStreamComplete() bool {
 }
 
 func (p *jsonUsageParser) HasStreamOutput() bool {
+	return p.hasBody
+}
+
+func (p *jsonUsageParser) HasTextOutput() bool {
 	return p.hasBody
 }
 

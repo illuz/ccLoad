@@ -287,10 +287,16 @@ func (s *Server) handleSpecialRoutes(c *gin.Context) bool {
 
 // HandleProxyRequest 通用透明代理处理器
 func (s *Server) HandleProxyRequest(c *gin.Context) {
-	startTime := time.Now()
+	handlerStart := time.Now()
+	startTime := proxyTimingStartTime(c, handlerStart)
+	timing := newProxyTimingTrace(startTime, handlerStart)
 
 	// 并发控制
+	queueStart := time.Now()
 	release, ok := s.acquireConcurrencySlot(c)
+	if timing != nil {
+		timing.MarkQueueWait(time.Since(queueStart))
+	}
 	if !ok {
 		return
 	}
@@ -410,6 +416,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		activeReqID:    activeID,
 		startTime:      startTime,
 		thinkingEffort: thinkingEffort,
+		timing:         timing,
 	}
 	reqCtx.observer = &ForwardObserver{
 		OnBytesRead: func(n int64) {
@@ -421,6 +428,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		OnDebugCapture: func(dc *debugCapture) {
 			s.activeRequests.SetDebugCapture(activeID, dc)
 		},
+		Timing: timing,
 	}
 
 	lastResult, succeeded := s.runProxyAttemptLoop(ctx, cands, reqCtx, c.Writer)

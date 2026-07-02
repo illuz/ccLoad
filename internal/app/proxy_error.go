@@ -121,7 +121,15 @@ func (s *Server) logProxyResult(
 		DebugData:      reqCtx.debugData,
 		CostMultiplier: cfg.CostMultiplier,
 		ThinkingEffort: reqCtx.thinkingEffort,
+		TimingSummary:  timingSummary(reqCtx),
 	}))
+}
+
+func timingSummary(reqCtx *proxyRequestContext) string {
+	if reqCtx == nil || reqCtx.timing == nil {
+		return ""
+	}
+	return reqCtx.timing.Summary()
 }
 
 func (s *Server) updateTokenStatsForProxy(

@@ -129,6 +129,7 @@ type ForwardObserver struct {
 	OnBytesRead     func(int64) // 字节读取回调（可选）
 	OnFirstByteRead func()      // 首字节读取回调（可选）
 	OnDebugCapture  func(*debugCapture)
+	Timing          *proxyTimingTrace
 }
 
 // proxyRequestContext 代理请求上下文（封装请求信息，遵循DIP原则）
@@ -153,6 +154,7 @@ type proxyRequestContext struct {
 	baseURL          string               // 当前尝试使用的上游URL（多URL场景）
 	debugData        *model.DebugLogEntry // Debug日志数据（debug开启时填充）
 	thinkingEffort   string
+	timing           *proxyTimingTrace
 }
 
 // proxyResult 代理请求结果
@@ -775,6 +777,7 @@ type logEntryParams struct {
 	DebugData      *model.DebugLogEntry // Debug日志数据
 	CostMultiplier float64              // 渠道成本倍率快照（0=免费，<0 视为 1）
 	ThinkingEffort string
+	TimingSummary  string
 }
 
 // buildLogEntry 构建日志条目（消除重复代码，遵循DRY原则）
@@ -871,8 +874,23 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 			entry.ThinkingEffort = effort
 		}
 	}
+	if p.TimingSummary != "" {
+		entry.Message = appendTimingSummary(entry.Message, p.TimingSummary)
+	}
 	entry.DebugData = p.DebugData
 	return entry
+}
+
+func appendTimingSummary(message, timing string) string {
+	message = strings.TrimSpace(message)
+	timing = strings.TrimSpace(timing)
+	if timing == "" {
+		return truncateErr(message)
+	}
+	if message == "" {
+		return truncateErr("[" + timing + "]")
+	}
+	return truncateErr(fmt.Sprintf("%s [%s]", message, timing))
 }
 
 func appendRetryStrategyToMessage(message, strategy string) string {

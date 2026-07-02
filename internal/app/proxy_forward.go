@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync"
 	"time"
@@ -724,6 +725,9 @@ func (s *Server) handleSuccessResponse(
 	var deferredWriter *deferredResponseWriter
 	if reqCtx.isStreaming {
 		deferredWriter = newDeferredResponseWriter(w)
+		if observer != nil && observer.Timing != nil {
+			deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
+		}
 		streamWriter = deferredWriter
 	}
 
@@ -737,10 +741,16 @@ func (s *Server) handleSuccessResponse(
 		reqCtx.ctx, resp.Body, streamWriter, contentType, channelType, reqCtx.isStreaming,
 		func(parser usageParser) error {
 			if deferredWriter == nil || deferredWriter.Committed() {
+				if parser.HasTextOutput() {
+					markFirstStreamTextResponse(reqCtx, observer)
+				}
 				return nil
 			}
 			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
+			}
+			if parser.HasTextOutput() {
+				markFirstStreamTextResponse(reqCtx, observer)
 			}
 			if parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
@@ -905,6 +915,9 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	disableResponseWriteTimeout(w, "流式")
 
 	deferredWriter := newDeferredResponseWriter(w)
+	if observer != nil && observer.Timing != nil {
+		deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
+	}
 	filterAndWriteResponseHeaders(deferredWriter, resp.Header)
 	deferredWriter.WriteHeader(resp.StatusCode)
 
@@ -921,6 +934,9 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			}
 			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
 				markFirstStreamResponse(reqCtx, readStats, observer)
+			}
+			if parser.HasTextOutput() {
+				markFirstStreamTextResponse(reqCtx, observer)
 			}
 			if !deferredWriter.Committed() && parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
@@ -1075,9 +1091,19 @@ func markFirstStreamResponse(reqCtx *requestContext, readStats *streamReadStats,
 	if readStats.firstByteSec == 0 {
 		readStats.firstByteSec = time.Nanosecond.Seconds()
 	}
+	if observer != nil && observer.Timing != nil {
+		observer.Timing.MarkFirstStreamEvent()
+	}
 	if observer != nil && observer.OnFirstByteRead != nil {
 		observer.OnFirstByteRead()
 	}
+}
+
+func markFirstStreamTextResponse(reqCtx *requestContext, observer *ForwardObserver) {
+	if reqCtx == nil || !reqCtx.isStreaming || observer == nil || observer.Timing == nil {
+		return
+	}
+	observer.Timing.MarkFirstTextToken()
 }
 
 func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, cfg *model.Config, channelType string) bool {
@@ -1306,6 +1332,11 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 		observer.OnDebugCapture(dc)
 	}
 
+	if observer != nil && observer.Timing != nil {
+		observer.Timing.StartRoundTrip()
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), observer.Timing.ClientTrace()))
+	}
+
 	// 3. 发送请求
 	resp, err := s.doUpstreamRequest(cfg, req)
 	if err != nil && (errors.Is(err, ErrChannelRPMExceeded) || errors.Is(err, ErrChannelConcurrencyExceeded)) {
@@ -1319,6 +1350,9 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 	//   - HTTP/2: 发送 RST_STREAM 帧 → 取消当前 stream（不影响同连接的其他请求）
 	// 效果：避免 AI 流式生成场景下，用户点"停止"后上游仍生成数千 tokens 的浪费
 	if resp != nil {
+		if observer != nil && observer.Timing != nil {
+			observer.Timing.MarkResponseHeaders()
+		}
 		// Debug捕获：在 resp.Body 被其他层包装前，用 TeeReader 旁路捕获响应体
 		dc.wrapResponseBody(resp)
 
@@ -1464,6 +1498,9 @@ func (s *Server) forwardAttempt(
 	// 记录渠道尝试开始时间（用于日志记录，每次渠道/Key切换时更新）
 	reqCtx.attemptStartTime = time.Now()
 	reqCtx.baseURL = baseURL
+	if reqCtx.timing != nil {
+		reqCtx.timing.StartAttempt(reqCtx.attemptStartTime, cfg.ID, baseURL)
+	}
 
 	// 转发请求（传递实际的API Key字符串和观测回调）
 	// [FIX] 2026-01: 使用传入的 requestPath（可能已替换模型名）而非 reqCtx.requestPath
