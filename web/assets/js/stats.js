@@ -1306,6 +1306,9 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       const modelTokensMap = {}; // 模型 -> Token用量
       const channelCostMap = {}; // 渠道 -> 成本（美元）
       const modelCostMap = {}; // 模型 -> 成本（美元）
+      const tokenCostMap = {}; // API令牌 -> 成本
+      const cacheInputMap = {}; // 缓存类别 -> Token
+      const successFailMap = {}; // 成功/失败计数
 
       for (const entry of statsData.stats) {
         const channelName = entry.channel_name || t('stats.unknownChannel');
@@ -1338,9 +1341,33 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
           modelCostMap[modelName].standard += cost;
           modelCostMap[modelName].effective += effectiveCost;
         }
+
+        // 按渠道名聚合令牌成本（每个渠道每个模型的 effective_cost 计入该渠道的令牌消费）
+        if (effectiveCost > 0) {
+          const tokenKey = channelName + ' / ' + modelName;
+          tokenCostMap[tokenKey] = (tokenCostMap[tokenKey] || 0) + effectiveCost;
+        }
+
+        // 缓存分布聚合 - 显示缓存读取、缓存创建和其余输入Token的分布
+        const inputTokens = entry.total_input_tokens || 0;
+        const cacheRead = entry.total_cache_read_input_tokens || 0;
+        const cacheCreate = entry.total_cache_creation_input_tokens || 0;
+        const nonCacheInput = Math.max(0, inputTokens - cacheRead - cacheCreate);
+        if (inputTokens > 0) {
+          // 缓存读取和缓存创建的数据是独立的（inputTokens 包含它们），
+          // 但我们作为分布图展示缓存读取、缓存创建、其余输入Token三者
+          cacheInputMap[t('stats.cacheReadLabel')] = (cacheInputMap[t('stats.cacheReadLabel')] || 0) + cacheRead;
+          cacheInputMap[t('stats.cacheCreateLabel')] = (cacheInputMap[t('stats.cacheCreateLabel')] || 0) + cacheCreate;
+          cacheInputMap[t('stats.cacheInputLabel')] = (cacheInputMap[t('stats.cacheInputLabel')] || 0) + nonCacheInput;
+        }
+
+        // 成功率聚合
+        const errorCount = entry.error || 0;
+        if (successCount > 0) successFailMap[t('common.success')] = (successFailMap[t('common.success')] || 0) + successCount;
+        if (errorCount > 0) successFailMap[t('common.failed')] = (successFailMap[t('common.failed')] || 0) + errorCount;
       }
 
-      // 渲染6个饼图
+      // 渲染饼图
       const unitTimes = t('stats.unitTimes');
       renderPieChart('chart-channel-calls', channelCallsMap, unitTimes);
       renderPieChart('chart-channel-tokens', channelTokensMap, '');
@@ -1348,6 +1375,180 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       renderPieChart('chart-model-tokens', modelTokensMap, '');
       renderPieChart('chart-channel-cost', channelCostMap, '$');
       renderPieChart('chart-model-cost', modelCostMap, '$');
+      renderPieChart('chart-token-cost', tokenCostMap, '$');
+      renderPieChart('chart-cache-dist', cacheInputMap, '');
+      renderPieChart('chart-success-rate', successFailMap, unitTimes);
+      // 健康摘要由 renderHealthSummaryChart 单独处理
+      renderHealthSummaryChart();
+    }
+
+    // 渲染渠道健康摘要（叠加柱状图）
+    function renderHealthSummaryChart() {
+      const container = document.getElementById('chart-health-summary');
+      if (!container) return;
+
+      if (!chartInstances['chart-health-summary']) {
+        chartInstances['chart-health-summary'] = echarts.init(container);
+      }
+      const chart = chartInstances['chart-health-summary'];
+      const chartTheme = getStatsChartTheme();
+
+      const channelHealth = statsData.channel_health;
+      if (!channelHealth || typeof channelHealth !== 'object' || Object.keys(channelHealth).length === 0) {
+        chart.setOption({
+          title: {
+            text: t('stats.chartNoData'),
+            left: 'center',
+            top: 'center',
+            textStyle: { color: chartTheme.mutedText, fontSize: 14 }
+          }
+        });
+        return;
+      }
+
+      // 收集所有渠道的时间线，确定桶数量
+      let numBuckets = 0;
+      const timelines = [];
+      for (const chId of Object.keys(channelHealth)) {
+        const points = channelHealth[chId];
+        if (points && points.length > 0) {
+          if (points.length > numBuckets) numBuckets = points.length;
+          timelines.push(points);
+        }
+      }
+      if (numBuckets === 0) {
+        chart.setOption({
+          title: {
+            text: t('stats.chartNoData'),
+            left: 'center',
+            top: 'center',
+            textStyle: { color: chartTheme.mutedText, fontSize: 14 }
+          }
+        });
+        return;
+      }
+
+      // 对每个桶，统计健康/警告/严重/无数据的渠道数
+      const healthyCounts = new Array(numBuckets).fill(0);
+      const warningCounts = new Array(numBuckets).fill(0);
+      const criticalCounts = new Array(numBuckets).fill(0);
+      const noDataCounts = new Array(numBuckets).fill(0);
+      let timeLabels = new Array(numBuckets).fill('');
+
+      for (const points of timelines) {
+        for (let i = 0; i < points.length; i++) {
+          const pt = points[i];
+          if (i === 0 && pt.ts) {
+            const d = new Date(pt.ts);
+            timeLabels[i] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          }
+          if (!pt || pt.rate < 0) {
+            noDataCounts[i]++;
+          } else if (pt.rate >= 0.95) {
+            healthyCounts[i]++;
+          } else if (pt.rate >= 0.80) {
+            warningCounts[i]++;
+          } else {
+            criticalCounts[i]++;
+          }
+        }
+      }
+
+      // 每隔几个桶显示一个标签，避免拥挤
+      const labelInterval = Math.max(1, Math.floor(numBuckets / 12));
+      const xLabels = timeLabels.map((label, i) => (i % labelInterval === 0) ? label : '');
+
+      const option = {
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: chartTheme.tooltipBg,
+          borderColor: chartTheme.tooltipBorder,
+          textStyle: { color: chartTheme.tooltipText, fontSize: 12 },
+          formatter: function(params) {
+            const idx = params[0].dataIndex;
+            const timeStr = timeLabels[idx] || '';
+            let html = `<strong>${timeStr}</strong><br/>`;
+            const statusMap = {
+              'healthy': { label: t('stats.healthHealthy'), color: '#10b981' },
+              'warning': { label: t('stats.healthWarning'), color: '#f59e0b' },
+              'critical': { label: t('stats.healthCritical'), color: '#ef4444' },
+              'noData': { label: t('stats.healthNoData'), color: '#6b7280' }
+            };
+            for (const p of params) {
+              const s = statusMap[p.seriesName] || { label: p.seriesName, color: '#6b7280' };
+              html += `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color};margin-right:4px;"></span>${s.label}: ${p.value}<br/>`;
+            }
+            return html;
+          }
+        },
+        legend: {
+          data: [
+            { name: 'healthy', textStyle: { color: chartTheme.mutedText, fontSize: 11 } },
+            { name: 'warning', textStyle: { color: chartTheme.mutedText, fontSize: 11 } },
+            { name: 'critical', textStyle: { color: chartTheme.mutedText, fontSize: 11 } },
+            { name: 'noData', textStyle: { color: chartTheme.mutedText, fontSize: 11 } }
+          ],
+          top: 5,
+          textStyle: { color: chartTheme.mutedText }
+        },
+        grid: {
+          left: 50,
+          right: 20,
+          top: 40,
+          bottom: 30
+        },
+        xAxis: {
+          type: 'category',
+          data: xLabels,
+          axisLabel: { color: chartTheme.mutedText, fontSize: 10 },
+          axisLine: { lineStyle: { color: chartTheme.axisLine } },
+          splitLine: { show: false }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          axisLabel: { color: chartTheme.mutedText, fontSize: 10 },
+          axisLine: { show: false },
+          splitLine: { lineStyle: { color: chartTheme.axisLine, type: 'dashed' } }
+        },
+        color: ['#10b981', '#f59e0b', '#ef4444', '#6b7280'],
+        series: [
+          {
+            name: 'healthy',
+            type: 'bar',
+            stack: 'health',
+            data: healthyCounts,
+            itemStyle: { color: '#10b981', borderRadius: 0 },
+            barMaxWidth: 16
+          },
+          {
+            name: 'warning',
+            type: 'bar',
+            stack: 'health',
+            data: warningCounts,
+            itemStyle: { color: '#f59e0b', borderRadius: 0 },
+            barMaxWidth: 16
+          },
+          {
+            name: 'critical',
+            type: 'bar',
+            stack: 'health',
+            data: criticalCounts,
+            itemStyle: { color: '#ef4444', borderRadius: 0 },
+            barMaxWidth: 16
+          },
+          {
+            name: 'noData',
+            type: 'bar',
+            stack: 'health',
+            data: noDataCounts,
+            itemStyle: { color: '#6b7280', borderRadius: 0 },
+            barMaxWidth: 16
+          }
+        ]
+      };
+
+      chart.setOption(option, true);
     }
 
     // 渲染单个饼图
@@ -1407,23 +1608,16 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
           borderColor: chartTheme.tooltipBorder,
           textStyle: { color: chartTheme.tooltipText, fontSize: 12 },
           formatter: function(params) {
-            const value = params.value;
-            let formattedValue;
-            // 成本特殊处理
+            const v = params.value;
+            let formatted;
             if (unit === '$') {
-              const std = params.data && typeof params.data.standard === 'number' ? params.data.standard : value;
-              formattedValue = formatCostPair(std, value);
-              return `${params.name}<br/>${formattedValue} (${params.percent}%)`;
-            }
-            // 原有逻辑：大数值缩写
-            if (value >= 1000000) {
-              formattedValue = (value / 1000000).toFixed(2) + 'M';
-            } else if (value >= 1000) {
-              formattedValue = (value / 1000).toFixed(2) + 'K';
+              formatted = `$${v.toFixed(2)}`;
+            } else if (unit === '') {
+              formatted = v.toLocaleString();
             } else {
-              formattedValue = value.toLocaleString();
+              formatted = `${v.toLocaleString()}${unit}`;
             }
-            return `${params.name}<br/>${formattedValue}${unit} (${params.percent}%)`;
+            return `${params.name}<br/>${formatted}<br/>${params.percent.toFixed(0)}%`;
           }
         },
         legend: {
@@ -1438,11 +1632,19 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
           pageTextStyle: { color: chartTheme.mutedText },
           formatter: function(name) {
             const item = data.find(d => d.name === name);
-            if (item && total > 0) {
-              const percent = ((item.value / total) * 100).toFixed(1);
-              return `${name} (${percent}%)`;
+            if (!item || total <= 0) return name;
+            let valStr;
+            if (unit === '$') {
+              valStr = `$${Math.round(item.value)}`;
+            } else if (unit === '') {
+              valStr = Math.round(item.value).toLocaleString();
+            } else {
+              valStr = `${Math.round(item.value).toLocaleString()}${unit}`;
             }
-            return name;
+            const pct = Math.round((item.value / total) * 100);
+            const maxLen = 12;
+            const truncated = name.length > maxLen ? name.slice(0, maxLen) + '…' : name;
+            return `${truncated} ${valStr} ${pct}%`;
           }
         },
         color: colors,
