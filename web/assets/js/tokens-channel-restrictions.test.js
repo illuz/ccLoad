@@ -95,6 +95,7 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
   assert.match(html, /<div class="token-edit-sidebar">[\s\S]*token-edit-section--basic[\s\S]*token-edit-section--quota[\s\S]*<\/div>/);
   assert.match(html, /<div class="token-edit-main">[\s\S]*token-edit-section--channels[\s\S]*token-edit-section--models[\s\S]*<\/div>/);
   assert.match(html, /data-token-edit-section="channels"/);
+  assert.match(html, /id="editDailyLimitDoubleEnabled"/);
   assert.match(html, /id="editAllowedChannelsCount"/);
   assert.match(html, /id="allowedChannelsTableBody"/);
   assert.match(html, /data-action="show-channel-select-modal"/);
@@ -116,17 +117,26 @@ test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /let selectedAllowedChannelIDs = new Set\(\);/);
   assert.match(script, /function renderAllowedChannelsTable\(\)/);
   assert.match(script, /editAllowedChannelIDs = \(token\.allowed_channel_ids \|\| \[\]\)\.slice\(\);/);
+  assert.match(script, /editDailyLimitDoubleEnabled = !!token\.daily_limit_double_enabled;/);
   assert.match(script, /allowed_channel_ids:\s*editAllowedChannelIDs,/);
+  assert.match(script, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
   assert.match(script, /'show-channel-select-modal':\s*\(\)\s*=> showChannelSelectModal\(\)/);
   assert.match(script, /'confirm-channel-selection':\s*\(\)\s*=> confirmChannelSelection\(\)/);
   assert.match(script, /'batch-delete-allowed-channels':\s*\(\)\s*=> batchDeleteSelectedAllowedChannels\(\)/);
   assert.match(script, /'toggle-allowed-channel':\s*\(actionTarget\)\s*=>/);
 });
 
-test('tokens 渠道选择弹窗按渠道类型分组并支持下拉筛选分组', () => {
+test('tokens 渠道选择弹窗支持按类型或按分组切换，并在类型视图展示分组标识', () => {
   assert.match(html, /id="channelTypeFilterSelect" class="form-input channel-type-filter-select"[^>]*data-change-action="filter-available-channel-type"/);
+  assert.match(html, /id="channelSelectViewTypeBtn"[\s\S]*id="channelSelectViewGroupBtn"/);
+  assert.match(script, /let channelSelectViewMode = 'type';/);
+  assert.match(script, /function setChannelSelectViewMode\(mode\)/);
+  assert.match(script, /function updateChannelSelectViewSwitchUI\(\)/);
   assert.match(script, /function groupChannelsByType\(channels\)/);
+  assert.match(script, /function groupChannelsByGroup\(channels\)/);
   assert.match(script, /function getChannelTypeGroupKey\(channel\)/);
+  assert.match(script, /function getChannelGroupKey\(channel\)/);
+  assert.match(script, /function buildChannelGroupBadge\(channel\)/);
   assert.match(script, /function normalizeChannelTypeValue\(value\)/);
   assert.match(script, /function buildChannelTypeDisplayNameMap\(types\)/);
   assert.match(script, /async function ensureChannelTypeDisplayNameMap\(\)/);
@@ -134,11 +144,12 @@ test('tokens 渠道选择弹窗按渠道类型分组并支持下拉筛选分组'
   assert.match(script, /function updateChannelTypeFilterOptions\(channels\)/);
   assert.match(script, /function matchesChannelSearchText\(channel, searchText\)/);
   assert.match(script, /'filter-available-channel-type':\s*\(\)\s*=> filterAvailableChannels\(document\.getElementById\('channelSearchInput'\)\?\.value \|\| ''\)/);
-  assert.match(script, /const channelGroups = groupChannelsByType\(channels\);/);
+  assert.match(script, /const channelGroups = getChannelGroupings\(channels\);/);
   assert.match(script, /const selectedTypeKey = updateChannelTypeFilterOptions\(availableChannels\);/);
-  assert.match(script, /channels = channels\.filter\(ch => getChannelTypeGroupKey\(ch\) === selectedTypeKey\);/);
+  assert.match(script, /channels = channels\.filter\(ch => getChannelGroupFilterValue\(ch\) === selectedTypeKey\);/);
   assert.match(script, /channels = channels\.filter\(ch => matchesChannelSearchText\(ch, searchText\)\);/);
   assert.match(script, /class="channel-type-group"/);
+  assert.match(script, /channelSelectViewMode === 'type' \? buildChannelGroupBadge\(ch\) : ''/);
   assert.doesNotMatch(script, /anthropic:\s*'Claude'/);
   assert.doesNotMatch(script, /gemini:\s*'Gemini'/);
   assert.doesNotMatch(html, /channelTypeQuickSelect/);
@@ -148,6 +159,8 @@ test('tokens 渠道选择弹窗按渠道类型分组并支持下拉筛选分组'
   assert.doesNotMatch(script, /tokens\.selectGroupChannels/);
   assert.doesNotMatch(css, /\.channel-type-quick-select/);
   assert.match(css, /\.channel-select-filter-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) 150px;/);
+  assert.match(css, /\.channel-select-view-switch\s*\{/);
+  assert.match(css, /\.channel-option-group-badge\s*\{/);
   assert.match(css, /\.channel-type-group-header\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*space-between;/);
 });
 

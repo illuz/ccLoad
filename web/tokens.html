@@ -327,6 +327,14 @@
               </div>
             </div>
 
+            <div class="form-group token-edit-daily-double-row">
+              <label class="token-edit-active-label">
+                <input type="checkbox" id="editDailyLimitDoubleEnabled" class="control-checkbox">
+                <span data-i18n="tokens.dailyLimitDoubleLabel">当日限额翻倍</span>
+              </label>
+              <div class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.dailyLimitDoubleHint">仅对今天生效，午夜后自动恢复</div>
+            </div>
+
             <div class="form-group form-row-inline token-edit-field token-edit-field--concurrency">
               <label class="form-label form-row-inline__label" data-i18n="tokens.maxConcurrencyLabel">并发上限</label>
               <div class="form-row-inline__content token-limit-control">
@@ -451,6 +459,10 @@
           <select id="channelTypeFilterSelect" class="form-input channel-type-filter-select" data-change-action="filter-available-channel-type" data-i18n-title="tokens.channelTypeFilterTitle" title="按分组筛选渠道">
             <option value="" data-i18n="tokens.channelTypeAll">全部分组</option>
           </select>
+        </div>
+        <div class="channel-select-view-switch" role="group" data-i18n-aria-label="tokens.channelViewSwitcher" aria-label="渠道分组方式切换">
+          <button type="button" id="channelSelectViewTypeBtn" class="btn btn-secondary btn-sm" data-action="set-channel-select-view-type" data-i18n="tokens.channelViewByType">按类型</button>
+          <button type="button" id="channelSelectViewGroupBtn" class="btn btn-secondary btn-sm" data-action="set-channel-select-view-group" data-i18n="tokens.channelViewByGroup">按分组</button>
         </div>
         <div id="selectAllChannelsContainer">
           <label class="channel-select-all-label">
@@ -654,6 +666,7 @@
         <div class="token-row-description"><span class="token-row-name">{{description}}</span>{{{batteryHtml}}}</div>
         <div class="token-row-meta">
           {{{groupHtml}}}
+          {{{dailyLimitDoubleBadgeHtml}}}
           <button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="{{copyTokenValue}}"
             title="{{copyTokenTitle}}" aria-label="{{copyTokenTitle}}" {{copyTokenDisabledAttr}}>{{maskedToken}}</button>
         </div>

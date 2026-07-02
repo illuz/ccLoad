@@ -427,6 +427,12 @@ func ensureAuthTokensGroupFields(ctx context.Context, db *sql.DB, dialect Dialec
 	})
 }
 
+func ensureAuthTokensDailyLimitDouble(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_tokens", "daily_limit_double_day_key",
+		"INT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
 func ensureAuthTokenGroupsColor(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "auth_token_groups", "color",
 		"VARCHAR(16) NOT NULL DEFAULT '#64748b'",

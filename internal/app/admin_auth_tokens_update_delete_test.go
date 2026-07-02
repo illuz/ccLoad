@@ -95,16 +95,17 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		body := map[string]any{
-			"description":          "new-desc",
-			"plain_token":          "new-plain-token",
-			"is_active":            false,
-			"expires_at":           expiresAt,
-			"allowed_models":       []string{"m1", "m2"},
-			"allowed_channel_ids":  []int64{11, 22},
-			"cost_limit_usd":       1.5,
-			"daily_cost_limit_usd": 0.8,
-			"max_concurrency":      0,
-			"unknown_ignored":      "x",
+			"description":                "new-desc",
+			"plain_token":                "new-plain-token",
+			"is_active":                  false,
+			"expires_at":                 expiresAt,
+			"allowed_models":             []string{"m1", "m2"},
+			"allowed_channel_ids":        []int64{11, 22},
+			"cost_limit_usd":             1.5,
+			"daily_cost_limit_usd":       0.8,
+			"daily_limit_double_enabled": true,
+			"max_concurrency":            0,
+			"unknown_ignored":            "x",
 		}
 		c, w := newTestContext(t, newJSONRequest(t, http.MethodPut, "/admin/auth-tokens/1", body))
 		c.Params = gin.Params{{Key: "id", Value: "1"}}
@@ -115,15 +116,16 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 
 		type respData struct {
-			Description       string  `json:"description"`
-			IsActive          bool    `json:"is_active"`
-			Token             string  `json:"token"`
-			PlainToken        string  `json:"plain_token"`
-			ExpiresAt         *int64  `json:"expires_at,omitempty"`
-			CostLimitUSD      float64 `json:"cost_limit_usd"`
-			DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
-			AllowedChannelIDs []int64 `json:"allowed_channel_ids"`
-			MaxConcurrency    int     `json:"max_concurrency"`
+			Description             string  `json:"description"`
+			IsActive                bool    `json:"is_active"`
+			Token                   string  `json:"token"`
+			PlainToken              string  `json:"plain_token"`
+			ExpiresAt               *int64  `json:"expires_at,omitempty"`
+			CostLimitUSD            float64 `json:"cost_limit_usd"`
+			DailyCostLimitUSD       float64 `json:"daily_cost_limit_usd"`
+			DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
+			AllowedChannelIDs       []int64 `json:"allowed_channel_ids"`
+			MaxConcurrency          int     `json:"max_concurrency"`
 		}
 		resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
 		if !resp.Success {
@@ -150,6 +152,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if resp.Data.DailyCostLimitUSD < 0.79 || resp.Data.DailyCostLimitUSD > 0.81 {
 			t.Fatalf("daily_cost_limit_usd=%v, want ~0.8", resp.Data.DailyCostLimitUSD)
 		}
+		if !resp.Data.DailyLimitDoubleEnabled {
+			t.Fatalf("daily_limit_double_enabled=false, want true")
+		}
 		if len(resp.Data.AllowedChannelIDs) != 2 || resp.Data.AllowedChannelIDs[0] != 11 || resp.Data.AllowedChannelIDs[1] != 22 {
 			t.Fatalf("allowed_channel_ids=%v, want [11 22]", resp.Data.AllowedChannelIDs)
 		}
@@ -175,6 +180,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if updated.DailyCostLimitMicroUSD != 800_000 {
 			t.Fatalf("DailyCostLimitMicroUSD=%d, want %d", updated.DailyCostLimitMicroUSD, 800_000)
+		}
+		if !updated.IsDailyLimitDoubledToday() {
+			t.Fatalf("updated daily limit double should be active today")
 		}
 		if len(updated.AllowedModels) != 2 {
 			t.Fatalf("AllowedModels=%v, want 2 items", updated.AllowedModels)

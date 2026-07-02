@@ -37,8 +37,10 @@
     let selectedAllowedChannelIDs = new Set(); // 已选中的渠道ID（批量删除用）
     let selectedChannelsForAdd = new Set();   // 渠道选择对话框中已选的渠道ID
     let currentVisibleChannels = [];          // 当前可见的渠道列表（用于全选功能）
+    let channelSelectViewMode = 'type';
     let editRawCostLimitUSD = 0;
     let editRawDailyCostLimitUSD = 0;
+    let editDailyLimitDoubleEnabled = false;
     let editRawMaxConcurrency = 0;
     let editRawAllowedModels = [];
     let editRawAllowedChannelIDs = [];
@@ -163,6 +165,8 @@
           'show-model-import-modal': () => showModelImportModal(),
           'batch-delete-allowed-models': () => batchDeleteSelectedAllowedModels(),
           'show-channel-select-modal': () => showChannelSelectModal(),
+          'set-channel-select-view-type': () => setChannelSelectViewMode('type'),
+          'set-channel-select-view-group': () => setChannelSelectViewMode('group'),
           'batch-delete-allowed-channels': () => batchDeleteSelectedAllowedChannels(),
           'close-channel-select-modal': () => closeChannelSelectModal(),
           'confirm-channel-selection': () => confirmChannelSelection(),
@@ -937,6 +941,7 @@
       const displayToken = token.plain_token || '';
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
+      const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const isActive = !!token.is_active;
       const toggleTitle = getTokenToggleTitle(token);
@@ -953,6 +958,7 @@
         copyTokenTitle: copyTokenTitle,
         copyTokenDisabledAttr: copyTokenValue ? '' : 'disabled',
         groupHtml: groupHtml,
+        dailyLimitDoubleBadgeHtml: dailyLimitDoubleBadgeHtml,
         batteryHtml: batteryHtml,
         statusClass: status.class,
         createdAt: createdAt,
@@ -1192,6 +1198,9 @@
       if (token && token.effective_daily_cost_limit_usd !== undefined) {
         return Number(token.effective_daily_cost_limit_usd) || 0;
       }
+      if (token && token.daily_limit_double_enabled) {
+        return (Number(token?.daily_cost_limit_usd) || 0) * 2;
+      }
       return Number(token?.daily_cost_limit_usd) || 0;
     }
 
@@ -1227,34 +1236,48 @@
 
       const remainingUsd = Math.max(0, limitUsd - usedUsd);
       const ratio = Math.max(0, Math.min(1, remainingUsd / limitUsd));
-      const isLow = ratio <= 0.2;
+      const percent = Math.round(ratio * 100);
       const remainingText = formatCostDisplay(remainingUsd);
       const limitText = formatCostDisplay(limitUsd);
       const title = source === 'daily'
-        ? t('tokens.batteryDailyRemaining', { remaining: remainingText, limit: limitText })
-        : t('tokens.batteryTotalRemaining', { remaining: remainingText, limit: limitText });
+        ? t('tokens.batteryDailyRemaining', { remaining: remainingText, limit: limitText, percent })
+        : t('tokens.batteryTotalRemaining', { remaining: remainingText, limit: limitText, percent });
+
+      let tone = 'critical';
+      if (ratio >= 0.8) {
+        tone = 'full';
+      } else if (ratio >= 0.6) {
+        tone = 'high';
+      } else if (ratio >= 0.4) {
+        tone = 'medium';
+      } else if (ratio >= 0.2) {
+        tone = 'low';
+      }
 
       return {
         source,
         ratio,
+        percent,
         remainingUsd,
         limitUsd,
         usedUsd,
-        levelClass: isLow ? 'token-battery--low' : 'token-battery--good',
-        fillClass: isLow ? 'token-battery__fill--low' : 'token-battery__fill--good',
+        levelClass: `token-battery--${tone}`,
+        fillClass: `token-battery__fill--${tone}`,
         title
       };
     }
 
     function buildTokenBatteryHtml(token) {
       const state = getTokenBatteryState(token);
-      const percent = Math.round(state.ratio * 100);
       return `
-        <span class="token-battery ${state.levelClass}" title="${escapeHtml(state.title)}" aria-label="${escapeHtml(state.title)}">
-          <span class="token-battery__body" aria-hidden="true">
-            <span class="token-battery__fill ${state.fillClass}" style="width: ${percent}%;"></span>
+        <span class="token-battery-wrap" title="${escapeHtml(state.title)}" aria-label="${escapeHtml(state.title)}">
+          <span class="token-battery ${state.levelClass}">
+            <span class="token-battery__body" aria-hidden="true">
+              <span class="token-battery__fill ${state.fillClass}" style="width: ${state.percent}%;"></span>
+            </span>
+            <span class="token-battery__cap" aria-hidden="true"></span>
           </span>
-          <span class="token-battery__cap" aria-hidden="true"></span>
+          <span class="token-battery__percent ${state.levelClass}">${state.percent}%</span>
         </span>
       `;
     }
@@ -1269,6 +1292,19 @@
       const title = inheritText ? `${groupName}${inheritText}` : groupName;
       const color = getTokenGroupColorByID(token && token.group_id);
       return `<span class="token-row-group" style="--token-group-color:${escapeHtml(color)}" title="${escapeHtml(title)}">${escapeHtml(groupName)}</span>`;
+    }
+
+    function buildDailyLimitDoubleBadgeHtml(token) {
+      if (!token || !token.daily_limit_double_enabled) return '';
+      const rawLimit = Number(token.daily_cost_limit_usd) || 0;
+      const effectiveLimit = getTokenEffectiveDailyCostLimit(token);
+      const title = rawLimit > 0
+        ? t('tokens.dailyLimitDoubleBadgeTitle', {
+          base: formatCostDisplay(rawLimit),
+          effective: formatCostDisplay(effectiveLimit)
+        })
+        : t('tokens.dailyLimitDoubleHint');
+      return `<span class="token-row-badge token-row-badge--daily-double" title="${escapeHtml(title)}">×2 ${escapeHtml(t('tokens.dailyLimitDoubleShort'))}</span>`;
     }
 
     function getTokenToggleTitle(token) {
@@ -1355,6 +1391,7 @@
       const displayToken = token.plain_token || '';
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
+      const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const enableSwitchHtml = buildTokenEnableSwitchHtml(token);
       const tokenID = normalizeSelectedTokenID(token.id);
@@ -1370,7 +1407,7 @@
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
             <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span>${batteryHtml}</div>
-            <div class="token-row-meta">${groupHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
+            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
             <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>
           <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
@@ -1493,6 +1530,7 @@
           max_concurrency: maxConcurrency,
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
+          daily_limit_double_enabled: !!data.daily_limit_double_enabled,
           success_count: 0,
           failure_count: 0,
           stream_avg_ttfb: 0,
@@ -1591,6 +1629,11 @@
       if (dailyCostLimitInput) {
         dailyCostLimitInput.value = editRawDailyCostLimitUSD;
       }
+      editDailyLimitDoubleEnabled = !!token.daily_limit_double_enabled;
+      const dailyLimitDoubleCheckbox = document.getElementById('editDailyLimitDoubleEnabled');
+      if (dailyLimitDoubleCheckbox) {
+        dailyLimitDoubleCheckbox.checked = editDailyLimitDoubleEnabled;
+      }
 
       // 显示已消耗费用
       const costUsed = token.cost_used_usd || 0;
@@ -1637,6 +1680,7 @@
       editRawAllowedChannelIDs = [];
       selectedAllowedChannelIDs.clear();
       editRawDailyCostLimitUSD = 0;
+      editDailyLimitDoubleEnabled = false;
       editInheritQuota = false;
       editInheritChannels = false;
       editInheritModels = false;
@@ -1770,6 +1814,7 @@
       const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
       const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
       const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
+      const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
       if (editInheritQuota) {
         maxConcurrencyResult.value = editRawMaxConcurrency || 0;
@@ -1822,6 +1867,7 @@
             allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,  // 2026-01新增：模型限制
             cost_limit_usd: costLimitUSD,        // 2026-01新增：费用上限
             daily_cost_limit_usd: dailyCostLimitUSD,
+            daily_limit_double_enabled: dailyLimitDoubleEnabled,
             max_concurrency: maxConcurrency      // 2026-04新增：并发上限
           })
         });
@@ -2454,6 +2500,27 @@
       return `${channel.name || t('common.unknown')} #${channel.id}`;
     }
 
+    function getChannelGroupKey(channel) {
+      const groupID = Number(channel?.group_id) || 0;
+      return String(groupID);
+    }
+
+    function getChannelGroupLabel(channel) {
+      if (!channel || !channel.group_id) return t('tokens.ungrouped');
+      return String(channel.group_name || `${t('tokens.group')} #${channel.group_id}`);
+    }
+
+    function getChannelGroupColor(channel) {
+      if (!channel || !channel.group_id) return getDefaultTokenGroupColor();
+      return getTokenGroupColor(channel.group_color);
+    }
+
+    function buildChannelGroupBadge(channel) {
+      const label = getChannelGroupLabel(channel);
+      const color = getChannelGroupColor(channel);
+      return `<span class="channel-option-group-badge" style="--token-group-color:${escapeHtml(color)}">${escapeHtml(label)}</span>`;
+    }
+
     function getChannelTypeText(channelID) {
       const channel = getChannelByID(channelID);
       return channel ? (channel.channel_type || '-') : '-';
@@ -2575,9 +2642,11 @@
       }
       await ensureChannelTypeDisplayNameMap();
       selectedChannelsForAdd.clear();
+      channelSelectViewMode = 'type';
       document.getElementById('channelSearchInput').value = '';
       const channelTypeFilter = document.getElementById('channelTypeFilterSelect');
       if (channelTypeFilter) channelTypeFilter.value = '';
+      updateChannelSelectViewSwitchUI();
       renderAvailableChannels('');
       document.getElementById('channelSelectModal').style.display = 'block';
       pushModal(closeChannelSelectModal);
@@ -2594,6 +2663,21 @@
 
     function filterAvailableChannels(searchText) {
       renderAvailableChannels(searchText);
+    }
+
+    function setChannelSelectViewMode(mode) {
+      channelSelectViewMode = mode === 'group' ? 'group' : 'type';
+      const channelTypeFilter = document.getElementById('channelTypeFilterSelect');
+      if (channelTypeFilter) channelTypeFilter.value = '';
+      updateChannelSelectViewSwitchUI();
+      renderAvailableChannels(document.getElementById('channelSearchInput')?.value || '');
+    }
+
+    function updateChannelSelectViewSwitchUI() {
+      const typeBtn = document.getElementById('channelSelectViewTypeBtn');
+      const groupBtn = document.getElementById('channelSelectViewGroupBtn');
+      if (typeBtn) typeBtn.classList.toggle('active', channelSelectViewMode === 'type');
+      if (groupBtn) groupBtn.classList.toggle('active', channelSelectViewMode === 'group');
     }
 
     function normalizeChannelTypeValue(value) {
@@ -2689,14 +2773,50 @@
       return sortChannelTypeGroups(Array.from(groupMap.values()));
     }
 
+    function groupChannelsByGroup(channels) {
+      const groupMap = new Map();
+      channels.forEach((channel) => {
+        const key = getChannelGroupKey(channel);
+        if (!groupMap.has(key)) {
+          groupMap.set(key, {
+            typeKey: key,
+            label: getChannelGroupLabel(channel),
+            color: getChannelGroupColor(channel),
+            channels: []
+          });
+        }
+        groupMap.get(key).channels.push(channel);
+      });
+      return Array.from(groupMap.values()).sort((a, b) => {
+        if (a.typeKey === '0') return 1;
+        if (b.typeKey === '0') return -1;
+        return a.label.localeCompare(b.label);
+      });
+    }
+
+    function getChannelGroupFilterValue(channel) {
+      return channelSelectViewMode === 'group'
+        ? getChannelGroupKey(channel)
+        : getChannelTypeGroupKey(channel);
+    }
+
+    function getChannelGroupings(channels) {
+      return channelSelectViewMode === 'group'
+        ? groupChannelsByGroup(channels)
+        : groupChannelsByType(channels);
+    }
+
     function updateChannelTypeFilterOptions(channels) {
       const select = document.getElementById('channelTypeFilterSelect');
       if (!select) return '';
 
       const currentValue = select.value;
-      const channelGroups = groupChannelsByType(channels);
+      const channelGroups = getChannelGroupings(channels);
+      const allText = channelSelectViewMode === 'group'
+        ? t('tokens.channelGroupAll')
+        : t('tokens.channelTypeAll');
       select.innerHTML = [
-        `<option value="">${escapeHtml(t('tokens.channelTypeAll'))}</option>`,
+        `<option value="">${escapeHtml(allText)}</option>`,
         ...channelGroups.map(group => `<option value="${escapeHtml(group.typeKey)}">${escapeHtml(group.label)}</option>`)
       ].join('');
 
@@ -2725,7 +2845,7 @@
         channels = channels.filter(ch => matchesChannelSearchText(ch, searchText));
       }
       if (selectedTypeKey) {
-        channels = channels.filter(ch => getChannelTypeGroupKey(ch) === selectedTypeKey);
+        channels = channels.filter(ch => getChannelGroupFilterValue(ch) === selectedTypeKey);
       }
 
       currentVisibleChannels = channels;
@@ -2760,12 +2880,12 @@
         visibleChannelsCount.textContent = t('tokens.visibleChannelsCount', { count: channels.length });
       }
 
-      const channelGroups = groupChannelsByType(channels);
+      const channelGroups = getChannelGroupings(channels);
       container.innerHTML = channelGroups.map(group => `
         <section class="channel-type-group" data-channel-type-key="${escapeHtml(group.typeKey)}">
           <div class="channel-type-group-header">
             <div class="channel-type-group-title">
-              <span class="channel-type-group-name">${escapeHtml(group.label)}</span>
+              <span class="channel-type-group-name"${group.color ? ` style="--token-group-color:${escapeHtml(group.color)}"` : ''}>${escapeHtml(group.label)}</span>
               <span class="channel-type-group-count">${t('tokens.visibleChannelsCount', { count: group.channels.length })}</span>
             </div>
           </div>
@@ -2776,7 +2896,10 @@
                 <label class="channel-option-item" data-channel-id="${channelID}">
                   <input type="checkbox" class="channel-option-checkbox" data-channel-id="${channelID}"
                     ${selectedChannelsForAdd.has(channelID) ? 'checked' : ''}>
-                  <span class="channel-option-label">${escapeHtml(ch.name || t('common.unknown'))}</span>
+                  <span class="channel-option-main">
+                    <span class="channel-option-label">${escapeHtml(ch.name || t('common.unknown'))}</span>
+                    ${channelSelectViewMode === 'type' ? buildChannelGroupBadge(ch) : ''}
+                  </span>
                   <span class="channel-option-meta">#${channelID} · ${escapeHtml(ch.channel_type || '-')}</span>
                 </label>
               `;

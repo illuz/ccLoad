@@ -345,12 +345,18 @@
       white-space: nowrap;
     }
 
+    .token-battery-wrap {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: 8px;
+    }
     .token-battery {
       flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
       gap: 2px;
-      margin-left: 8px;
     }
     .token-battery__body {
       position: relative;
@@ -378,16 +384,40 @@
       background: currentColor;
       opacity: 0.9;
     }
-    .token-battery--good {
+    .token-battery__percent {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .token-battery--full {
+      color: #15803d;
+    }
+    .token-battery--high {
       color: var(--success-600);
     }
+    .token-battery--medium {
+      color: #ca8a04;
+    }
     .token-battery--low {
+      color: #ea580c;
+    }
+    .token-battery--critical {
       color: var(--error-600);
     }
-    .token-battery__fill--good {
-      background: var(--success-500);
+    .token-battery__fill--full {
+      background: #22c55e;
+    }
+    .token-battery__fill--high {
+      background: #4ade80;
+    }
+    .token-battery__fill--medium {
+      background: #facc15;
     }
     .token-battery__fill--low {
+      background: #fb923c;
+    }
+    .token-battery__fill--critical {
       background: var(--error-500);
     }
     .token-row-meta {
@@ -1104,6 +1134,14 @@
     .token-edit-active-row {
       margin-bottom: 0;
     }
+    .token-edit-daily-double-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: -4px;
+      margin-bottom: 0;
+      padding-left: 72px;
+    }
     .token-edit-models-section {
       min-height: 0;
     }
@@ -1354,6 +1392,21 @@
       grid-template-columns: minmax(0, 1fr) 150px;
       gap: 8px;
     }
+    .channel-select-view-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin: 10px 0 0;
+      padding: 2px;
+      border: 1px solid var(--neutral-200);
+      border-radius: 8px;
+      background: var(--surface-bg-muted);
+    }
+    .channel-select-view-switch .btn.active {
+      background: var(--primary-500);
+      border-color: var(--primary-500);
+      color: #fff;
+    }
 
     .token-group-restrictions {
       display: flex;
@@ -1549,6 +1602,28 @@
       white-space: nowrap;
       font-size: 13px;
       font-weight: 500;
+    }
+    .channel-option-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .channel-option-group-badge {
+      display: inline-flex;
+      align-items: center;
+      max-width: 160px;
+      min-width: 0;
+      padding: 1px 8px;
+      border: 1px solid color-mix(in srgb, var(--token-group-color, var(--neutral-400)) 36%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--token-group-color, var(--neutral-400)) 12%, transparent);
+      color: var(--token-group-color, var(--neutral-600));
+      font-size: 11px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .channel-option-meta {
       color: var(--neutral-500);
@@ -2082,6 +2157,19 @@
       .channel-select-filter-row {
         grid-template-columns: 1fr;
       }
+      .token-edit-daily-double-row {
+        padding-left: 0;
+      }
+      .channel-option-item {
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+      }
+      .channel-option-main {
+        flex-wrap: wrap;
+      }
+      .channel-option-meta {
+        grid-column: 2;
+      }
       .token-edit-models-header {
         align-items: flex-start;
       }
@@ -2136,6 +2224,27 @@
       color: var(--token-group-color, var(--neutral-600));
       font-size: 12px;
       font-weight: 600;
+    }
+    .token-row-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .token-row-badge--daily-double {
+      color: #7c2d12;
+      background: linear-gradient(135deg, #fdba74 0%, #fb7185 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+    }
+    html[data-theme="dark"] .token-row-badge--daily-double,
+    html[data-theme="system"][data-resolved-theme="dark"] .token-row-badge--daily-double {
+      color: #fff7ed;
+      background: linear-gradient(135deg, rgba(249,115,22,0.95) 0%, rgba(244,63,94,0.95) 100%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
     }
     .token-group-inherit {
       color: var(--neutral-500);

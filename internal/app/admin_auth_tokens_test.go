@@ -124,12 +124,13 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
-		"description":          "manual token",
-		"plain_token":          "sk-manual-token-001",
-		"group_id":             group.ID,
-		"cost_limit_usd":       1.0,
-		"daily_cost_limit_usd": 0.5,
-		"max_concurrency":      0,
+		"description":                "manual token",
+		"plain_token":                "sk-manual-token-001",
+		"group_id":                   group.ID,
+		"cost_limit_usd":             1.0,
+		"daily_cost_limit_usd":       0.5,
+		"daily_limit_double_enabled": true,
+		"max_concurrency":            0,
 	}))
 
 	server.HandleCreateAuthToken(c)
@@ -139,14 +140,15 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 
 	type respData struct {
-		ID              int64  `json:"id"`
-		Token           string `json:"token"`
-		PlainToken      string `json:"plain_token"`
-		GroupID         int64  `json:"group_id"`
-		MaxConcurrency  int    `json:"max_concurrency"`
-		InheritQuota    bool   `json:"inherit_quota"`
-		InheritChannels bool   `json:"inherit_channels"`
-		InheritModels   bool   `json:"inherit_models"`
+		ID                      int64  `json:"id"`
+		Token                   string `json:"token"`
+		PlainToken              string `json:"plain_token"`
+		GroupID                 int64  `json:"group_id"`
+		MaxConcurrency          int    `json:"max_concurrency"`
+		DailyLimitDoubleEnabled bool   `json:"daily_limit_double_enabled"`
+		InheritQuota            bool   `json:"inherit_quota"`
+		InheritChannels         bool   `json:"inherit_channels"`
+		InheritModels           bool   `json:"inherit_models"`
 	}
 	resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
 	if resp.Data.Token != "sk-manual-token-001" || resp.Data.PlainToken != "sk-manual-token-001" {
@@ -157,6 +159,9 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 	if resp.Data.MaxConcurrency != 0 {
 		t.Fatalf("max_concurrency=%d, want 0", resp.Data.MaxConcurrency)
+	}
+	if !resp.Data.DailyLimitDoubleEnabled {
+		t.Fatalf("daily_limit_double_enabled=false, want true")
 	}
 	if !resp.Data.InheritQuota || !resp.Data.InheritChannels || !resp.Data.InheritModels {
 		t.Fatalf("inherit flags=%v/%v/%v, want all true", resp.Data.InheritQuota, resp.Data.InheritChannels, resp.Data.InheritModels)
@@ -174,6 +179,9 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 	if stored.MaxConcurrency != 0 {
 		t.Fatalf("stored max_concurrency=%d, want 0", stored.MaxConcurrency)
+	}
+	if !stored.IsDailyLimitDoubledToday() {
+		t.Fatalf("stored daily limit double should be active today")
 	}
 	if !stored.InheritQuota || !stored.InheritChannels || !stored.InheritModels {
 		t.Fatalf("stored inherit flags=%v/%v/%v, want all true", stored.InheritQuota, stored.InheritChannels, stored.InheritModels)

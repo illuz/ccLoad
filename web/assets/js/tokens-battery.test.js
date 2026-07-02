@@ -33,8 +33,8 @@ test('tokens 页费用摘要按 0 位小数显示', () => {
       if (key === 'tokens.table.totalCost') return '总费用';
       if (key === 'tokens.table.dailyCost') return '当日费用';
       if (key === 'tokens.batteryUnlimited') return '无限额';
-      if (key === 'tokens.batteryDailyRemaining') return `${params.remaining}/${params.limit}`;
-      if (key === 'tokens.batteryTotalRemaining') return `${params.remaining}/${params.limit}`;
+      if (key === 'tokens.batteryDailyRemaining') return `${params.remaining}/${params.limit} (${params.percent}%)`;
+      if (key === 'tokens.batteryTotalRemaining') return `${params.remaining}/${params.limit} (${params.percent}%)`;
       return key;
     }
   };
@@ -53,13 +53,13 @@ test('tokens 页费用摘要按 0 位小数显示', () => {
   assert.doesNotMatch(html, /\$0\.7/);
 });
 
-test('tokens 页电池图标根据剩余额度显示绿色或红色进度', () => {
+test('tokens 页电池图标根据剩余额度显示多档颜色和百分比', () => {
   const sandbox = {
     escapeHtml(value) { return String(value ?? ''); },
     t(key, params = {}) {
       if (key === 'tokens.batteryUnlimited') return '无限额';
-      if (key === 'tokens.batteryDailyRemaining') return `日剩余 ${params.remaining}/${params.limit}`;
-      if (key === 'tokens.batteryTotalRemaining') return `总剩余 ${params.remaining}/${params.limit}`;
+      if (key === 'tokens.batteryDailyRemaining') return `日剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      if (key === 'tokens.batteryTotalRemaining') return `总剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
       return key;
     }
   };
@@ -72,11 +72,34 @@ test('tokens 页电池图标根据剩余额度显示绿色或红色进度', () =
     'buildTokenBatteryHtml'
   ]), sandbox);
 
-  const good = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 2, daily_cost_limit_usd: 10 });
-  const low = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 8.5, daily_cost_limit_usd: 10 });
+  const full = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 2, daily_cost_limit_usd: 10 });
+  const high = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 3.5, daily_cost_limit_usd: 10 });
+  const medium = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 5.5, daily_cost_limit_usd: 10 });
+  const low = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 7.5, daily_cost_limit_usd: 10 });
+  const critical = sandbox.buildTokenBatteryHtml({ daily_cost_used_usd: 8.5, daily_cost_limit_usd: 10 });
 
-  assert.match(good, /token-battery--good/);
-  assert.match(good, /width: 80%/);
+  assert.match(full, /token-battery--full/);
+  assert.match(full, /width: 80%/);
+  assert.match(full, />80%<\/span>/);
+  assert.match(high, /token-battery--high/);
+  assert.match(high, />65%<\/span>/);
+  assert.match(medium, /token-battery--medium/);
+  assert.match(medium, />45%<\/span>/);
   assert.match(low, /token-battery--low/);
-  assert.match(low, /width: 15%/);
+  assert.match(low, />25%<\/span>/);
+  assert.match(critical, /token-battery--critical/);
+  assert.match(critical, /width: 15%/);
+  assert.match(critical, />15%<\/span>/);
+});
+
+test('tokens 页当日翻倍开关会把每日限额按 2 倍展示', () => {
+  const sandbox = {};
+  vm.runInNewContext(joinFunctions([
+    'getTokenEffectiveDailyCostLimit'
+  ]), sandbox);
+
+  assert.equal(
+    sandbox.getTokenEffectiveDailyCostLimit({ daily_cost_limit_usd: 3, daily_limit_double_enabled: true }),
+    6
+  );
 });

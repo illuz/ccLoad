@@ -292,8 +292,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		AllowedChannelIDs []int64  `json:"allowed_channel_ids"`  // 允许的渠道ID列表，空表示无限制
 		CostLimitUSD      *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
-		MaxConcurrency    *int     `json:"max_concurrency"`      // 最大并发请求数（0=无限制）
-		GroupID           *int64   `json:"group_id"`             // 分组ID，0/空表示未分组
+		DailyLimitDouble  *bool    `json:"daily_limit_double_enabled"`
+		MaxConcurrency    *int     `json:"max_concurrency"` // 最大并发请求数（0=无限制）
+		GroupID           *int64   `json:"group_id"`        // 分组ID，0/空表示未分组
 		InheritQuota      *bool    `json:"inherit_quota"`
 		InheritChannels   *bool    `json:"inherit_channels"`
 		InheritModels     *bool    `json:"inherit_models"`
@@ -379,6 +380,13 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	if req.DailyCostLimitUSD != nil {
 		authToken.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
 	}
+	if req.DailyLimitDouble != nil {
+		if *req.DailyLimitDouble {
+			authToken.DailyLimitDoubleDayKey = model.CurrentLocalDayKey()
+		} else {
+			authToken.DailyLimitDoubleDayKey = 0
+		}
+	}
 	if req.MaxConcurrency != nil {
 		authToken.MaxConcurrency = *req.MaxConcurrency
 	}
@@ -416,21 +424,22 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 
 	// 返回明文令牌
 	RespondJSON(c, http.StatusOK, gin.H{
-		"id":                   authToken.ID,
-		"token":                tokenPlain, // 明文令牌，仅创建时返回
-		"plain_token":          tokenPlain,
-		"description":          authToken.Description,
-		"created_at":           authToken.CreatedAt,
-		"expires_at":           authToken.ExpiresAt,
-		"is_active":            authToken.IsActive,
-		"allowed_models":       authToken.AllowedModels,
-		"allowed_channel_ids":  authToken.AllowedChannelIDs,
-		"daily_cost_limit_usd": authToken.DailyCostLimitUSD(),
-		"max_concurrency":      authToken.MaxConcurrency,
-		"group_id":             authToken.GroupID,
-		"inherit_quota":        authToken.InheritQuota,
-		"inherit_channels":     authToken.InheritChannels,
-		"inherit_models":       authToken.InheritModels,
+		"id":                         authToken.ID,
+		"token":                      tokenPlain, // 明文令牌，仅创建时返回
+		"plain_token":                tokenPlain,
+		"description":                authToken.Description,
+		"created_at":                 authToken.CreatedAt,
+		"expires_at":                 authToken.ExpiresAt,
+		"is_active":                  authToken.IsActive,
+		"allowed_models":             authToken.AllowedModels,
+		"allowed_channel_ids":        authToken.AllowedChannelIDs,
+		"daily_cost_limit_usd":       authToken.DailyCostLimitUSD(),
+		"daily_limit_double_enabled": authToken.IsDailyLimitDoubledToday(),
+		"max_concurrency":            authToken.MaxConcurrency,
+		"group_id":                   authToken.GroupID,
+		"inherit_quota":              authToken.InheritQuota,
+		"inherit_channels":           authToken.InheritChannels,
+		"inherit_models":             authToken.InheritModels,
 	})
 }
 
@@ -452,8 +461,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		AllowedChannelIDs *[]int64          `json:"allowed_channel_ids"`  // nil=不更新，空数组=清除限制
 		CostLimitUSD      *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
-		MaxConcurrency    *int              `json:"max_concurrency"`      // 最大并发请求数（0=无限制）
-		GroupID           *int64            `json:"group_id"`             // 分组ID，0表示未分组
+		DailyLimitDouble  *bool             `json:"daily_limit_double_enabled"`
+		MaxConcurrency    *int              `json:"max_concurrency"` // 最大并发请求数（0=无限制）
+		GroupID           *int64            `json:"group_id"`        // 分组ID，0表示未分组
 		InheritQuota      *bool             `json:"inherit_quota"`
 		InheritChannels   *bool             `json:"inherit_channels"`
 		InheritModels     *bool             `json:"inherit_models"`
@@ -536,6 +546,13 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.DailyCostLimitUSD != nil {
 		token.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
+	}
+	if req.DailyLimitDouble != nil {
+		if *req.DailyLimitDouble {
+			token.DailyLimitDoubleDayKey = model.CurrentLocalDayKey()
+		} else {
+			token.DailyLimitDoubleDayKey = 0
+		}
 	}
 	if req.MaxConcurrency != nil {
 		token.MaxConcurrency = *req.MaxConcurrency

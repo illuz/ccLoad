@@ -176,6 +176,30 @@ func TestAuthToken_MarshalJSON_ExposesEffectiveDailyCostLimit(t *testing.T) {
 	}
 }
 
+func TestAuthToken_ApplyGroupEffective_DoublesDailyLimitForToday(t *testing.T) {
+	t.Parallel()
+
+	token := &AuthToken{
+		GroupID:                9,
+		InheritQuota:           true,
+		DailyLimitDoubleDayKey: CurrentLocalDayKey(),
+		DailyCostLimitMicroUSD: 300_000,
+		MaxConcurrency:         1,
+	}
+	group := &AuthTokenGroup{
+		ID:                     9,
+		Name:                   "G",
+		DailyCostLimitMicroUSD: 700_000,
+		MaxConcurrency:         2,
+	}
+
+	token.ApplyGroupEffective(group)
+
+	if got := token.EffectiveDailyCostLimitMicroUSD; got != 1_400_000 {
+		t.Fatalf("EffectiveDailyCostLimitMicroUSD = %d, want 1400000", got)
+	}
+}
+
 func TestAuthTokenGroup_DailyCostConversionsAndValidation(t *testing.T) {
 	t.Parallel()
 
