@@ -627,7 +627,7 @@ async function showAddModal() {
   renderInlineURLTable();
   clearChannelDuplicateHint();
 
-  inlineKeyTableData = [''];
+  inlineKeyTableData = [makeInlineKeyRow()];
   inlineKeyVisible = true;
   document.getElementById('inlineEyeIcon').style.display = 'none';
   document.getElementById('inlineEyeOffIcon').style.display = 'block';
@@ -682,9 +682,8 @@ async function editChannel(id) {
     };
   });
 
-  inlineKeyTableData = apiKeys.map(k => k.api_key || k);
-  if (inlineKeyTableData.length === 0) {
-    inlineKeyTableData = [''];
+  setInlineKeyTableDataFromAPI(apiKeys);
+  if (inlineKeyTableData.length === 1 && !inlineKeyTableData[0].api_key) {
     currentChannelKeyCooldowns = [];
   }
 
@@ -900,8 +899,9 @@ async function saveChannel(event) {
     return;
   }
 
-  const validKeys = inlineKeyTableData.filter(k => k && k.trim());
-  if (validKeys.length === 0) {
+  const validKeyRows = getValidInlineKeyRows();
+  const validKeys = validKeyRows.map(row => row.api_key);
+  if (validKeyRows.length === 0) {
     alert(window.t('channels.atLeastOneKey'));
     return;
   }
@@ -945,6 +945,7 @@ async function saveChannel(event) {
     name: document.getElementById('channelName').value.trim(),
     url: validURLs.join('\n'),
     api_key: validKeys.join(','),
+    api_keys: validKeyRows.map(row => ({ api_key: row.api_key, note: row.note || '' })),
     channel_type: channelType,
     protocol_transform_mode: getSelectedProtocolTransformMode(),
     protocol_transforms: getSelectedProtocolTransforms(channelType),
@@ -1623,10 +1624,7 @@ async function copyChannel(id, name) {
     console.error('Failed to fetch API Keys', e);
   }
 
-  inlineKeyTableData = apiKeys.map(k => k.api_key || k);
-  if (inlineKeyTableData.length === 0) {
-    inlineKeyTableData = [''];
-  }
+  setInlineKeyTableDataFromAPI(apiKeys);
 
   inlineKeyVisible = true;
   document.getElementById('inlineEyeIcon').style.display = 'none';
@@ -2292,9 +2290,7 @@ function areModelRowsEqual(left, right) {
 async function fetchModelsFromAPI() {
   const channelUrl = getValidInlineURLs()[0] || '';
   const channelType = document.querySelector('input[name="channelType"]:checked')?.value || 'anthropic';
-  const firstValidKey = inlineKeyTableData
-    .map(key => (key || '').trim())
-    .filter(Boolean)[0];
+  const firstValidKey = (getValidInlineKeyRows()[0] || {}).api_key || '';
 
   if (!channelUrl) {
     if (window.showError) {

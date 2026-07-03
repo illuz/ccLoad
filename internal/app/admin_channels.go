@@ -484,19 +484,20 @@ func (s *Server) createChannelFromRequest(ctx context.Context, req ChannelReques
 		return nil, err
 	}
 
-	apiKeys := util.ParseAPIKeys(req.APIKey)
 	keyStrategy := strings.TrimSpace(req.KeyStrategy)
 	if keyStrategy == "" {
 		keyStrategy = model.KeyStrategySequential
 	}
 
 	now := time.Now()
-	keysToCreate := make([]*model.APIKey, 0, len(apiKeys))
-	for i, key := range apiKeys {
+	apiKeyEntries := req.normalizeAPIKeys()
+	keysToCreate := make([]*model.APIKey, 0, len(apiKeyEntries))
+	for i, entry := range apiKeyEntries {
 		keysToCreate = append(keysToCreate, &model.APIKey{
 			ChannelID:   created.ID,
 			KeyIndex:    i,
-			APIKey:      key,
+			APIKey:      entry.APIKey,
+			Note:        entry.Note,
 			KeyStrategy: keyStrategy,
 			CreatedAt:   model.JSONTime{Time: now},
 			UpdatedAt:   model.JSONTime{Time: now},
@@ -782,7 +783,7 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 		oldKeys = []*model.APIKey{}
 	}
 
-	newKeys := util.ParseAPIKeys(req.APIKey)
+	newKeys := req.normalizeAPIKeys()
 	keyStrategy := strings.TrimSpace(req.KeyStrategy)
 	if keyStrategy == "" {
 		keyStrategy = model.KeyStrategySequential
@@ -792,12 +793,22 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	keyChanged := len(oldKeys) != len(newKeys)
 	if !keyChanged {
 		for i, oldKey := range oldKeys {
-			if i >= len(newKeys) || oldKey.APIKey != newKeys[i] {
+			if i >= len(newKeys) || oldKey.APIKey != newKeys[i].APIKey {
 				keyChanged = true
 				break
 			}
 		}
 	}
+
+	notesByIndex := make(map[int]string)
+	if !keyChanged {
+		for i, oldKey := range oldKeys {
+			if oldKey.Note != newKeys[i].Note {
+				notesByIndex[oldKey.KeyIndex] = newKeys[i].Note
+			}
+		}
+	}
+	noteChanged := len(notesByIndex) > 0
 
 	// [INFO] 修复 (2025-10-11): 检测策略变化
 	strategyChanged := false
@@ -835,9 +846,10 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 			apiKeys = append(apiKeys, &model.APIKey{
 				ChannelID:   id,
 				KeyIndex:    i,
-				APIKey:      key,
+				APIKey:      key.APIKey,
+				Note:        key.Note,
 				KeyStrategy: keyStrategy,
-				Disabled:    disabledByAPIKey[key],
+				Disabled:    disabledByAPIKey[key.APIKey],
 				CreatedAt:   model.JSONTime{Time: now},
 				UpdatedAt:   model.JSONTime{Time: now},
 			})
@@ -845,10 +857,17 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 		if err := s.store.CreateAPIKeysBatch(c.Request.Context(), apiKeys); err != nil {
 			log.Printf("[WARN] 批量创建API Keys失败 (channel=%d, count=%d): %v", id, len(apiKeys), err)
 		}
-	} else if strategyChanged {
-		// 仅策略变化：单条SQL批量更新所有Key的策略字段
-		if err := s.store.UpdateAPIKeysStrategy(c.Request.Context(), id, keyStrategy); err != nil {
-			log.Printf("[WARN] 批量更新API Key策略失败 (channel=%d): %v", id, err)
+	} else {
+		// Key内容未变化：策略和备注都是独立元数据，不能重建Key导致冷却/禁用状态丢失。
+		if strategyChanged {
+			if err := s.store.UpdateAPIKeysStrategy(c.Request.Context(), id, keyStrategy); err != nil {
+				log.Printf("[WARN] 批量更新API Key策略失败 (channel=%d): %v", id, err)
+			}
+		}
+		if noteChanged {
+			if err := s.store.UpdateAPIKeyNotes(c.Request.Context(), id, notesByIndex); err != nil {
+				log.Printf("[WARN] 批量更新API Key备注失败 (channel=%d): %v", id, err)
+			}
 		}
 	}
 
@@ -867,7 +886,7 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	s.InvalidateChannelListCache()
 
 	// Key变更时必须失效API Keys缓存，否则再次编辑会读到旧缓存
-	if keyChanged || strategyChanged {
+	if keyChanged || strategyChanged || noteChanged {
 		s.InvalidateAPIKeysCache(id)
 	}
 

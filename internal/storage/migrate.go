@@ -171,6 +171,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureAPIKeysDisabled(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate api_keys disabled: %w", err)
 			}
+			if err := ensureAPIKeysNote(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate api_keys note: %w", err)
+			}
 		}
 
 		if tb.Name() == "channel_models" {
