@@ -63,9 +63,9 @@ func (s *Server) HandleQuickAddChannel(c *gin.Context) {
 		}
 	}
 
-	// channelType 仍为空 -> 默认 anthropic
+	// channelType 仍为空 -> 快速添加默认 codex
 	if channelType == "" {
-		channelType = util.ChannelTypeAnthropic
+		channelType = util.ChannelTypeCodex
 	}
 
 	channelGroupID := int64(0)

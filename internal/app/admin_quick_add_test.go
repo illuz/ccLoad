@@ -12,10 +12,10 @@ func TestHandleQuickAddChannel_ManualModels(t *testing.T) {
 	server := newInMemoryServer(t)
 
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/channels/quick-add", map[string]any{
-		"url":         "https://codex.hiyo.top",
-		"api_keys":    []string{"sk-aaa", "sk-bbb", "sk-aaa"},
+		"url":          "https://codex.hiyo.top",
+		"api_keys":     []string{"sk-aaa", "sk-bbb", "sk-aaa"},
 		"channel_type": "codex",
-		"models":      []string{"gpt-5-codex", "gpt-5"},
+		"models":       []string{"gpt-5-codex", "gpt-5"},
 	}))
 	server.HandleQuickAddChannel(c)
 
@@ -49,6 +49,28 @@ func TestHandleQuickAddChannel_ManualModels(t *testing.T) {
 	}
 	if len(keys) != 2 {
 		t.Fatalf("expected 2 keys (after dedup), got %d", len(keys))
+	}
+}
+
+func TestHandleQuickAddChannel_DefaultsToCodexWhenTypeMissing(t *testing.T) {
+	server := newInMemoryServer(t)
+
+	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/channels/quick-add", map[string]any{
+		"url":      "https://muyuan.do",
+		"api_keys": []string{"sk-test-quickadd-json-key-1234567890"},
+		"models":   []string{"gpt-5-codex"},
+	}))
+	server.HandleQuickAddChannel(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	resp := mustParseAPIResponse[quickAddResponse](t, w.Body.Bytes())
+	if resp.Data.Channel == nil {
+		t.Fatalf("channel is nil")
+	}
+	if resp.Data.Channel.ChannelType != "codex" {
+		t.Fatalf("channel_type=%q, want codex", resp.Data.Channel.ChannelType)
 	}
 }
 

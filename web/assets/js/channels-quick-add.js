@@ -1,6 +1,8 @@
 // 快速添加渠道:粘贴 URL + Key(s),选模型来源,可选追加到 auth token 分组。
 
-const QUICK_ADD_TYPE_DEFAULT = 'anthropic';
+const QUICK_ADD_TYPE_DEFAULT = 'codex';
+const QUICK_ADD_URL_FIELD_NAMES = new Set(['url', 'baseurl', 'apiurl', 'apibase', 'endpoint']);
+const QUICK_ADD_KEY_FIELD_NAMES = new Set(['key', 'keys', 'apikey', 'apikeys', 'token', 'tokens', 'secretkey']);
 
 function detectTypeFromURL(url) {
   const host = (function () {
@@ -18,25 +20,132 @@ function hostnameFromURL(url) {
   try { return new URL(url).hostname; } catch (_) { return ''; }
 }
 
-// 解析粘贴框:首行 URL,后续行 Key(逗号或换行分隔),去空去重。
-function parseQuickAddInput(text) {
-  if (!text || !text.trim()) return { url: '', keys: [] };
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
-  if (lines.length === 0) return { url: '', keys: [] };
-  const url = lines[0];
-  const keyPart = lines.slice(1).join(',');
-  const keys = keyPart
+function addUniqueQuickAddValue(values, value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/^[`"'“”‘’\s]+/, '')
+    .replace(/[`"'“”‘’\s]+$/, '')
+    .replace(/^[=:：\s]+/, '')
+    .replace(/[,，;；\s]+$/, '');
+  if (!normalized || values.includes(normalized)) return;
+  values.push(normalized);
+}
+
+function addQuickAddURL(values, value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/\\\//g, '/')
+    .replace(/^[`"'“”‘’\s]+/, '')
+    .replace(/[)\]}>,，。.;；\s]+$/, '');
+  if (!/^https?:\/\//i.test(normalized)) return;
+  addUniqueQuickAddValue(values, normalized);
+}
+
+function addQuickAddDelimitedKeys(values, text) {
+  String(text || '')
     .split(/[,\n]/)
-    .map(k => k.trim())
-    .filter(k => k);
-  const seen = new Set();
-  const unique = [];
-  for (const k of keys) {
-    if (seen.has(k)) continue;
-    seen.add(k);
-    unique.push(k);
+    .map(part => part.trim())
+    .filter(Boolean)
+    .forEach(part => {
+      const cleaned = part
+        .replace(/^[`"'“”‘’\s]+/, '')
+        .replace(/[`"'“”‘’\s]+$/, '')
+        .replace(/[,，;；\s]+$/, '');
+      if (!cleaned || /^https?:\/\//i.test(cleaned)) return;
+      addUniqueQuickAddValue(values, cleaned);
+    });
+}
+
+function collectQuickAddJSONFields(value, urls, keys) {
+  if (Array.isArray(value)) {
+    value.forEach(item => collectQuickAddJSONFields(item, urls, keys));
+    return;
   }
-  return { url, keys: unique };
+  if (!value || typeof value !== 'object') return;
+
+  for (const [field, fieldValue] of Object.entries(value)) {
+    const fieldName = String(field || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (QUICK_ADD_URL_FIELD_NAMES.has(fieldName)) {
+      if (Array.isArray(fieldValue)) {
+        fieldValue.forEach(item => addQuickAddURL(urls, item));
+      } else {
+        addQuickAddURL(urls, fieldValue);
+      }
+    }
+    if (QUICK_ADD_KEY_FIELD_NAMES.has(fieldName)) {
+      if (Array.isArray(fieldValue)) {
+        fieldValue.forEach(item => addQuickAddDelimitedKeys(keys, item));
+      } else {
+        addQuickAddDelimitedKeys(keys, fieldValue);
+      }
+    }
+    collectQuickAddJSONFields(fieldValue, urls, keys);
+  }
+}
+
+function parseQuickAddJSONInput(text) {
+  const urls = [];
+  const keys = [];
+
+  try {
+    collectQuickAddJSONFields(JSON.parse(String(text || '').trim()), urls, keys);
+  } catch (_) {
+    return null;
+  }
+
+  if (urls.length === 0 || keys.length === 0) return null;
+  return { url: urls[0], keys };
+}
+
+function parseQuickAddLineInput(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  if (lines.length < 2) return null;
+
+  const url = lines[0];
+  if (!/^https?:\/\/[^\s"'<>，,]+$/i.test(url)) return null;
+
+  const keys = [];
+  addQuickAddDelimitedKeys(keys, lines.slice(1).join(','));
+  if (keys.length === 0) return null;
+
+  return { url, keys };
+}
+
+function parseQuickAddRegexInput(text) {
+  const raw = String(text || '');
+  if (!raw.trim()) return { url: '', keys: [] };
+
+  const urls = [];
+  const keys = [];
+  const trimmed = raw.trim();
+
+  const urlRegex = /https?:\/\/[^\s"'<>，,；;。]+/gi;
+  for (const match of trimmed.matchAll(urlRegex)) {
+    addQuickAddURL(urls, match[0]);
+  }
+
+  const keyValueRegex = /(?:^|[,{;\s])["']?(?:api[_-]?key|apikey|key|token|secret)["']?\s*[:=]\s*["']?([^"',\s}\]]+)/gi;
+  for (const match of trimmed.matchAll(keyValueRegex)) {
+    addQuickAddDelimitedKeys(keys, match[1]);
+  }
+
+  const skRegex = /\bsk-[A-Za-z0-9._-]{6,}\b/g;
+  for (const match of trimmed.matchAll(skRegex)) {
+    addUniqueQuickAddValue(keys, match[0]);
+  }
+
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  const url = urls[0] || (lines[0] || '');
+
+  return { url, keys };
+}
+
+// 解析粘贴框:优先识别 JSON 和“首行 URL、后续 Key”，两者都不符合时再用正则从任意文本兜底提取 URL 与 sk-* Key。
+function parseQuickAddInput(text) {
+  const raw = String(text || '');
+  if (!raw.trim()) return { url: '', keys: [] };
+
+  return parseQuickAddJSONInput(raw) || parseQuickAddLineInput(raw) || parseQuickAddRegexInput(raw);
 }
 
 function getQuickAddModal() {
