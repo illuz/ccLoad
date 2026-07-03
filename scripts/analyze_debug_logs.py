@@ -196,24 +196,49 @@ def extract_ai_texts(obj: Any, out: list[dict[str, Any]] | None = None) -> list[
 def extract_ai_texts_from_events(events: list[Any]) -> list[dict[str, Any]]:
     out = extract_ai_texts(events)
 
-    # Fallback for streams that only include deltas and no done/message object.
-    buffers: dict[str, list[str]] = {}
-    order: list[str] = []
+    # Fallback for Responses API streams that only include deltas and no done/message object.
+    response_buffers: dict[str, list[str]] = {}
+    response_order: list[str] = []
+
+    # Fallback for Chat Completions streams:
+    # data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":"..."}}]}
+    chat_buffers: dict[str, list[str]] = {}
+    chat_order: list[str] = []
+
     for event in events:
         if not isinstance(event, dict):
             continue
-        if event.get("type") != "response.output_text.delta":
-            continue
-        delta = event.get("delta")
-        if not isinstance(delta, str):
-            continue
-        item_id = str(event.get("item_id") or event.get("output_index") or "default")
-        if item_id not in buffers:
-            buffers[item_id] = []
-            order.append(item_id)
-        buffers[item_id].append(delta)
-    for item_id in order:
-        append_unique_text(out, "".join(buffers[item_id]), f"response.output_text.delta:{item_id}")
+
+        if event.get("type") == "response.output_text.delta":
+            delta = event.get("delta")
+            if isinstance(delta, str):
+                item_id = str(event.get("item_id") or event.get("output_index") or "default")
+                if item_id not in response_buffers:
+                    response_buffers[item_id] = []
+                    response_order.append(item_id)
+                response_buffers[item_id].append(delta)
+
+        choices = event.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                delta_obj = choice.get("delta")
+                if not isinstance(delta_obj, dict):
+                    continue
+                content = delta_obj.get("content")
+                if not isinstance(content, str):
+                    continue
+                choice_id = str(choice.get("index", 0))
+                if choice_id not in chat_buffers:
+                    chat_buffers[choice_id] = []
+                    chat_order.append(choice_id)
+                chat_buffers[choice_id].append(content)
+
+    for item_id in response_order:
+        append_unique_text(out, "".join(response_buffers[item_id]), f"response.output_text.delta:{item_id}")
+    for choice_id in chat_order:
+        append_unique_text(out, "".join(chat_buffers[choice_id]), f"chat.completion.delta:{choice_id}")
     return out
 
 
