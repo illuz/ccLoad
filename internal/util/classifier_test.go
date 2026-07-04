@@ -997,6 +997,7 @@ func TestGetStatusCodeMeta(t *testing.T) {
 		{405, ErrorLevelChannel, "405 -> 渠道级 (上游endpoint/方法不支持)"},
 
 		// 自定义状态码
+		{StatusCodexReasoningGuard, ErrorLevelKey, "595 -> Key级"},
 		{StatusQuotaExceeded, ErrorLevelKey, "596 -> Key级"},
 		{StatusSSEError, ErrorLevelKey, "597 -> Key级"},
 		{StatusFirstByteTimeout, ErrorLevelChannel, "598 -> 渠道级"},
@@ -1032,6 +1033,7 @@ func TestClientStatusFor(t *testing.T) {
 	}{
 		{-1, 502, "负值 -> 502"},
 		{0, 502, "零值 -> 502"},
+		{StatusCodexReasoningGuard, 502, "595 -> 502"},
 		{StatusQuotaExceeded, 429, "596 -> 429"},
 		{StatusSSEError, 502, "597 -> 502"},
 		{StatusFirstByteTimeout, 504, "598 -> 504"},

@@ -721,12 +721,16 @@ func (s *Server) handleSuccessResponse(
 		disableResponseWriteTimeout(w, "非流式")
 	}
 
+	guardBuffering := shouldApplyCodexReasoningGuard(reqCtx, channelType)
 	streamWriter := w
 	var deferredWriter *deferredResponseWriter
-	if reqCtx.isStreaming {
+	if reqCtx.isStreaming || guardBuffering {
 		deferredWriter = newDeferredResponseWriter(w)
 		if observer != nil && observer.Timing != nil {
 			deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
+		}
+		if guardBuffering {
+			deferredWriter.SetMaxBufferBytes(codexGuardMaxBufferedBytes)
 		}
 		streamWriter = deferredWriter
 	}
@@ -755,7 +759,7 @@ func (s *Server) handleSuccessResponse(
 			if parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
 			}
-			if parser.HasStreamOutput() {
+			if parser.HasStreamOutput() && !guardBuffering {
 				return deferredWriter.Commit()
 			}
 			return nil
@@ -764,11 +768,11 @@ func (s *Server) handleSuccessResponse(
 	abortedBeforeCommit := errors.Is(streamErr, errAbortStreamBeforeWrite)
 	if abortedBeforeCommit {
 		streamErr = nil
-	} else if deferredWriter != nil && !deferredWriter.Committed() && isEmptyStreamOutput(parser, readStats) {
+	} else if reqCtx.isStreaming && deferredWriter != nil && !deferredWriter.Committed() && isEmptyStreamOutput(parser, readStats) {
 		if streamErr == nil {
 			return emptyOKResponseResult(reqCtx, resp, hdrClone, readStats, emptyStreamDetail(readStats))
 		}
-	} else if deferredWriter != nil && !deferredWriter.Committed() {
+	} else if deferredWriter != nil && !deferredWriter.Committed() && !guardBuffering {
 		if commitErr := deferredWriter.Commit(); commitErr != nil && streamErr == nil {
 			streamErr = commitErr
 		}
@@ -821,6 +825,16 @@ func (s *Server) handleSuccessResponse(
 		}
 	}
 
+	if verdict := evaluateCodexReasoningGuard(reqCtx, result); verdict.Triggered && !result.ResponseCommitted {
+		return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+	}
+	if deferredWriter != nil && !deferredWriter.Committed() && result.SSEErrorEvent == nil && result.StreamDiagMsg == "" && streamErr == nil {
+		if commitErr := deferredWriter.Commit(); commitErr != nil {
+			streamErr = commitErr
+		}
+		result.ResponseCommitted = deferredWriter.Committed()
+	}
+
 	return result, reqCtx.Duration().Seconds(), streamErr
 }
 
@@ -855,6 +869,23 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 			Body:          rawBody,
 			FirstByteTime: readStats.firstByteSec,
 		}, reqCtx.Duration().Seconds(), err
+	}
+
+	preGuardResult := &fwResult{
+		Status:        resp.StatusCode,
+		Header:        hdrClone,
+		FirstByteTime: readStats.firstByteSec,
+		BytesReceived: readStats.totalBytes,
+	}
+	preGuardResult.InputTokens, preGuardResult.OutputTokens, preGuardResult.CacheReadInputTokens, preGuardResult.CacheCreationInputTokens = parser.GetUsage()
+	preGuardResult.ReasoningTokens = parser.GetReasoningTokens()
+	preGuardResult.Cache5mInputTokens = parser.Cache5mInputTokens
+	preGuardResult.Cache1hInputTokens = parser.Cache1hInputTokens
+	preGuardResult.ServiceTier = parser.ServiceTier
+	preGuardResult.ToolCostUSD = parser.GetToolCostUSD()
+	preGuardResult.ThinkingEffort = parser.GetThinkingEffort()
+	if verdict := evaluateCodexReasoningGuard(reqCtx, preGuardResult); verdict.Triggered {
+		return codexGuardBlockedResult(preGuardResult, verdict), reqCtx.Duration().Seconds(), nil
 	}
 
 	translatedBody, err := s.protocolRegistry.TranslateResponseNonStream(
@@ -918,6 +949,10 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	if observer != nil && observer.Timing != nil {
 		deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
 	}
+	guardBuffering := shouldApplyCodexReasoningGuard(reqCtx, channelType)
+	if guardBuffering {
+		deferredWriter.SetMaxBufferBytes(codexGuardMaxBufferedBytes)
+	}
 	filterAndWriteResponseHeaders(deferredWriter, resp.Header)
 	deferredWriter.WriteHeader(resp.StatusCode)
 
@@ -941,7 +976,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			if !deferredWriter.Committed() && parser.GetLastError() != nil {
 				return errAbortStreamBeforeWrite
 			}
-			if !deferredWriter.Committed() && parser.HasStreamOutput() {
+			if !deferredWriter.Committed() && parser.HasStreamOutput() && !guardBuffering {
 				return deferredWriter.Commit()
 			}
 			return nil
@@ -974,7 +1009,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 		if streamErr == nil {
 			return emptyOKResponseResult(reqCtx, resp, hdrClone, readStats, emptyStreamDetail(readStats))
 		}
-	} else if !deferredWriter.Committed() {
+	} else if !deferredWriter.Committed() && !guardBuffering {
 		if commitErr := deferredWriter.Commit(); commitErr != nil && streamErr == nil {
 			streamErr = commitErr
 		}
@@ -1002,6 +1037,16 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 		log.Print(diagMsg)
 	} else if streamComplete && streamErr != nil {
 		streamErr = nil
+	}
+
+	if verdict := evaluateCodexReasoningGuard(reqCtx, result); verdict.Triggered && !result.ResponseCommitted {
+		return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+	}
+	if !deferredWriter.Committed() && result.SSEErrorEvent == nil && result.StreamDiagMsg == "" && streamErr == nil {
+		if commitErr := deferredWriter.Commit(); commitErr != nil {
+			streamErr = commitErr
+		}
+		result.ResponseCommitted = deferredWriter.Committed()
 	}
 
 	return result, reqCtx.Duration().Seconds(), streamErr
@@ -1289,7 +1334,7 @@ func (s *Server) handleResponse(
 // 从proxy.go提取，遵循SRP原则
 // 参数新增 apiKey 用于直接传递已选中的API Key（从KeySelector获取）
 // 参数新增 method 用于支持任意HTTP方法（GET、POST、PUT、DELETE等）
-func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, plan protocol.TransformPlan, hdr http.Header, rawQuery string, baseURL string, w http.ResponseWriter, observer *ForwardObserver) (*fwResult, float64, error) {
+func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, plan protocol.TransformPlan, hdr http.Header, rawQuery string, baseURL string, w http.ResponseWriter, observer *ForwardObserver, codexGuardEnabled ...bool) (*fwResult, float64, error) {
 	// 1. 创建请求上下文（处理超时）
 	reqCtx := s.newRequestContextWithTimeouts(ctx, plan.UpstreamPath, plan.TranslatedBody, s.resolveProtocolTimeouts(cfg, plan))
 	reqCtx.transformPlan = plan
@@ -1298,6 +1343,7 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 	reqCtx.originalBody = plan.OriginalBody
 	reqCtx.translatedBody = plan.TranslatedBody
 	reqCtx.originalModel = plan.ResponseModel()
+	reqCtx.codexGuardEnabled = len(codexGuardEnabled) > 0 && codexGuardEnabled[0]
 	defer reqCtx.cleanup() // [INFO] 统一清理：定时器 + context（总是安全）
 
 	if s.protocolRegistry != nil && plan.NeedsTransform {
@@ -1528,7 +1574,7 @@ func (s *Server) forwardAttempt(
 	}
 
 	res, duration, err := s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
-		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer)
+		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, reqCtx.codexGuardEnabled)
 	if err != nil && errors.Is(err, protocol.ErrUnsupportedRequestShape) {
 		channelID := cfg.ID
 		return &proxyResult{
@@ -1550,7 +1596,7 @@ func (s *Server) forwardAttempt(
 		retryPlan := plan
 		retryPlan.TranslatedBody = retryBody
 		res, duration, err = s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
-			retryPlan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer)
+			retryPlan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, reqCtx.codexGuardEnabled)
 		if res != nil && res.DebugData != nil {
 			reqCtx.debugData = res.DebugData
 		}

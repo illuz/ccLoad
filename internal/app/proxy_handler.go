@@ -343,6 +343,10 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	// 从context提取tokenID（用于统计和日志，2025-12新增tokenID）
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
+	codexGuardEnabled := false
+	if v, ok := c.Get("codex_guard_enabled"); ok {
+		codexGuardEnabled, _ = v.(bool)
+	}
 
 	// 注册活跃请求（内存状态，用于前端实时显示）
 	activeID := s.activeRequests.Register(startTime, originalModel, c.ClientIP(), isStreaming)
@@ -402,22 +406,23 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	}
 
 	reqCtx := &proxyRequestContext{
-		originalModel:  originalModel,
-		clientProtocol: clientProtocol,
-		requestMethod:  requestMethod,
-		requestPath:    effectiveRequestPath,
-		rawQuery:       c.Request.URL.RawQuery,
-		body:           all,
-		translatedBody: all,
-		header:         c.Request.Header,
-		isStreaming:    isStreaming,
-		tokenHash:      tokenHashStr,
-		tokenID:        tokenIDInt64,
-		clientIP:       c.ClientIP(),
-		activeReqID:    activeID,
-		startTime:      startTime,
-		thinkingEffort: thinkingEffort,
-		timing:         timing,
+		originalModel:     originalModel,
+		clientProtocol:    clientProtocol,
+		requestMethod:     requestMethod,
+		requestPath:       effectiveRequestPath,
+		rawQuery:          c.Request.URL.RawQuery,
+		body:              all,
+		translatedBody:    all,
+		header:            c.Request.Header,
+		isStreaming:       isStreaming,
+		tokenHash:         tokenHashStr,
+		tokenID:           tokenIDInt64,
+		codexGuardEnabled: codexGuardEnabled,
+		clientIP:          c.ClientIP(),
+		activeReqID:       activeID,
+		startTime:         startTime,
+		thinkingEffort:    thinkingEffort,
+		timing:            timing,
 	}
 	reqCtx.observer = &ForwardObserver{
 		OnBytesRead: func(n int64) {

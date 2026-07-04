@@ -433,6 +433,13 @@ func ensureAuthTokensDailyLimitDouble(ctx context.Context, db *sql.DB, dialect D
 		"INTEGER NOT NULL DEFAULT 0")
 }
 
+// ensureAuthTokensCodexGuard 确保auth_tokens表有 Codex reasoning guard 令牌级开关字段（2026-07新增）
+func ensureAuthTokensCodexGuard(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_tokens", "codex_guard_enabled",
+		"TINYINT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
 func ensureAuthTokenGroupsColor(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "auth_token_groups", "color",
 		"VARCHAR(16) NOT NULL DEFAULT '#64748b'",

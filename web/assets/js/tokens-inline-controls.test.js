@@ -77,6 +77,17 @@ test('tokens 页费用和并发上限输入框使用一致前缀槽位保持对�
   assert.match(css, /\.token-limit-hint--inline\s*\{[\s\S]*?flex:\s*0\s+0\s+auto;/);
 });
 
+test('tokens 页提供令牌级 Codex Guard 开关并提交保存', () => {
+  assert.match(html, /id="tokenCodexGuardEnabled"/);
+  assert.match(html, /id="editCodexGuardEnabled"/);
+  assert.match(html, /data-i18n="tokens\.codexGuardHint"/);
+  assert.match(html, /codexGuardBadgeHtml/);
+  assert.match(script, /codex_guard_enabled:\s*codexGuardEnabled,/);
+  assert.match(script, /editCodexGuardInput\.checked = !!token\.codex_guard_enabled;/);
+  assert.match(script, /function buildCodexGuardBadgeHtml\(token\)/);
+  assert.match(css, /\.token-row-badge--codex-guard\s*\{/);
+});
+
 test('tokens.js 通过委托处理页面控件和动态 allowed-model 行', () => {
   assert.match(script, /window\.initPageBootstrap\(\{/);
   assert.match(script, /topbarKey:\s*'tokens'/);

@@ -375,16 +375,17 @@ func mustUnmarshalAPIResponseData(t testing.TB, body []byte, out any) {
 func newTestAuthService(t testing.TB) *AuthService {
 	t.Helper()
 	s := &AuthService{
-		authTokens:          make(map[string]int64),
-		authTokenIDs:        make(map[string]int64),
-		authTokenModels:     make(map[string][]string),
-		authTokenChannels:   make(map[string][]int64),
-		authTokenCostLimits: make(map[string]tokenCostLimit),
-		authTokenMaxConns:   make(map[string]int),
-		authTokenActiveReqs: make(map[string]int),
-		validTokens:         make(map[string]time.Time),
-		lastUsedCh:          make(chan string, 256),
-		done:                make(chan struct{}),
+		authTokens:           make(map[string]int64),
+		authTokenIDs:         make(map[string]int64),
+		authTokenModels:      make(map[string][]string),
+		authTokenChannels:    make(map[string][]int64),
+		authTokenCodexGuards: make(map[string]bool),
+		authTokenCostLimits:  make(map[string]tokenCostLimit),
+		authTokenMaxConns:    make(map[string]int),
+		authTokenActiveReqs:  make(map[string]int),
+		validTokens:          make(map[string]time.Time),
+		lastUsedCh:           make(chan string, 256),
+		done:                 make(chan struct{}),
 	}
 	t.Cleanup(s.Close) // 幂等关闭（closeOnce 保护）
 	return s
@@ -423,6 +424,9 @@ func runMiddleware(t testing.TB, middleware gin.HandlerFunc, req *http.Request) 
 		}
 		if v, ok := c.Get("token_id"); ok {
 			data["token_id"] = v
+		}
+		if v, ok := c.Get("codex_guard_enabled"); ok {
+			data["codex_guard_enabled"] = v
 		}
 		c.JSON(http.StatusOK, data)
 	})

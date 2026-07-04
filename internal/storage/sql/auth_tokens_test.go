@@ -24,6 +24,7 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 		PlainToken:        "test-token-plain",
 		Description:       "Test Token",
 		IsActive:          true,
+		CodexGuardEnabled: true,
 		CostLimitMicroUSD: 1000000, // $1
 		AllowedModels:     []string{"gpt-4", "claude-3"},
 		AllowedChannelIDs: []int64{11, 22},
@@ -47,6 +48,9 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	}
 	if !got.IsActive {
 		t.Error("expected is_active=true")
+	}
+	if !got.CodexGuardEnabled {
+		t.Error("expected codex_guard_enabled=true")
 	}
 	if len(got.AllowedChannelIDs) != 2 || got.AllowedChannelIDs[0] != 11 || got.AllowedChannelIDs[1] != 22 {
 		t.Fatalf("allowed_channel_ids: got %+v, want [11 22]", got.AllowedChannelIDs)
@@ -356,6 +360,7 @@ func TestAuthToken_Update(t *testing.T) {
 	token.PlainToken = "updated-test-plain"
 	token.Description = "Updated Description"
 	token.IsActive = false
+	token.CodexGuardEnabled = true
 	token.CostLimitMicroUSD = 5000000 // $5
 	token.AllowedChannelIDs = []int64{33}
 	token.MaxConcurrency = 2
@@ -380,6 +385,9 @@ func TestAuthToken_Update(t *testing.T) {
 	}
 	if got.IsActive {
 		t.Error("expected is_active=false")
+	}
+	if !got.CodexGuardEnabled {
+		t.Error("expected codex_guard_enabled=true")
 	}
 	if got.CostLimitMicroUSD != 5000000 {
 		t.Errorf("cost limit: got %d, want %d", got.CostLimitMicroUSD, 5000000)

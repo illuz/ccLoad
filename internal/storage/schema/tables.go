@@ -116,6 +116,7 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("expires_at BIGINT NOT NULL DEFAULT 0").
 		Column("last_used_at BIGINT NOT NULL DEFAULT 0").
 		Column("is_active TINYINT NOT NULL DEFAULT 1").
+		Column("codex_guard_enabled TINYINT NOT NULL DEFAULT 0").
 		Column("success_count INT NOT NULL DEFAULT 0").
 		Column("failure_count INT NOT NULL DEFAULT 0").
 		Column("stream_avg_ttfb DOUBLE NOT NULL DEFAULT 0.0").

@@ -24,6 +24,9 @@ type AuthToken struct {
 	LastUsedAt  *int64    `json:"last_used_at,omitempty"` // 最后使用时间(Unix毫秒时间戳)
 	IsActive    bool      `json:"is_active"`              // 是否启用
 
+	// Codex Guard（2026-07新增）
+	CodexGuardEnabled bool `json:"codex_guard_enabled"` // 是否为该访问令牌启用 Codex reasoning guard
+
 	// 统计字段（2025-11新增）
 	SuccessCount   int64   `json:"success_count"`     // 成功调用次数
 	FailureCount   int64   `json:"failure_count"`     // 失败调用次数
@@ -453,6 +456,7 @@ type authTokenJSON struct {
 	ExpiresAt                  *int64    `json:"expires_at,omitempty"`
 	LastUsedAt                 *int64    `json:"last_used_at,omitempty"`
 	IsActive                   bool      `json:"is_active"`
+	CodexGuardEnabled          bool      `json:"codex_guard_enabled"`
 	SuccessCount               int64     `json:"success_count"`
 	FailureCount               int64     `json:"failure_count"`
 	StreamAvgTTFB              float64   `json:"stream_avg_ttfb"`
@@ -499,6 +503,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		ExpiresAt:                  t.ExpiresAt,
 		LastUsedAt:                 t.LastUsedAt,
 		IsActive:                   t.IsActive,
+		CodexGuardEnabled:          t.CodexGuardEnabled,
 		SuccessCount:               t.SuccessCount,
 		FailureCount:               t.FailureCount,
 		StreamAvgTTFB:              t.StreamAvgTTFB,

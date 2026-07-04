@@ -294,7 +294,8 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
 		DailyLimitDouble  *bool    `json:"daily_limit_double_enabled"`
 		MaxConcurrency    *int     `json:"max_concurrency"` // 最大并发请求数（0=无限制）
-		GroupID           *int64   `json:"group_id"`        // 分组ID，0/空表示未分组
+		CodexGuardEnabled *bool    `json:"codex_guard_enabled"`
+		GroupID           *int64   `json:"group_id"` // 分组ID，0/空表示未分组
 		InheritQuota      *bool    `json:"inherit_quota"`
 		InheritChannels   *bool    `json:"inherit_channels"`
 		InheritModels     *bool    `json:"inherit_models"`
@@ -349,6 +350,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		Description:       req.Description,
 		ExpiresAt:         req.ExpiresAt,
 		IsActive:          isActive,
+		CodexGuardEnabled: req.CodexGuardEnabled != nil && *req.CodexGuardEnabled,
 		AllowedModels:     req.AllowedModels,
 		AllowedChannelIDs: req.AllowedChannelIDs,
 	}
@@ -431,6 +433,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"created_at":                 authToken.CreatedAt,
 		"expires_at":                 authToken.ExpiresAt,
 		"is_active":                  authToken.IsActive,
+		"codex_guard_enabled":        authToken.CodexGuardEnabled,
 		"allowed_models":             authToken.AllowedModels,
 		"allowed_channel_ids":        authToken.AllowedChannelIDs,
 		"daily_cost_limit_usd":       authToken.DailyCostLimitUSD(),
@@ -463,7 +466,8 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		DailyCostLimitUSD *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
 		DailyLimitDouble  *bool             `json:"daily_limit_double_enabled"`
 		MaxConcurrency    *int              `json:"max_concurrency"` // 最大并发请求数（0=无限制）
-		GroupID           *int64            `json:"group_id"`        // 分组ID，0表示未分组
+		CodexGuardEnabled *bool             `json:"codex_guard_enabled"`
+		GroupID           *int64            `json:"group_id"` // 分组ID，0表示未分组
 		InheritQuota      *bool             `json:"inherit_quota"`
 		InheritChannels   *bool             `json:"inherit_channels"`
 		InheritModels     *bool             `json:"inherit_models"`
@@ -513,6 +517,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.IsActive != nil {
 		token.IsActive = *req.IsActive
+	}
+	if req.CodexGuardEnabled != nil {
+		token.CodexGuardEnabled = *req.CodexGuardEnabled
 	}
 	if req.ExpiresAt.set {
 		token.ExpiresAt = req.ExpiresAt.value

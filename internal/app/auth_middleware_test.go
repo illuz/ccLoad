@@ -155,6 +155,9 @@ func TestRequireAPIAuth_ContextValues(t *testing.T) {
 	t.Parallel()
 	svc := newTestAuthService(t)
 	injectAPIToken(svc, "ctx-token", 0, 42)
+	svc.authTokensMux.Lock()
+	svc.authTokenCodexGuards[model.HashToken("ctx-token")] = true
+	svc.authTokensMux.Unlock()
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("Authorization", "Bearer ctx-token")
@@ -178,6 +181,10 @@ func TestRequireAPIAuth_ContextValues(t *testing.T) {
 	// 验证 token_id 被设置到 context
 	if got, ok := resp["token_id"].(float64); !ok || int64(got) != 42 {
 		t.Fatalf("expected token_id=42, got=%v", resp["token_id"])
+	}
+
+	if got, ok := resp["codex_guard_enabled"].(bool); !ok || !got {
+		t.Fatalf("expected codex_guard_enabled=true, got=%v", resp["codex_guard_enabled"])
 	}
 }
 

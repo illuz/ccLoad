@@ -46,6 +46,7 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 		"description":         "Test Token",
 		"allowed_channel_ids": []int64{3, 5},
 		"max_concurrency":     4,
+		"codex_guard_enabled": true,
 	}))
 
 	server.HandleCreateAuthToken(c)
@@ -59,6 +60,7 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 		Data    struct {
 			ID                int64   `json:"id"`
 			Token             string  `json:"token"`
+			CodexGuardEnabled bool    `json:"codex_guard_enabled"`
 			AllowedChannelIDs []int64 `json:"allowed_channel_ids"`
 			MaxConcurrency    int     `json:"max_concurrency"`
 		} `json:"data"`
@@ -76,6 +78,9 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	}
 	if response.Data.MaxConcurrency != 4 {
 		t.Fatalf("max_concurrency=%d, want 4", response.Data.MaxConcurrency)
+	}
+	if !response.Data.CodexGuardEnabled {
+		t.Fatalf("codex_guard_enabled=false, want true")
 	}
 
 	ctx := context.Background()
@@ -96,6 +101,9 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	}
 	if stored.MaxConcurrency != 4 {
 		t.Fatalf("stored max_concurrency=%d, want 4", stored.MaxConcurrency)
+	}
+	if !stored.CodexGuardEnabled {
+		t.Fatalf("stored codex_guard_enabled=false, want true")
 	}
 }
 

@@ -49,6 +49,10 @@ const (
 	// 即使HTTP状态码为200，但响应体为1308错误。需从成功率计算中排除
 	StatusQuotaExceeded = 596
 
+	// StatusCodexReasoningGuard Codex reasoning guard 命中（自定义状态码）
+	// HTTP状态码200但 reasoning_tokens 命中降智特征，应按Key级故障重试
+	StatusCodexReasoningGuard = 595
+
 	// StatusSSEError SSE流中检测到error事件（自定义状态码）
 	// HTTP状态码200但流中包含错误，如其他类型的API错误
 	StatusSSEError = 597
@@ -176,10 +180,11 @@ var statusCodeMetaMap = map[int]StatusCodeMeta{
 	524: {ErrorLevelChannel}, // Cloudflare: A Timeout Occurred
 
 	// === 自定义内部状态码 ===
-	StatusQuotaExceeded:    {ErrorLevelKey},     // 1308 quota exceeded
-	StatusSSEError:         {ErrorLevelKey},     // SSE error event
-	StatusFirstByteTimeout: {ErrorLevelChannel}, // First byte timeout
-	StatusStreamIncomplete: {ErrorLevelChannel}, // Stream incomplete
+	StatusCodexReasoningGuard: {ErrorLevelKey},     // Codex reasoning guard
+	StatusQuotaExceeded:       {ErrorLevelKey},     // 1308 quota exceeded
+	StatusSSEError:            {ErrorLevelKey},     // SSE error event
+	StatusFirstByteTimeout:    {ErrorLevelChannel}, // First byte timeout
+	StatusStreamIncomplete:    {ErrorLevelChannel}, // Stream incomplete
 
 	// === 客户端错误：不冷却，直接返回 ===
 	// 408 Request Timeout: RFC 7231 定义为"服务器等待客户端发送完整请求超时"（客户端慢）
@@ -226,6 +231,8 @@ func ClientStatusFor(status int) int {
 
 	// 内部状态码：无条件映射为标准 HTTP 语义值
 	switch status {
+	case StatusCodexReasoningGuard:
+		return http.StatusBadGateway
 	case StatusQuotaExceeded:
 		return http.StatusTooManyRequests
 	case StatusSSEError:

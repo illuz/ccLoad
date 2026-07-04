@@ -98,6 +98,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			"description":                "new-desc",
 			"plain_token":                "new-plain-token",
 			"is_active":                  false,
+			"codex_guard_enabled":        true,
 			"expires_at":                 expiresAt,
 			"allowed_models":             []string{"m1", "m2"},
 			"allowed_channel_ids":        []int64{11, 22},
@@ -118,6 +119,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		type respData struct {
 			Description             string  `json:"description"`
 			IsActive                bool    `json:"is_active"`
+			CodexGuardEnabled       bool    `json:"codex_guard_enabled"`
 			Token                   string  `json:"token"`
 			PlainToken              string  `json:"plain_token"`
 			ExpiresAt               *int64  `json:"expires_at,omitempty"`
@@ -136,6 +138,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if resp.Data.IsActive {
 			t.Fatalf("is_active=%v, want false", resp.Data.IsActive)
+		}
+		if !resp.Data.CodexGuardEnabled {
+			t.Fatalf("codex_guard_enabled=false, want true")
 		}
 		if resp.Data.Token != model.HashToken("new-plain-token") {
 			t.Fatalf("token should be hash value for dual-path auth, got %q", resp.Data.Token)

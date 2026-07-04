@@ -9,7 +9,10 @@ import (
 	"net/http"
 )
 
-var errAbortStreamBeforeWrite = errors.New("abort stream before first client write")
+var (
+	errAbortStreamBeforeWrite         = errors.New("abort stream before first client write")
+	errDeferredResponseBufferExceeded = errors.New("deferred response buffer exceeded")
+)
 
 // ============================================================================
 // 流式传输数据结构
@@ -123,6 +126,7 @@ type deferredResponseWriter struct {
 	status             int
 	committed          bool
 	buffer             bytes.Buffer
+	maxBufferBytes     int
 	onFirstClientWrite func()
 	clientWriteMarked  bool
 }
@@ -147,6 +151,9 @@ func (w *deferredResponseWriter) WriteHeader(status int) {
 
 func (w *deferredResponseWriter) Write(p []byte) (int, error) {
 	if !w.committed {
+		if w.maxBufferBytes > 0 && w.buffer.Len()+len(p) > w.maxBufferBytes {
+			return 0, errDeferredResponseBufferExceeded
+		}
 		return w.buffer.Write(p)
 	}
 	n, err := w.target.Write(p)
@@ -198,6 +205,10 @@ func (w *deferredResponseWriter) Committed() bool {
 
 func (w *deferredResponseWriter) SetFirstClientWriteCallback(fn func()) {
 	w.onFirstClientWrite = fn
+}
+
+func (w *deferredResponseWriter) SetMaxBufferBytes(limit int) {
+	w.maxBufferBytes = limit
 }
 
 func (w *deferredResponseWriter) markFirstClientWrite() {

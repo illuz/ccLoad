@@ -194,6 +194,14 @@
 
         <div class="form-group">
           <label class="token-active-label">
+            <input type="checkbox" id="tokenCodexGuardEnabled" class="control-checkbox">
+            <span data-i18n="tokens.codexGuardLabel">Codex Reasoning Guard</span>
+          </label>
+          <div class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.codexGuardHint">检测 Codex reasoning token 异常并自动重试；开启后 Codex 流式请求可能增加响应延迟</div>
+        </div>
+
+        <div class="form-group">
+          <label class="token-active-label">
             <input type="checkbox" id="tokenActive" checked class="control-checkbox">
             <span data-i18n="tokens.enableToken">启用令牌</span>
           </label>
@@ -344,6 +352,14 @@
                   <span class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.zeroUnlimitedHint">0 表示无限制</span>
                 </div>
               </div>
+            </div>
+
+            <div class="form-group token-edit-active-row">
+              <label class="token-edit-active-label">
+                <input type="checkbox" id="editCodexGuardEnabled" class="control-checkbox">
+                <span data-i18n="tokens.codexGuardLabel">Codex Reasoning Guard</span>
+              </label>
+              <div class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.codexGuardHint">检测 Codex reasoning token 异常并自动重试；开启后 Codex 流式请求可能增加响应延迟</div>
             </div>
 
             <div class="form-group token-edit-active-row">
@@ -667,6 +683,7 @@
         <div class="token-row-meta">
           {{{groupHtml}}}
           {{{dailyLimitDoubleBadgeHtml}}}
+          {{{codexGuardBadgeHtml}}}
           <button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="{{copyTokenValue}}"
             title="{{copyTokenTitle}}" aria-label="{{copyTokenTitle}}" {{copyTokenDisabledAttr}}>{{maskedToken}}</button>
         </div>

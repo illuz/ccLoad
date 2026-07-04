@@ -942,6 +942,7 @@
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
+      const codexGuardBadgeHtml = buildCodexGuardBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const isActive = !!token.is_active;
       const toggleTitle = getTokenToggleTitle(token);
@@ -959,6 +960,7 @@
         copyTokenDisabledAttr: copyTokenValue ? '' : 'disabled',
         groupHtml: groupHtml,
         dailyLimitDoubleBadgeHtml: dailyLimitDoubleBadgeHtml,
+        codexGuardBadgeHtml: codexGuardBadgeHtml,
         batteryHtml: batteryHtml,
         statusClass: status.class,
         createdAt: createdAt,
@@ -1328,6 +1330,11 @@
       return `<span class="token-row-badge token-row-badge--daily-double" title="${escapeHtml(title)}">×2 ${escapeHtml(t('tokens.dailyLimitDoubleShort'))}</span>`;
     }
 
+    function buildCodexGuardBadgeHtml(token) {
+      if (!token || !token.codex_guard_enabled) return '';
+      return `<span class="token-row-badge token-row-badge--codex-guard" title="${escapeHtml(t('tokens.codexGuardHint'))}">${escapeHtml(t('tokens.codexGuardShort'))}</span>`;
+    }
+
     function getTokenToggleTitle(token) {
       return token && token.is_active ? t('common.disable') : t('common.enable');
     }
@@ -1413,6 +1420,7 @@
       const maskedToken = maskTokenForDisplay(displayToken);
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
+      const codexGuardBadgeHtml = buildCodexGuardBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const enableSwitchHtml = buildTokenEnableSwitchHtml(token);
       const tokenID = normalizeSelectedTokenID(token.id);
@@ -1428,7 +1436,7 @@
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
             <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span>${batteryHtml}</div>
-            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
+            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}${codexGuardBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
             <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>
           <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
@@ -1467,6 +1475,8 @@
       document.getElementById('tokenCostLimitUSD').value = 0;
       document.getElementById('tokenDailyCostLimitUSD').value = 0;
       document.getElementById('tokenMaxConcurrency').value = 0;
+      const codexGuardInput = document.getElementById('tokenCodexGuardEnabled');
+      if (codexGuardInput) codexGuardInput.checked = false;
       document.getElementById('tokenActive').checked = true;
       document.getElementById('customExpiryContainer').style.display = 'none';
       document.getElementById('createModal').style.display = 'block';
@@ -1501,6 +1511,7 @@
         }
       }
       const isActive = document.getElementById('tokenActive').checked;
+      const codexGuardEnabled = !!document.getElementById('tokenCodexGuardEnabled')?.checked;
       const costLimitUSD = parseFloat(document.getElementById('tokenCostLimitUSD').value) || 0;
       const dailyCostLimitUSD = parseFloat(document.getElementById('tokenDailyCostLimitUSD').value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenMaxConcurrency').value);
@@ -1528,6 +1539,7 @@
             plain_token: plainToken,
             expires_at: expiresAt,
             is_active: isActive,
+            codex_guard_enabled: codexGuardEnabled,
             cost_limit_usd: costLimitUSD,
             daily_cost_limit_usd: dailyCostLimitUSD,
             max_concurrency: maxConcurrency,
@@ -1546,6 +1558,7 @@
           created_at: data.created_at || new Date().toISOString(),
           expires_at: expiresAt,
           is_active: isActive,
+          codex_guard_enabled: !!data.codex_guard_enabled || codexGuardEnabled,
           allowed_models: Array.isArray(data.allowed_models) ? data.allowed_models : [],
           allowed_channel_ids: Array.isArray(data.allowed_channel_ids) ? data.allowed_channel_ids : [],
           max_concurrency: maxConcurrency,
@@ -1628,6 +1641,10 @@
       document.getElementById('editTokenValue').value = token.plain_token || '';
       document.getElementById('editTokenDescription').value = token.description;
       document.getElementById('editTokenActive').checked = token.is_active;
+      const editCodexGuardInput = document.getElementById('editCodexGuardEnabled');
+      if (editCodexGuardInput) {
+        editCodexGuardInput.checked = !!token.codex_guard_enabled;
+      }
       refreshEditGroupOptions(token.group_id || 0);
       if (!token.expires_at) {
         document.getElementById('editTokenExpiry').value = 'never';
@@ -1693,6 +1710,8 @@
       document.getElementById('editModal').style.display = 'none';
       document.getElementById('editTokenValue').value = '';
       document.getElementById('editCustomExpiryContainer').style.display = 'none';
+      const editCodexGuardInput = document.getElementById('editCodexGuardEnabled');
+      if (editCodexGuardInput) editCodexGuardInput.checked = false;
       // 清理模型限制状态
       editAllowedModels = [];
       editRawAllowedModels = [];
@@ -1828,6 +1847,7 @@
       const plainToken = document.getElementById('editTokenValue').value.trim();
       const description = document.getElementById('editTokenDescription').value.trim();
       const isActive = document.getElementById('editTokenActive').checked;
+      const codexGuardEnabled = !!document.getElementById('editCodexGuardEnabled')?.checked;
       const expiryType = document.getElementById('editTokenExpiry').value;
       if (!editInheritQuota || !editInheritChannels || !editInheritModels) {
         captureRawEditValues();
@@ -1878,6 +1898,7 @@
             plain_token: plainToken,
             description,
             is_active: isActive,
+            codex_guard_enabled: codexGuardEnabled,
             expires_at: expiresAt,
             group_id: groupID,
             inherit_quota: groupID > 0 && editInheritQuota,

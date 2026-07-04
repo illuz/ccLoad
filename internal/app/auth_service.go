@@ -41,6 +41,7 @@ type AuthService struct {
 	authTokenIDs             map[string]int64               // Token哈希 → Token ID 映射（用于日志记录，2025-12新增）
 	authTokenModels          map[string][]string            // Token哈希 → 允许的模型列表（2026-01新增）
 	authTokenChannels        map[string][]int64             // Token哈希 → 允许的渠道ID列表（2026-04新增）
+	authTokenCodexGuards     map[string]bool                // Token哈希 → 是否启用 Codex reasoning guard（2026-07新增）
 	authTokenCostLimits      map[string]tokenCostLimit      // Token哈希 → 费用限额状态（仅限额>0的令牌）
 	authTokenDailyCostLimits map[string]dailyTokenCostLimit // Token哈希 → 当日费用限额状态（仅限额>0的令牌）
 	authTokenMaxConns        map[string]int                 // Token哈希 → 最大并发请求数（0=无限制）
@@ -92,6 +93,7 @@ func NewAuthService(
 		authTokenIDs:             make(map[string]int64),
 		authTokenModels:          make(map[string][]string),
 		authTokenChannels:        make(map[string][]int64),
+		authTokenCodexGuards:     make(map[string]bool),
 		authTokenCostLimits:      make(map[string]tokenCostLimit),
 		authTokenDailyCostLimits: make(map[string]dailyTokenCostLimit),
 		authTokenMaxConns:        make(map[string]int),
@@ -358,6 +360,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			delete(s.authTokenIDs, tokenHash)
 			delete(s.authTokenModels, tokenHash)
 			delete(s.authTokenChannels, tokenHash)
+			delete(s.authTokenCodexGuards, tokenHash)
 			delete(s.authTokenCostLimits, tokenHash)
 			delete(s.authTokenDailyCostLimits, tokenHash)
 			delete(s.authTokenMaxConns, tokenHash)
@@ -387,6 +390,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		if hasTokenID {
 			c.Set("token_id", tokenID)
 		}
+		c.Set("codex_guard_enabled", s.isCodexGuardEnabledForToken(tokenHash))
 
 		// 异步更新last_used_at（发送到受控worker，不阻塞请求）
 		select {
@@ -539,6 +543,7 @@ func (s *AuthService) ReloadAuthTokens() error {
 	newTokenIDs := make(map[string]int64, len(tokens))
 	newTokenModels := make(map[string][]string, len(tokens))
 	newTokenChannels := make(map[string][]int64, len(tokens))
+	newTokenCodexGuards := make(map[string]bool, len(tokens))
 	newTokenCostLimits := make(map[string]tokenCostLimit, len(tokens))
 	newTokenDailyCostLimits := make(map[string]dailyTokenCostLimit, len(tokens))
 	newTokenMaxConns := make(map[string]int, len(tokens))
@@ -562,6 +567,9 @@ func (s *AuthService) ReloadAuthTokens() error {
 		}
 		if len(t.AllowedChannelIDs) > 0 {
 			newTokenChannels[t.Token] = t.AllowedChannelIDs
+		}
+		if t.CodexGuardEnabled {
+			newTokenCodexGuards[t.Token] = true
 		}
 		// 费用限额：只为“有限额”的令牌维护状态（避免无谓内存占用）
 		limitMicro := t.CostLimitMicroUSD
@@ -617,6 +625,7 @@ func (s *AuthService) ReloadAuthTokens() error {
 	s.authTokenIDs = newTokenIDs
 	s.authTokenModels = newTokenModels
 	s.authTokenChannels = newTokenChannels
+	s.authTokenCodexGuards = newTokenCodexGuards
 	s.authTokenCostLimits = newTokenCostLimits
 	s.authTokenDailyCostLimits = newTokenDailyCostLimits
 	s.authTokenMaxConns = newTokenMaxConns
@@ -683,6 +692,16 @@ func (s *AuthService) getAllowedChannelSet(tokenHash string) (map[int64]struct{}
 		allowedSet[channelID] = struct{}{}
 	}
 	return allowedSet, true
+}
+
+func (s *AuthService) isCodexGuardEnabledForToken(tokenHash string) bool {
+	if tokenHash == "" {
+		return false
+	}
+	s.authTokensMux.RLock()
+	enabled := s.authTokenCodexGuards[tokenHash]
+	s.authTokensMux.RUnlock()
+	return enabled
 }
 
 // FilterAllowedChannels 按 token 的渠道限制过滤候选渠道。

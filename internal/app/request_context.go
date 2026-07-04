@@ -22,6 +22,7 @@ type requestContext struct {
 	originalModel     string
 	originalBody      []byte
 	translatedBody    []byte
+	codexGuardEnabled bool
 	firstByteTimeout  time.Duration
 	nonStreamTimeout  time.Duration
 	firstByteTimer    *time.Timer
