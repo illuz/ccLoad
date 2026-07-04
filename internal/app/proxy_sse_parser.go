@@ -1155,7 +1155,9 @@ func (u *usageAccumulator) applyUsage(usage map[string]any, channelType string) 
 		// OpenAI平台:需区分Chat Completions vs Responses API
 		// Chat Completions: prompt_tokens + completion_tokens
 		// Responses API: input_tokens + output_tokens
-		if hasOpenAIChatUsageFields(usage) {
+		if shouldPreferOpenAIResponsesUsage(usage) {
+			u.applyAnthropicOrResponsesUsage(usage)
+		} else if hasOpenAIChatUsageFields(usage) {
 			u.applyOpenAIChatUsage(usage)
 		} else if hasAnthropicUsageFields(usage) {
 			// OpenAI Responses API使用类似Anthropic的字段
@@ -1210,6 +1212,22 @@ func hasOpenAIChatUsageFields(usage map[string]any) bool {
 	_, hasCompletionTokens := usage["completion_tokens"].(float64)
 	// OpenAI Chat格式必须同时有这两个字段
 	return hasPromptTokens && hasCompletionTokens
+}
+
+// shouldPreferOpenAIResponsesUsage 处理部分聚合站的 Responses API usage 兼容字段：
+// 它们会同时返回 prompt_tokens/completion_tokens=0 以及真实的 input_tokens/output_tokens。
+// 这种情况下如果优先按 Chat Completions 解析，会把真实 token 覆盖成 0。
+func shouldPreferOpenAIResponsesUsage(usage map[string]any) bool {
+	if !hasAnthropicUsageFields(usage) {
+		return false
+	}
+	if usageFirstInt(usage, "input_tokens", "output_tokens") <= 0 {
+		return false
+	}
+	if !hasOpenAIChatUsageFields(usage) {
+		return true
+	}
+	return usageFirstInt(usage, "prompt_tokens", "completion_tokens") == 0
 }
 
 // hasAnthropicUsageFields 检测是否为Anthropic/OpenAI Responses格式

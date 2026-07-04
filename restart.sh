@@ -12,6 +12,11 @@ ANALYZER_ENABLED="${ANALYZER_ENABLED:-1}"
 ANALYZER_NAME="${ANALYZER_NAME:-${APP_NAME}-debug-analyzer}"
 ANALYZER_SCRIPT_SOURCE="${ANALYZER_SCRIPT_SOURCE:-$SOURCE_DIR/scripts/analyze_debug_logs.py}"
 ANALYZER_RUNTIME_SCRIPT="${ANALYZER_RUNTIME_SCRIPT:-$RUNTIME_DIR/scripts/analyze_debug_logs.py}"
+DB_MAINTENANCE_SCRIPT_SOURCE="${DB_MAINTENANCE_SCRIPT_SOURCE:-$SOURCE_DIR/scripts/maintain_sqlite_offline.py}"
+DB_MAINTENANCE_RUNTIME_SCRIPT="${DB_MAINTENANCE_RUNTIME_SCRIPT:-$RUNTIME_DIR/scripts/maintain_sqlite_offline.py}"
+DB_MAINTENANCE_ON_RESTART="${DB_MAINTENANCE_ON_RESTART:-0}"
+DB_MAINTENANCE_MODE="${DB_MAINTENANCE_MODE:-compact-copy}" # compact-copy | delete-only
+DB_MAINTENANCE_BACKUP_DIR="${DB_MAINTENANCE_BACKUP_DIR:-$RUNTIME_DIR/data/backups}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 PM2_BIN="${PM2_BIN:-$(command -v pm2 || true)}"
 if [[ -z "$PM2_BIN" && -x "/root/.local/share/fnm/node-versions/v16.20.2/installation/bin/pm2" ]]; then
@@ -136,7 +141,7 @@ HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
 HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
 HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
 
-mkdir -p "$LOG_DIR" "$DEBUG_ANALYSIS_DIR" "$(dirname "$ANALYZER_RUNTIME_SCRIPT")"
+mkdir -p "$LOG_DIR" "$DEBUG_ANALYSIS_DIR" "$(dirname "$ANALYZER_RUNTIME_SCRIPT")" "$(dirname "$DB_MAINTENANCE_RUNTIME_SCRIPT")"
 export CCLOAD_DEBUG_ANALYSIS_DIR="$DEBUG_ANALYSIS_DIR"
 
 cd "$SOURCE_DIR"
@@ -168,6 +173,31 @@ if [[ "$ANALYZER_ENABLED" == "1" ]]; then
   fi
   echo "==> Installing debug analyzer to $ANALYZER_RUNTIME_SCRIPT"
   install -m 0755 "$ANALYZER_SCRIPT_SOURCE" "$ANALYZER_RUNTIME_SCRIPT"
+fi
+
+if [[ -f "$DB_MAINTENANCE_SCRIPT_SOURCE" ]]; then
+  echo "==> Installing SQLite maintenance script to $DB_MAINTENANCE_RUNTIME_SCRIPT"
+  install -m 0755 "$DB_MAINTENANCE_SCRIPT_SOURCE" "$DB_MAINTENANCE_RUNTIME_SCRIPT"
+fi
+
+if [[ "$DB_MAINTENANCE_ON_RESTART" == "1" ]]; then
+  if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERROR: python3 not found in PATH. Set PYTHON_BIN=/path/to/python3 or disable DB_MAINTENANCE_ON_RESTART=0." >&2
+    exit 1
+  fi
+  if [[ ! -f "$DB_MAINTENANCE_RUNTIME_SCRIPT" ]]; then
+    echo "ERROR: SQLite maintenance script not found: $DB_MAINTENANCE_RUNTIME_SCRIPT" >&2
+    exit 1
+  fi
+
+  echo "==> Offline SQLite maintenance requested; stopping PM2 app/analyzer first"
+  "$PM2_BIN" stop "$ANALYZER_NAME" >/dev/null 2>&1 || true
+  "$PM2_BIN" stop "$APP_NAME" >/dev/null 2>&1 || true
+  "$PYTHON_BIN" "$DB_MAINTENANCE_RUNTIME_SCRIPT" \
+    --db "$SQLITE_PATH" \
+    --mode "$DB_MAINTENANCE_MODE" \
+    --backup-dir "$DB_MAINTENANCE_BACKUP_DIR" \
+    --apply
 fi
 
 if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then

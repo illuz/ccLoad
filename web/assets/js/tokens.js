@@ -1215,15 +1215,14 @@
     function getTokenBatteryState(token) {
       const dailyLimitUsd = getTokenEffectiveDailyCostLimit(token);
       const totalLimitUsd = getTokenEffectiveCostLimit(token);
-      const source = dailyLimitUsd > 0 ? 'daily' : (totalLimitUsd > 0 ? 'total' : 'unlimited');
-      const limitUsd = source === 'daily' ? dailyLimitUsd : (source === 'total' ? totalLimitUsd : 0);
-      const usedUsd = source === 'daily'
-        ? (Number(token?.daily_cost_used_usd) || 0)
-        : (source === 'total' ? (Number(token?.total_cost_usd) || 0) : 0);
+      const dailyUsedUsd = Number(token?.daily_cost_used_usd) || 0;
+      const totalUsedUsd = Number(token?.total_cost_usd) || 0;
+      const hasDailyLimit = dailyLimitUsd > 0;
+      const hasTotalLimit = totalLimitUsd > 0;
 
-      if (limitUsd <= 0) {
+      if (!hasDailyLimit && !hasTotalLimit) {
         return {
-          source,
+          source: 'unlimited',
           ratio: 1,
           percent: 100,
           remainingUsd: Infinity,
@@ -1235,14 +1234,35 @@
         };
       }
 
-      const remainingUsd = Math.max(0, limitUsd - usedUsd);
-      const ratio = Math.max(0, Math.min(1, remainingUsd / limitUsd));
+      const dailyRemainingUsd = hasDailyLimit ? Math.max(0, dailyLimitUsd - dailyUsedUsd) : Infinity;
+      const totalRemainingUsd = hasTotalLimit ? Math.max(0, totalLimitUsd - totalUsedUsd) : Infinity;
+      const dailyRatio = hasDailyLimit ? Math.max(0, Math.min(1, dailyRemainingUsd / dailyLimitUsd)) : Infinity;
+      const totalRatio = hasTotalLimit ? Math.max(0, Math.min(1, totalRemainingUsd / totalLimitUsd)) : Infinity;
+      const source = hasDailyLimit && hasTotalLimit
+        ? (dailyRatio <= totalRatio ? 'both-daily' : 'both-total')
+        : (hasDailyLimit ? 'daily' : 'total');
+      const ratio = source === 'both-total' || source === 'total' ? totalRatio : dailyRatio;
       const percent = Math.round(ratio * 100);
-      const remainingText = formatCostDisplay(remainingUsd);
-      const limitText = formatCostDisplay(limitUsd);
-      const title = source === 'daily'
-        ? t('tokens.batteryDailyRemaining', { remaining: remainingText, limit: limitText, percent })
-        : t('tokens.batteryTotalRemaining', { remaining: remainingText, limit: limitText, percent });
+      const remainingUsd = source === 'both-total' || source === 'total' ? totalRemainingUsd : dailyRemainingUsd;
+      const limitUsd = source === 'both-total' || source === 'total' ? totalLimitUsd : dailyLimitUsd;
+      const usedUsd = source === 'both-total' || source === 'total' ? totalUsedUsd : dailyUsedUsd;
+      const dailyTitle = hasDailyLimit
+        ? t('tokens.batteryDailyRemaining', {
+          remaining: formatCostDisplay(dailyRemainingUsd),
+          limit: formatCostDisplay(dailyLimitUsd),
+          percent: Math.round(dailyRatio * 100)
+        })
+        : '';
+      const totalTitle = hasTotalLimit
+        ? t('tokens.batteryTotalRemaining', {
+          remaining: formatCostDisplay(totalRemainingUsd),
+          limit: formatCostDisplay(totalLimitUsd),
+          percent: Math.round(totalRatio * 100)
+        })
+        : '';
+      const title = hasDailyLimit && hasTotalLimit
+        ? `${dailyTitle} · ${totalTitle}`
+        : (hasDailyLimit ? dailyTitle : totalTitle);
 
       let tone = 'critical';
       if (ratio >= 0.8) {

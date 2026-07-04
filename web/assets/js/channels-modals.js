@@ -215,6 +215,50 @@ function readChannelInputText(id, fallback = '') {
   return input.value;
 }
 
+function normalizeChannelGroupID(value) {
+  const groupID = parseInt(String(value ?? ''), 10);
+  return Number.isFinite(groupID) && groupID > 0 ? groupID : 0;
+}
+
+function ensureChannelGroupSelectOption(groupID, groupName = '') {
+  const select = document.getElementById('channelGroup');
+  if (!select) return;
+
+  const normalizedID = normalizeChannelGroupID(groupID);
+  if (normalizedID <= 0) return;
+
+  const value = String(normalizedID);
+  const hasOption = Array.from(select.options || []).some((option) => option.value === value);
+  if (hasOption) return;
+
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = groupName || `${window.t('channels.group')} #${value}`;
+  option.dataset.synthetic = '1';
+  select.appendChild(option);
+}
+
+function setChannelGroupSelectValue(groupID, groupName = '') {
+  const select = document.getElementById('channelGroup');
+  if (!select) return;
+
+  const normalizedID = normalizeChannelGroupID(groupID);
+  select.dataset.originalGroupId = String(normalizedID);
+  ensureChannelGroupSelectOption(normalizedID, groupName);
+  select.value = String(normalizedID);
+}
+
+function readChannelGroupIDForSubmit() {
+  const select = document.getElementById('channelGroup');
+  if (!select) return 0;
+
+  if (select.value !== '') {
+    return normalizeChannelGroupID(select.value);
+  }
+
+  return normalizeChannelGroupID(select.dataset.originalGroupId || '0');
+}
+
 function getRedirectTableColspan() {
   return isChannelModelFixedPriceEnabled() ? 5 : 4;
 }
@@ -558,8 +602,7 @@ async function showAddModal() {
   setChannelInputValue('channelInputPriorityBonus', '100');
   setChannelCheckboxChecked('channelScheduledCheckEnabled', false);
   if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
-  const groupSelect = document.getElementById('channelGroup');
-  if (groupSelect) groupSelect.value = '0';
+  setChannelGroupSelectValue(0);
   setChannelInputValue('channelScheduledCheckModel', '');
   const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
   if (fixedPriceEnabled) fixedPriceEnabled.checked = false;
@@ -658,8 +701,7 @@ async function editChannel(id) {
     strategyRadio.checked = true;
   }
   if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
-  const groupSelect = document.getElementById('channelGroup');
-  if (groupSelect) groupSelect.value = String(channel.group_id || 0);
+  setChannelGroupSelectValue(channel.group_id || 0, channel.group_name || '');
   setChannelInputValue('channelPriority', channel.priority);
   setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
   setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
@@ -910,7 +952,7 @@ async function saveChannel(event) {
     priority: readChannelInputInt('channelPriority', 0) || 0,
     rpm_limit: readChannelInputInt('channelRPMLimit', 0) || 0,
     max_concurrency: readChannelInputInt('channelMaxConcurrency', 0) || 0,
-    group_id: parseInt(document.getElementById('channelGroup')?.value || '0', 10) || 0,
+    group_id: readChannelGroupIDForSubmit(),
     daily_cost_limit: readChannelInputFloat('channelDailyCostLimit', 0) || 0,
     cost_multiplier: (function () {
       const v = readChannelInputFloat('channelCostMultiplier', 1);
@@ -1603,8 +1645,7 @@ async function copyChannel(id, name) {
     strategyRadio.checked = true;
   }
   if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
-  const groupSelect = document.getElementById('channelGroup');
-  if (groupSelect) groupSelect.value = String(channel.group_id || 0);
+  setChannelGroupSelectValue(channel.group_id || 0, channel.group_name || '');
   setChannelInputValue('channelPriority', channel.priority);
   setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
   setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));

@@ -92,6 +92,38 @@ test('tokens 页电池图标根据剩余额度显示多档颜色和百分比', (
   assert.match(critical, />15%<\/span>/);
 });
 
+test('tokens 页同时存在当日和总额度时按更紧的剩余额度展示电池', () => {
+  const sandbox = {
+    escapeHtml(value) { return String(value ?? ''); },
+    t(key, params = {}) {
+      if (key === 'tokens.batteryUnlimited') return '无限额';
+      if (key === 'tokens.batteryDailyRemaining') return `日剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      if (key === 'tokens.batteryTotalRemaining') return `总剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      return key;
+    }
+  };
+
+  vm.runInNewContext(joinFunctions([
+    'formatCostDisplay',
+    'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveCostLimit',
+    'getTokenBatteryState',
+    'buildTokenBatteryHtml'
+  ]), sandbox);
+
+  const html = sandbox.buildTokenBatteryHtml({
+    daily_cost_used_usd: 2,
+    daily_cost_limit_usd: 10,
+    total_cost_usd: 9,
+    cost_limit_usd: 10
+  });
+
+  assert.match(html, /token-battery--critical/);
+  assert.match(html, /width: 10%/);
+  assert.match(html, />10%<\/span>/);
+  assert.match(html, /title="日剩余 \$8\/\$10 \(80%\) · 总剩余 \$1\/\$10 \(10%\)"/);
+});
+
 test('tokens 页电池图标在无限额或缺少数据时不显示 undefined', () => {
   const sandbox = {
     escapeHtml(value) { return String(value ?? ''); },

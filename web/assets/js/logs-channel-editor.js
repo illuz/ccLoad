@@ -25,6 +25,7 @@
     '/web/assets/js/channels-urls.js',
     '/web/assets/js/channels-protocols.js',
     '/web/assets/js/channels-custom-rules.js',
+    '/web/assets/js/channels-groups.js',
     '/web/assets/js/channels-modals.js'
   ];
 
@@ -222,6 +223,9 @@
       }
 
       initializeChannelEditorFeatures();
+      if (typeof loadChannelGroups === 'function') {
+        await loadChannelGroups();
+      }
     })();
 
     try {

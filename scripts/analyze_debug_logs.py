@@ -415,11 +415,28 @@ def connect_ro(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def rows_to_analyze(conn: sqlite3.Connection, log_id: int | None, since_log_id: int, limit: int):
+def rows_to_analyze(
+    conn: sqlite3.Connection,
+    log_id: int | None,
+    since_log_id: int,
+    limit: int,
+    min_created_at: int | None,
+):
     if log_id:
         return conn.execute(
             "SELECT log_id, created_at, req_body, resp_body FROM debug_logs WHERE log_id = ?",
             (log_id,),
+        ).fetchall()
+    if min_created_at:
+        return conn.execute(
+            """
+            SELECT log_id, created_at, req_body, resp_body
+            FROM debug_logs
+            WHERE log_id > ? AND created_at >= ?
+            ORDER BY log_id
+            LIMIT ?
+            """,
+            (since_log_id, min_created_at, limit),
         ).fetchall()
     return conn.execute(
         """
@@ -433,12 +450,34 @@ def rows_to_analyze(conn: sqlite3.Connection, log_id: int | None, since_log_id: 
     ).fetchall()
 
 
+def cleanup_old_outputs(out_dir: Path, retention_days: float) -> int:
+    if retention_days <= 0:
+        return 0
+    cutoff = time.time() - retention_days * 24 * 60 * 60
+    removed = 0
+    for path in out_dir.glob("*.json"):
+        try:
+            if not path.is_file():
+                continue
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        print(f"cleaned {removed} old analysis file(s), output={out_dir}")
+    return removed
+
+
 def run_once(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    min_created_at = None
+    if args.retention_days > 0 and not args.log_id:
+        min_created_at = int(time.time() - args.retention_days * 24 * 60 * 60)
     conn = connect_ro(args.db)
     try:
-        rows = rows_to_analyze(conn, args.log_id, args.since_log_id, args.limit)
+        rows = rows_to_analyze(conn, args.log_id, args.since_log_id, args.limit, min_created_at)
     finally:
         conn.close()
     count = 0
@@ -466,6 +505,18 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--watch", action="store_true", help="Poll continuously")
     parser.add_argument("--follow", action="store_true", help="Poll continuously (alias that avoids PM2 --watch handling)")
     parser.add_argument("--interval", type=float, default=5.0, help="Watch poll interval seconds")
+    parser.add_argument(
+        "--retention-days",
+        type=float,
+        default=float(os.environ.get("DEBUG_ANALYSIS_RETENTION_DAYS", "5")),
+        help="Delete analysis JSON files older than this many days and skip older logs; <=0 disables cleanup",
+    )
+    parser.add_argument(
+        "--cleanup-interval",
+        type=float,
+        default=float(os.environ.get("DEBUG_ANALYSIS_CLEANUP_INTERVAL", "3600")),
+        help="Seconds between output retention cleanup runs in watch/follow mode",
+    )
     args = parser.parse_args(argv)
 
     args.watch = bool(args.watch or args.follow)
@@ -473,7 +524,14 @@ def main(argv: list[str]) -> int:
         parser.error("--watch/--follow cannot be combined with --log-id")
 
     last = args.since_log_id
+    last_cleanup = 0.0
     while True:
+        now = time.time()
+        if args.retention_days > 0 and (
+            last_cleanup == 0.0 or not args.watch or now - last_cleanup >= args.cleanup_interval
+        ):
+            cleanup_old_outputs(Path(args.out_dir), args.retention_days)
+            last_cleanup = now
         args.since_log_id = last
         run_once(args)
         # Advance by output filenames so skipped existing files do not block watch mode.

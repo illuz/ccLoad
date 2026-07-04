@@ -323,6 +323,17 @@ data: {"type":"response.completed","sequence_number":28,"response":{"id":"resp_0
 	feedAndAssertUsage(t, newSSEUsageParser("codex"), sseData, 4293, 17, 6016, 0)
 }
 
+func TestSSEUsageParser_CodexResponseUsagePreferredWhenChatAliasesZero(t *testing.T) {
+	// 部分聚合站在 Responses API 的 usage 中同时返回 Chat Completions 兼容字段，
+	// 但 prompt_tokens/completion_tokens 为 0，真实 token 在 input_tokens/output_tokens。
+	sseData := `event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_0","status":"completed","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":116016,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0},"input_tokens":115106,"output_tokens":910,"input_tokens_details":{"cached_tokens":0}}}}
+
+`
+
+	feedAndAssertUsage(t, newSSEUsageParser("codex"), sseData, 115106, 910, 0, 0)
+}
+
 func TestSSEUsageParser_CodexReasoningTokens(t *testing.T) {
 	sseData := `event: response.completed
 data: {"type":"response.completed","response":{"usage":{"input_tokens":10309,"input_tokens_details":{"cached_tokens":6016},"output_tokens":1234,"output_tokens_details":{"reasoning_tokens":987},"total_tokens":11543}}}

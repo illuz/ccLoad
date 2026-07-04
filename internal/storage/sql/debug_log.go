@@ -40,12 +40,66 @@ func (s *SQLStore) GetDebugLogByLogID(ctx context.Context, logID int64) (*model.
 
 // CleanupDebugLogsBefore 清理过期的调试日志
 func (s *SQLStore) CleanupDebugLogsBefore(ctx context.Context, cutoff time.Time) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM debug_logs WHERE created_at < ?`, cutoff.Unix())
-	if err != nil {
-		return err
+	// debug_logs 里保存完整请求/响应体，单次大 DELETE 可能因为几十 GB 的
+	// BLOB 数据而长时间持有写锁，甚至超过调用方的 context 超时。这里分批
+	// 删除，让每批独立提交，降低锁占用并保证后续清理能持续推进。
+	const (
+		batchSize         int64 = 100
+		maxBatchesPerCall int64 = 20
+	)
+	var (
+		deleted int64
+		batches int64
+	)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			if deleted > 0 {
+				return nil
+			}
+			return err
+		}
+
+		var (
+			result sql.Result
+			err    error
+		)
+		if s.IsSQLite() {
+			result, err = s.db.ExecContext(ctx, `
+				DELETE FROM debug_logs
+				WHERE log_id IN (
+					SELECT log_id FROM debug_logs
+					WHERE created_at < ?
+					ORDER BY created_at
+					LIMIT ?
+				)`, cutoff.Unix(), batchSize)
+		} else {
+			result, err = s.db.ExecContext(ctx, `
+				DELETE FROM debug_logs
+				WHERE created_at < ?
+				ORDER BY created_at
+				LIMIT ?`, cutoff.Unix(), batchSize)
+		}
+		if err != nil {
+			s.runSQLiteIncrementalVacuum(ctx, deleted)
+			if ctx.Err() != nil && deleted > 0 {
+				return nil
+			}
+			return err
+		}
+
+		affected, _ := result.RowsAffected()
+		deleted += affected
+		batches++
+		if affected < batchSize {
+			break
+		}
+		if batches >= maxBatchesPerCall {
+			break
+		}
 	}
-	affected, _ := result.RowsAffected()
-	s.runSQLiteIncrementalVacuum(ctx, affected)
+
+	s.runSQLiteIncrementalVacuum(ctx, deleted)
 	return nil
 }
 

@@ -46,11 +46,11 @@ test('进行中请求令牌列按 token_id 显示令牌描述', () => {
 
   assert.equal(
     buildActiveRequestTokenDescDisplay({ token_id: 7 }),
-    '<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="7" title="Ops &lt;Main&gt;">Ops.in&gt;</button>'
+    '<button type="button" class="channel-link token-link logs-token-desc-text" data-usage-popover="token" data-token-id="7" title="Ops &lt;Main&gt;">Ops.in&gt;</button>'
   );
   assert.equal(
     buildActiveRequestTokenDescDisplay({ token_id: 8 }),
-    '<button type="button" class="channel-link token-link logs-token-desc-text" data-token-id="8" title="Token #8">Tok. #8</button>'
+    '<button type="button" class="channel-link token-link logs-token-desc-text" data-usage-popover="token" data-token-id="8" title="Token #8">Tok. #8</button>'
   );
   assert.equal(buildActiveRequestTokenDescDisplay({ token_id: 0 }), '');
 });

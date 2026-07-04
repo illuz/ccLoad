@@ -21,7 +21,7 @@ test('日志页接入渠道编辑器桥接脚本', () => {
 
 test('日志页渠道列渲染为编辑按钮而不是跳转链接', () => {
   assert.match(logsScript, /function buildChannelTrigger\(channelId,\s*channelName,\s*baseURL = ''\)/);
-  assert.match(logsScript, /<button type="button" class="channel-link" data-channel-id="\$\{channelId\}"/);
+  assert.match(logsScript, /<button type="button" class="channel-link" data-usage-popover="channel" data-channel-id="\$\{channelId\}"/);
   assert.match(logsScript, /logChannelClickAction\s*===\s*'navigate'/);
   assert.match(logsScript, /openLogChannelEditor\(channelId\)/);
 });
@@ -61,6 +61,76 @@ test('日志页动态加载渠道编辑器会注入自定义规则弹窗及脚�
 
   assert.match(logsChannelEditorScript, /'customRulesModal'/);
   assert.match(logsChannelEditorScript, /\/web\/assets\/js\/channels-custom-rules\.js/);
+});
+
+test('日志页动态渠道编辑器会加载并预取渠道分组，避免编辑保存时清空分组', () => {
+  const logsChannelEditorScript = fs.readFileSync(path.join(__dirname, 'logs-channel-editor.js'), 'utf8');
+
+  assert.match(logsChannelEditorScript, /\/web\/assets\/js\/channels-groups\.js/);
+  assert.match(logsChannelEditorScript, /typeof loadChannelGroups === 'function'/);
+  assert.match(logsChannelEditorScript, /await loadChannelGroups\(\);/);
+});
+
+test('渠道编辑弹窗保存分组时保留打开弹窗时的原始分组作为兜底', () => {
+  const channelsModalsScript = fs.readFileSync(path.join(__dirname, 'channels-modals.js'), 'utf8');
+
+  assert.match(channelsModalsScript, /function setChannelGroupSelectValue\(groupID,\s*groupName = ''\)/);
+  assert.match(channelsModalsScript, /select\.dataset\.originalGroupId = String\(normalizedID\);/);
+  assert.match(channelsModalsScript, /function readChannelGroupIDForSubmit\(\)/);
+  assert.match(channelsModalsScript, /select\.dataset\.originalGroupId \|\| '0'/);
+  assert.match(channelsModalsScript, /group_id:\s*readChannelGroupIDForSubmit\(\)/);
+});
+
+test('渠道编辑弹窗分组选项缺失时提交会兜底使用原分组，用户选择未分组仍提交 0', () => {
+  const protocolScript = fs.readFileSync(path.join(__dirname, 'channels-protocols.js'), 'utf8');
+  const channelsModalsScript = fs.readFileSync(path.join(__dirname, 'channels-modals.js'), 'utf8');
+  const groupSelect = {
+    value: '0',
+    dataset: {},
+    options: [],
+    appendChild(option) {
+      this.options.push(option);
+      return option;
+    }
+  };
+
+  const sandbox = {
+    console,
+    window: {
+      t(key) {
+        return key === 'channels.group' ? '分组' : key;
+      },
+      i18nText(_key, fallback) {
+        return fallback;
+      }
+    },
+    document: {
+      getElementById(id) {
+        return id === 'channelGroup' ? groupSelect : null;
+      },
+      createElement(tagName) {
+        assert.equal(tagName, 'option');
+        return { value: '', textContent: '', dataset: {} };
+      }
+    }
+  };
+
+  vm.createContext(sandbox);
+  vm.runInContext(`${protocolScript}\n${channelsModalsScript}\nthis.__groupApi = { setChannelGroupSelectValue, readChannelGroupIDForSubmit };`, sandbox);
+
+  sandbox.__groupApi.setChannelGroupSelectValue(42, '付费渠道');
+
+  assert.equal(groupSelect.value, '42');
+  assert.equal(groupSelect.dataset.originalGroupId, '42');
+  assert.equal(groupSelect.options[0].value, '42');
+  assert.equal(groupSelect.options[0].textContent, '付费渠道');
+
+  groupSelect.options = [];
+  groupSelect.value = '';
+  assert.equal(sandbox.__groupApi.readChannelGroupIDForSubmit(), 42);
+
+  groupSelect.value = '0';
+  assert.equal(sandbox.__groupApi.readChannelGroupIDForSubmit(), 0);
 });
 
 test('ESC 键优先关闭自定义规则弹窗而不是编辑渠道弹窗', () => {
