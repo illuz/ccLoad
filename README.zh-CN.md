@@ -916,6 +916,10 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_PASS` | 无 | 管理界面密码（**必填**，未设置将退出） |
 | `CCLOAD_API_TOKENS` | 无 | 启动时预置 API 访问令牌，格式：`token1,token2` 或 `token1\|生产,token2\|开发`；已存在的 token 不会被覆盖 |
 | `API_TOKENS` | 无 | `CCLOAD_API_TOKENS` 的兼容别名；两个变量同时设置且值不一致时启动失败 |
+| `CCLOAD_TELEGRAM_BOT_TOKEN` | 无 | Telegram Bot Token；与 `CCLOAD_TELEGRAM_CHAT_ID` 同时设置后启用告警 |
+| `CCLOAD_TELEGRAM_CHAT_ID` | 无 | Telegram 告警接收会话/频道 ID；触发条件：令牌用量 >= 99%；近 20 次非 499 代理日志失败率 > 50% |
+| `CCLOAD_TELEGRAM_ALERT_ENABLED` | 自动 | 设为 `0`/`false`/`off` 可在已配置 Token/Chat ID 时显式关闭 Telegram 告警 |
+| `CCLOAD_TELEGRAM_API_BASE` | `https://api.telegram.org` | 可选 Telegram Bot API 地址（自建/代理 API 时使用） |
 | `CCLOAD_MYSQL` | 无 | MySQL DSN（可选，格式: `user:pass@tcp(host:port)/db?charset=utf8mb4`）<br/>**设置后使用 MySQL，否则使用 SQLite** |
 | `CCLOAD_ENABLE_SQLITE_REPLICA` | `0` | 混合存储模式开关（`1`=启用，见下方说明） |
 | `CCLOAD_SQLITE_LOG_DAYS` | `7` | 混合模式启动时从 MySQL 恢复日志的天数（-1=全量，0=不恢复日志） |

@@ -880,6 +880,10 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_PASS` | None | Admin password (**Required**, exits if not set) |
 | `CCLOAD_API_TOKENS` | None | Pre-seed API access tokens on startup. Format: `token1,token2` or `token1\|production,token2\|development`; existing tokens are not overwritten |
 | `API_TOKENS` | None | Compatibility alias for `CCLOAD_API_TOKENS`; startup fails if both variables are set with different values |
+| `CCLOAD_TELEGRAM_BOT_TOKEN` | None | Telegram Bot token. Set together with `CCLOAD_TELEGRAM_CHAT_ID` to enable alerts |
+| `CCLOAD_TELEGRAM_CHAT_ID` | None | Telegram chat/channel ID for alerts. Triggers: token usage >= 99%; failure rate of the latest 20 non-499 proxy logs > 50% |
+| `CCLOAD_TELEGRAM_ALERT_ENABLED` | auto | Set to `0`/`false`/`off` to disable Telegram alerts even when token/chat are configured |
+| `CCLOAD_TELEGRAM_API_BASE` | `https://api.telegram.org` | Optional Telegram Bot API base URL for self-hosted/proxied API endpoints |
 | `CCLOAD_MYSQL` | None | MySQL DSN (optional, format: `user:pass@tcp(host:port)/db?charset=utf8mb4`)<br/>**If set uses MySQL, otherwise SQLite** |
 | `CCLOAD_ENABLE_SQLITE_REPLICA` | `0` | Hybrid storage mode switch (`1`=enable, see below) |
 | `CCLOAD_SQLITE_LOG_DAYS` | `7` | Days of logs to restore from MySQL on startup in hybrid mode (-1=all, 0=no logs) |

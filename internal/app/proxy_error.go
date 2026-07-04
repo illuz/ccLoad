@@ -270,6 +270,9 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 		}
 		// multiplier == 0 时成本为 0（免费渠道）
 		s.authService.AddCostToCache(upd.tokenHash, util.USDToMicroUSD(upd.costUSD*multiplier))
+		if s.alertService != nil {
+			s.alertService.CheckTokenUsage(upd.tokenHash)
+		}
 	}
 
 	if err := s.store.UpdateTokenStats(updateCtx, upd.tokenHash, upd.isSuccess, upd.duration, upd.isStreaming, upd.firstByteTime, upd.promptTokens, upd.completionTokens, upd.cacheReadTokens, upd.cacheCreationTokens, upd.costUSD); err != nil {

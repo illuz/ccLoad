@@ -34,6 +34,7 @@ type Server struct {
 	authService   *AuthService   // 认证授权服务
 	logService    *LogService    // 日志管理服务
 	configService *ConfigService // 配置管理服务
+	alertService  *AlertService  // Telegram告警服务
 
 	// ============================================================================
 	// 核心字段
@@ -249,6 +250,9 @@ func NewServer(store storage.Store) *Server {
 		s.loginRateLimiter,
 		store, // 传入store用于热更新令牌
 	)
+
+	// 3. AlertService（可选Telegram告警）
+	s.alertService = NewAlertServiceFromEnv(store, s.authService, s.shutdownCh, &s.isShuttingDown, &s.wg)
 
 	// 启动后台 worker（Token 统计 / Token 清理 / 状态清理）
 	s.startBackgroundWorkers()
@@ -923,6 +927,10 @@ func (s *Server) stateCleanupLoop() {
 func (s *Server) AddLogAsync(entry *model.LogEntry) {
 	if entry != nil && entry.LogSource == "" {
 		entry.LogSource = model.LogSourceProxy
+	}
+
+	if s.alertService != nil {
+		s.alertService.ObserveLog(entry)
 	}
 
 	// 更新成本缓存（用于每日成本限额功能）
