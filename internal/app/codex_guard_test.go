@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -71,6 +72,30 @@ func TestCodexReasoningGuard_NonStreamTokenSwitch(t *testing.T) {
 			t.Fatalf("unexpected guard result: reasoning=%d msg=%q", res.ReasoningTokens, res.StreamDiagMsg)
 		}
 	})
+}
+
+func TestCodexReasoningGuard_ReasoningFormula518NMinus2(t *testing.T) {
+	tests := []struct {
+		reasoning int
+		want      bool
+	}{
+		{reasoning: 0, want: false},
+		{reasoning: 515, want: false},
+		{reasoning: 516, want: true},
+		{reasoning: 517, want: false},
+		{reasoning: 1034, want: true},
+		{reasoning: 1552, want: true},
+		{reasoning: 2070, want: true},
+		{reasoning: 2588, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("reasoning_%d", tt.reasoning), func(t *testing.T) {
+			if got := codexGuardReasoningMatched(tt.reasoning); got != tt.want {
+				t.Fatalf("codexGuardReasoningMatched(%d)=%v, want %v", tt.reasoning, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestCodexReasoningGuard_StreamStrictBuffer(t *testing.T) {

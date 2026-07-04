@@ -11,12 +11,6 @@ import (
 
 const codexGuardMaxBufferedBytes = 32 * 1024 * 1024
 
-var defaultCodexGuardReasoningEquals = map[int]struct{}{
-	516:  {},
-	1034: {},
-	1552: {},
-}
-
 type codexGuardVerdict struct {
 	Triggered       bool
 	Reason          string
@@ -35,6 +29,10 @@ func shouldApplyCodexReasoningGuard(reqCtx *requestContext, channelType string) 
 		strings.EqualFold(strings.TrimSpace(channelType), string(protocol.Codex))
 }
 
+func codexGuardReasoningMatched(reasoningTokens int) bool {
+	return reasoningTokens >= 516 && (reasoningTokens+2)%518 == 0
+}
+
 func evaluateCodexReasoningGuard(reqCtx *requestContext, res *fwResult) codexGuardVerdict {
 	if reqCtx == nil || res == nil || !reqCtx.codexGuardEnabled {
 		return codexGuardVerdict{}
@@ -46,10 +44,10 @@ func evaluateCodexReasoningGuard(reqCtx *requestContext, res *fwResult) codexGua
 	if res.Status < 200 || res.Status >= 300 {
 		return codexGuardVerdict{}
 	}
-	if _, ok := defaultCodexGuardReasoningEquals[res.ReasoningTokens]; !ok {
+	if !codexGuardReasoningMatched(res.ReasoningTokens) {
 		return codexGuardVerdict{}
 	}
-	reason := fmt.Sprintf("codex_guard reasoning_tokens=%d", res.ReasoningTokens)
+	reason := fmt.Sprintf("codex_guard reasoning_tokens=%d match=518n-2", res.ReasoningTokens)
 	return codexGuardVerdict{
 		Triggered:       true,
 		Reason:          reason,
