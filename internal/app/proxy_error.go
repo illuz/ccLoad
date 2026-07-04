@@ -414,6 +414,10 @@ func (s *Server) handleProxySuccess(
 	// 冷却状态已恢复，刷新相关缓存避免下次命中过期数据
 	s.invalidateChannelRelatedCache(cfg.ID)
 
+	if reqCtx != nil && reqCtx.codexGuardRetries > 0 && res != nil {
+		res.RetryStrategy = appendRetryStrategyName(res.RetryStrategy, model.CodexGuardRetrySuccessMarker)
+	}
+
 	// 记录成功日志
 	s.logProxyResult(reqCtx, cfg, actualModel, selectedKey, res.Status, duration, res, "")
 
@@ -429,6 +433,23 @@ func (s *Server) handleProxySuccess(
 		succeeded:     true,
 		nextAction:    cooldown.ActionReturnClient,
 	}, cooldown.ActionReturnClient
+}
+
+func appendRetryStrategyName(existing, next string) string {
+	existing = strings.TrimSpace(existing)
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	for _, part := range strings.Split(existing, ",") {
+		if strings.TrimSpace(part) == next {
+			return existing
+		}
+	}
+	return existing + "," + next
 }
 
 // handleStreamingErrorNoRetry 处理流式响应中途检测到的错误（597/599）

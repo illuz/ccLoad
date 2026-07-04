@@ -493,14 +493,37 @@ function renderLogSourceBadge(logSource) {
   }
 }
 
+const CODEX_GUARD_LOG_MARKER = 'codex_guard';
+const CODEX_GUARD_RETRY_MARKER = 'retried_after_codex_guard';
+
+function getCodexGuardLogState(entry) {
+  const message = String(entry?.message || '').toLowerCase();
+  const retried = message.includes(CODEX_GUARD_RETRY_MARKER);
+  const hit = Number(entry?.status_code) === 595 || (message.includes(CODEX_GUARD_LOG_MARKER) && !retried);
+  return { hit, retried };
+}
+
+function renderCodexGuardBadges(entry) {
+  const state = getCodexGuardLogState(entry);
+  const badges = [];
+  if (state.hit) {
+    badges.push(`<span class="log-guard-badge log-guard-badge--hit">${escapeHtml(t('logs.codexGuardBadge'))}</span>`);
+  }
+  if (state.retried) {
+    badges.push(`<span class="log-guard-badge log-guard-badge--retry">${escapeHtml(t('logs.codexGuardRetriedBadge'))}</span>`);
+  }
+  return badges.join('');
+}
+
 function canInspectDebugLog(entry) {
   return Number(entry?.channel_id) > 0;
 }
 
 function buildLogMessageContent(entry) {
   const sourceBadge = renderLogSourceBadge(entry.log_source || 'proxy');
+  const guardBadges = renderCodexGuardBadges(entry);
   const messageText = escapeHtml(entry.message || '');
-  if (!sourceBadge && !messageText) {
+  if (!sourceBadge && !guardBadges && !messageText) {
     return '';
   }
 
@@ -512,7 +535,7 @@ function buildLogMessageContent(entry) {
     const logIdAttr = Number.isFinite(logId) && logId > 0 ? ` data-log-id="${logId}"` : '';
     inner = `<span class="debug-log-link has-upstream-detail"${logIdAttr}>${messageText}</span>`;
   }
-  return `${sourceBadge}${inner}`;
+  return `${sourceBadge}${guardBadges}${inner}`;
 }
 
 function buildLogCostDisplay(entry) {
@@ -745,9 +768,10 @@ function filterActiveRequests(requests) {
   });
 }
 
-function shouldSkipActiveRequestsFetch(hours, status, logSource) {
+function shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard) {
   if (hours && hours !== 'today') return true;
   if (status) return true;
+  if (codexGuard) return true;
   return logSource !== 'proxy' && logSource !== 'all';
 }
 
@@ -768,7 +792,8 @@ function handleActiveRequestsData(rawActiveRequests) {
   const hours = (document.getElementById('f_hours')?.value || '').trim();
   const status = (document.getElementById('f_status')?.value || '').trim();
   const logSource = (document.getElementById('f_log_source')?.value || 'proxy').trim();
-  if (shouldSkipActiveRequestsFetch(hours, status, logSource)) {
+  const codexGuard = (document.getElementById('f_codex_guard')?.value || '').trim();
+  if (shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard)) {
     clearActiveRequestsRows();
     lastActiveRequestStates = null;
     return;
@@ -1237,6 +1262,7 @@ function applyLogsFilterValues(filters) {
     range: 'f_hours',
     logSource: 'f_log_source',
     status: 'f_status',
+    codexGuard: 'f_codex_guard',
     authToken: 'f_auth_token'
   });
 
@@ -1439,11 +1465,12 @@ async function initFilters(restoredFilters) {
   document.getElementById('btn_filter').addEventListener('click', applyFilter);
   document.getElementById('btn_clear_filters')?.addEventListener('click', resetLogsFilters);
   document.getElementById('f_log_source')?.addEventListener('change', applyFilter);
+  document.getElementById('f_codex_guard')?.addEventListener('change', applyFilter);
 
   window.bindFilterApplyInputs({
     apply: applyFilter,
     debounceInputIds: ['f_status'],
-    enterInputIds: ['f_hours', 'f_status', 'f_auth_token', 'f_channel_type', 'f_log_source']
+    enterInputIds: ['f_hours', 'f_status', 'f_auth_token', 'f_channel_type', 'f_log_source', 'f_codex_guard']
   });
 }
 
@@ -2128,6 +2155,18 @@ const LOGS_FILTER_FIELDS = [
   },
   { key: 'logSource', queryKeys: ['log_source'], requestKey: 'log_source', defaultValue: 'proxy' },
   { key: 'status', queryKeys: ['status_code'], defaultValue: '' },
+  {
+    key: 'codexGuard',
+    queryKeys: ['codex_guard'],
+    requestKey: 'codex_guard',
+    defaultValue: '',
+    includeInQuery(value) {
+      return Boolean(value);
+    },
+    includeInRequest(value) {
+      return Boolean(value);
+    }
+  },
   { key: 'authToken', queryKeys: ['auth_token_id'], defaultValue: '' },
   {
     key: 'channelType',
@@ -2152,6 +2191,7 @@ function getLogsFilters() {
   const baseValues = window.readFilterControlValues({
     range: { id: 'f_hours', defaultValue: 'today', trim: true },
     status: { id: 'f_status', trim: true },
+    codexGuard: { id: 'f_codex_guard', defaultValue: '', trim: true },
     authToken: { id: 'f_auth_token', trim: true }
   });
   const hasCustomRange = baseValues.range === 'custom' && currentLogsCustomTimeRange;

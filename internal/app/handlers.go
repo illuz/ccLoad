@@ -345,6 +345,15 @@ func BuildLogFilter(c *gin.Context) model.LogFilter {
 		}
 	}
 
+	// Codex Guard 日志筛选。兼容 codex_guard=1 / all / hit / retry_success，
+	// 也接受 codex_guard_mode 作为显式模式参数。
+	if mode := model.NormalizeCodexGuardFilterMode(c.Query("codex_guard")); mode != "" {
+		lf.CodexGuardMode = mode
+	}
+	if mode := model.NormalizeCodexGuardFilterMode(c.Query("codex_guard_mode")); mode != "" {
+		lf.CodexGuardMode = mode
+	}
+
 	switch strings.TrimSpace(c.Query("log_source")) {
 	case "", model.LogSourceProxy:
 		lf.LogSource = model.LogSourceProxy

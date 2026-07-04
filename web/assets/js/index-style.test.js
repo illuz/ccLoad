@@ -32,6 +32,18 @@ test('首页渠道卡片顺序为 Codex 在 Claude Code 前', () => {
   assert.ok(codexIndex !== -1 && claudeIndex !== -1 && codexIndex < claudeIndex);
 });
 
+test('首页在渠道卡片和总览状态栏之间展示 Codex Guard 卡片', () => {
+  const channelSectionEnd = html.indexOf('<!-- Codex Guard 统计卡片 -->');
+  const summaryIndex = html.indexOf('<!-- 实时状态栏 - 总览 -->');
+  assert.ok(channelSectionEnd !== -1 && summaryIndex !== -1 && channelSectionEnd < summaryIndex);
+  assert.match(html, /id="codex-guard-card"/);
+  assert.match(html, /id="codex-guard-hit-count"/);
+  assert.match(html, /id="codex-guard-retry-success-count"/);
+  assert.match(html, /id="codex-guard-top-reasoning"/);
+  assert.match(css, /\.codex-guard-card\s*\{/);
+  assert.match(css, /\.codex-guard-metrics\s*\{/);
+});
+
 test('首页 hero 标题不再使用顶部装饰线', () => {
   assert.doesNotMatch(css, /\.hero-header::before\s*\{/);
 });

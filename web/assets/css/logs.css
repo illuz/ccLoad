@@ -496,6 +496,32 @@
       background: #d1fae5;
     }
 
+    .log-guard-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 4px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 0.68em;
+      line-height: 1.35;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      vertical-align: middle;
+      white-space: nowrap;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04);
+    }
+
+    .log-guard-badge--hit {
+      color: var(--error-600);
+      background: var(--error-100);
+    }
+
+    .log-guard-badge--retry {
+      color: var(--success-600);
+      background: #d1fae5;
+    }
+
     .logs-filter-summary-row {
       display: flex;
       align-items: center;
@@ -599,22 +625,6 @@
       border-color: rgba(255, 255, 255, 0.12);
     }
 
-    html[data-theme="dark"] .debug-log-unavailable__row,
-    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__row {
-      background: rgba(17, 24, 39, 0.9);
-      border-color: rgba(255, 255, 255, 0.12);
-    }
-
-    html[data-theme="dark"] .debug-log-unavailable__label,
-    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__label {
-      color: var(--neutral-600);
-    }
-
-    html[data-theme="dark"] .debug-log-unavailable__value,
-    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__value {
-      color: var(--neutral-900);
-    }
-
     @keyframes debug-log-status-pulse {
       0%, 100% { opacity: 0.4; transform: scale(0.8); }
       50% { opacity: 1; transform: scale(1.1); }
@@ -674,6 +684,22 @@
       font-weight: var(--font-semibold);
       color: var(--neutral-900);
       white-space: nowrap;
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__row,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__row {
+      background: rgba(17, 24, 39, 0.9);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__label,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__label {
+      color: var(--neutral-600);
+    }
+
+    html[data-theme="dark"] .debug-log-unavailable__value,
+    html[data-theme="system"][data-resolved-theme="dark"] .debug-log-unavailable__value {
+      color: var(--neutral-900);
     }
 
 

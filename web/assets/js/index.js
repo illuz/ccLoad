@@ -7,7 +7,8 @@
       active_models: 0,
       duration_seconds: 1,
       rpm_stats: null,
-      is_today: true
+      is_today: true,
+      codex_guard: null
     };
 
     // 当前选中的时间范围
@@ -220,6 +221,8 @@
         updateTypeStats('openai', statsData.by_type.openai);
         updateTypeStats('gemini', statsData.by_type.gemini);
       }
+
+      updateCodexGuardStats(statsData.codex_guard);
     }
 
     // 更新全局 RPM 显示（格式：数值 数值 数值）
@@ -260,6 +263,53 @@
     function formatCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
       const rate = calculateCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens);
       return rate === null ? '--' : `${rate.toFixed(1)}%`;
+    }
+
+    function formatPercentRatio(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '0.0%';
+      return `${(n * 100).toFixed(1)}%`;
+    }
+
+    function setTextContent(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+
+    function formatCodexGuardEntryLabel(entry, suffix = '') {
+      const name = (entry && (entry.name || entry.key)) ? String(entry.name || entry.key).trim() : '';
+      const count = Number(entry && entry.count) || 0;
+      const label = name || t('common.unknown');
+      return `${label}${suffix} ×${formatNumber(count)}`;
+    }
+
+    function renderCodexGuardTopList(containerId, entries, options = {}) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        el.innerHTML = `<span class="codex-guard-empty">${escapeHtml(t('index.codexGuard.noData'))}</span>`;
+        return;
+      }
+      const suffix = options.suffix || '';
+      el.innerHTML = entries.slice(0, 3).map(entry => {
+        const label = formatCodexGuardEntryLabel(entry, suffix);
+        return `<span class="codex-guard-chip" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+      }).join('');
+    }
+
+    function updateCodexGuardStats(data) {
+      const summary = data || {};
+      setTextContent('codex-guard-total-codex', formatNumber(summary.total_codex_requests || 0));
+      setTextContent('codex-guard-hit-count', formatNumber(summary.hit_count || 0));
+      setTextContent('codex-guard-retry-success-count', formatNumber(summary.retry_success_count || 0));
+      setTextContent('codex-guard-final-failure-count', formatNumber(summary.final_failure_count || 0));
+      setTextContent('codex-guard-hit-rate', formatPercentRatio(summary.hit_rate || 0));
+      setTextContent('codex-guard-retry-success-rate', formatPercentRatio(summary.retry_success_rate || 0));
+
+      renderCodexGuardTopList('codex-guard-top-reasoning', summary.by_reasoning_tokens, { suffix: ' tok' });
+      renderCodexGuardTopList('codex-guard-top-channel', summary.by_channel);
+      renderCodexGuardTopList('codex-guard-top-token', summary.by_token);
+      renderCodexGuardTopList('codex-guard-top-model', summary.by_model);
     }
 
     // 更新单个渠道类型的统计
@@ -500,6 +550,7 @@
       if (window.i18n && typeof window.i18n.onLocaleChange === 'function') {
         window.i18n.onLocaleChange(() => {
           renderOverviewAutoRefreshButtonTooltip();
+          updateCodexGuardStats(statsData.codex_guard);
         });
       }
 

@@ -108,6 +108,16 @@
         ${buildInput('number', 'f_status', 'logs.statusPlaceholder', '如 200 / 403', 'filter-control--narrow')}`,
         groupClass
       ),
+      codexGuard: buildFilterGroup(
+        `${buildFilterLabel('f_codex_guard', 'logs.codexGuardFilter', 'Codex Guard')}
+        ${buildSelect('f_codex_guard', `
+                <option value="" data-i18n="logs.codexGuardAny">全部日志</option>
+                <option value="all" data-i18n="logs.codexGuardAll">Guard 全部</option>
+                <option value="hit" data-i18n="logs.codexGuardHits">Guard 命中</option>
+                <option value="retry_success" data-i18n="logs.codexGuardRetrySuccess">重试成功</option>
+              `, 'filter-control--compact')}`,
+        groupClass
+      ),
       logSource: buildFilterGroup(
         `${buildFilterLabel('f_log_source', 'logs.logSource', '日志来源')}
         ${buildSelect('f_log_source', `
@@ -148,7 +158,7 @@
       authTokenControlClass: 'logs-filter-control--token',
       infoClass: 'filter-info logs-filter-info',
       actionsClass: 'logs-filter-actions',
-      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'authToken', 'logsSummary']
+      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'codexGuard', 'authToken', 'logsSummary']
     },
     trend: {
       barClass: 'filter-bar mt-2',

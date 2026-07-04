@@ -89,6 +89,7 @@ type Store interface {
 	GetStats(ctx context.Context, startTime, endTime time.Time, filter *model.LogFilter, isToday bool) ([]model.StatsEntry, error)
 	GetStatsLite(ctx context.Context, startTime, endTime time.Time, filter *model.LogFilter) ([]model.StatsEntry, error) // 轻量版：跳过RPM计算和渠道名填充
 	GetRPMStats(ctx context.Context, startTime, endTime time.Time, filter *model.LogFilter, isToday bool) (*model.RPMStats, error)
+	GetCodexGuardSummary(ctx context.Context, startTime, endTime time.Time) (*model.CodexGuardSummary, error)
 	GetChannelSuccessRates(ctx context.Context, since time.Time) (map[int64]model.ChannelHealthStats, error)
 	GetHealthTimeline(ctx context.Context, params model.HealthTimelineParams) ([]model.HealthTimelineRow, error)
 	GetTodayChannelCosts(ctx context.Context, todayStart time.Time) (map[int64]float64, error) // 获取今日各渠道成本（启动时加载）

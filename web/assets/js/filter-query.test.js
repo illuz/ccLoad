@@ -124,6 +124,13 @@ test('logs.js 将 log_source 纳入筛选状态和请求参数定义', () => {
   assert.match(logsSource, /defaultValue:\s*'proxy'/);
 });
 
+test('logs.js 将 Codex Guard 模式纳入筛选状态和请求参数定义', () => {
+  assert.match(logsSource, /key:\s*'codexGuard'/);
+  assert.match(logsSource, /queryKeys:\s*\['codex_guard'\]/);
+  assert.match(logsSource, /requestKey:\s*'codex_guard'/);
+  assert.match(logsSource, /id:\s*'f_codex_guard'/);
+});
+
 test('logs.html、stats.html 和 trend.html 在页面脚本前加载共享请求参数 helper', () => {
   assert.match(
     logsHtmlSource,

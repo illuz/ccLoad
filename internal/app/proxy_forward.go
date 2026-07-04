@@ -1636,6 +1636,10 @@ func (s *Server) forwardAttempt(
 	result, action := s.handleProxyErrorResponse(
 		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown, forceReturnClient,
 	)
+	if res != nil && res.Status == util.StatusCodexReasoningGuard &&
+		(action == cooldown.ActionRetryKey || action == cooldown.ActionRetryChannel) {
+		reqCtx.codexGuardRetries++
+	}
 	return result, action, nil
 }
 

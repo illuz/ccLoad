@@ -52,6 +52,8 @@ test('page-filters 渲染 logs 布局时保留专用 class 和关键筛选控件
   assert.doesNotMatch(html, /value="scheduled_check"/);
   assert.doesNotMatch(html, /value="manual_test"/);
   assert.match(html, /id="f_status"/);
+  assert.match(html, /id="f_codex_guard"/);
+  assert.match(html, /value="retry_success"/);
   assert.match(html, /id="f_auth_token"/);
   assert.match(html, /id="btn_filter"/);
 });

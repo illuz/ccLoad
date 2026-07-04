@@ -651,6 +651,10 @@ func (h *HybridStore) GetRPMStats(ctx context.Context, startTime, endTime time.T
 	return h.sqlite.GetRPMStats(ctx, startTime, endTime, filter, isToday)
 }
 
+func (h *HybridStore) GetCodexGuardSummary(ctx context.Context, startTime, endTime time.Time) (*model.CodexGuardSummary, error) {
+	return h.sqlite.GetCodexGuardSummary(ctx, startTime, endTime)
+}
+
 func (h *HybridStore) GetChannelSuccessRates(ctx context.Context, since time.Time) (map[int64]model.ChannelHealthStats, error) {
 	return h.sqlite.GetChannelSuccessRates(ctx, since)
 }

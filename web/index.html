@@ -304,6 +304,72 @@
             </div>
           </div>
         </section>
+        <!-- Codex Guard 统计卡片 -->
+        <section class="mb-6 codex-guard-overview-section">
+          <div class="codex-guard-card animate-slide-up animate-delay-2" id="codex-guard-card">
+            <div class="codex-guard-header">
+              <div class="codex-guard-title-wrap">
+                <div class="codex-guard-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 3l7 3v5c0 4.5-2.9 8.5-7 10-4.1-1.5-7-5.5-7-10V6l7-3z"/>
+                    <path d="M9 12l2 2 4-5"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="codex-guard-title" data-i18n="index.codexGuard.title">Codex Guard</div>
+                  <div class="codex-guard-subtitle" data-i18n="index.codexGuard.subtitle">reasoning_tokens 拦截与自动重试恢复</div>
+                </div>
+              </div>
+              <a class="codex-guard-link" href="/web/logs.html?codex_guard=all" data-i18n="index.codexGuard.viewLogs">查看日志</a>
+            </div>
+            <div class="codex-guard-metrics">
+              <div class="codex-guard-metric">
+                <div class="codex-guard-metric-value" id="codex-guard-total-codex">--</div>
+                <div class="codex-guard-metric-label" data-i18n="index.codexGuard.totalCodex">Codex 请求</div>
+              </div>
+              <div class="codex-guard-metric codex-guard-metric--hit">
+                <div class="codex-guard-metric-value" id="codex-guard-hit-count">--</div>
+                <div class="codex-guard-metric-label" data-i18n="index.codexGuard.hits">Guard 命中</div>
+              </div>
+              <div class="codex-guard-metric codex-guard-metric--retry">
+                <div class="codex-guard-metric-value" id="codex-guard-retry-success-count">--</div>
+                <div class="codex-guard-metric-label" data-i18n="index.codexGuard.retrySuccess">重试成功</div>
+              </div>
+              <div class="codex-guard-metric codex-guard-metric--failure">
+                <div class="codex-guard-metric-value" id="codex-guard-final-failure-count">--</div>
+                <div class="codex-guard-metric-label" data-i18n="index.codexGuard.unrecovered">未恢复(估)</div>
+              </div>
+            </div>
+            <div class="codex-guard-rates">
+              <div>
+                <span data-i18n="index.codexGuard.hitRate">命中率</span>
+                <strong id="codex-guard-hit-rate">--</strong>
+              </div>
+              <div>
+                <span data-i18n="index.codexGuard.retrySuccessRate">重试成功率</span>
+                <strong id="codex-guard-retry-success-rate">--</strong>
+              </div>
+            </div>
+            <div class="codex-guard-breakdown">
+              <div class="codex-guard-breakdown-row">
+                <span data-i18n="index.codexGuard.topReasoning">Top reasoning</span>
+                <div class="codex-guard-chip-list" id="codex-guard-top-reasoning">--</div>
+              </div>
+              <div class="codex-guard-breakdown-row">
+                <span data-i18n="index.codexGuard.topChannel">Top 渠道</span>
+                <div class="codex-guard-chip-list" id="codex-guard-top-channel">--</div>
+              </div>
+              <div class="codex-guard-breakdown-row">
+                <span data-i18n="index.codexGuard.topToken">Top 令牌</span>
+                <div class="codex-guard-chip-list" id="codex-guard-top-token">--</div>
+              </div>
+              <div class="codex-guard-breakdown-row">
+                <span data-i18n="index.codexGuard.topModel">Top 模型</span>
+                <div class="codex-guard-chip-list" id="codex-guard-top-model">--</div>
+              </div>
+            </div>
+          </div>
+        </section>
         <!-- 实时状态栏 - 总览 -->
         <section class="mb-6">
           <div class="flex index-summary-grid animate-slide-up animate-delay-2 gap-space-3 flex-nowrap">

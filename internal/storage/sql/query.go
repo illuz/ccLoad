@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ccLoad/internal/model"
+	"ccLoad/internal/util"
 )
 
 // WhereBuilder SQL WHERE 子句构建器
@@ -77,6 +78,24 @@ func (wb *WhereBuilder) ApplyLogFilter(filter *model.LogFilter) *WhereBuilder {
 	}
 	if filter.AuthTokenID != nil {
 		wb.AddCondition("auth_token_id = ?", *filter.AuthTokenID)
+	}
+	switch model.NormalizeCodexGuardFilterMode(filter.CodexGuardMode) {
+	case model.CodexGuardFilterAll:
+		wb.AddCondition("(status_code = ? OR message LIKE ? OR message LIKE ?)",
+			util.StatusCodexReasoningGuard,
+			"%"+model.CodexGuardLogMarker+"%",
+			"%"+model.CodexGuardRetrySuccessMarker+"%",
+		)
+	case model.CodexGuardFilterHit:
+		wb.AddCondition("(status_code = ? OR (message LIKE ? AND message NOT LIKE ?))",
+			util.StatusCodexReasoningGuard,
+			"%"+model.CodexGuardLogMarker+"%",
+			"%"+model.CodexGuardRetrySuccessMarker+"%",
+		)
+	case model.CodexGuardFilterRetrySuccess:
+		wb.AddCondition("(status_code >= 200 AND status_code < 300 AND message LIKE ?)",
+			"%"+model.CodexGuardRetrySuccessMarker+"%",
+		)
 	}
 	switch filter.LogSource {
 	case model.LogSourceAll:

@@ -286,3 +286,66 @@ func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {
 		}
 	})
 }
+
+func TestHandlePublicSummaryIncludesCodexGuard(t *testing.T) {
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:        "codex-main",
+		URL:         "https://example.com",
+		Priority:    1,
+		ChannelType: util.ChannelTypeCodex,
+		ModelEntries: []model.ModelEntry{
+			{Model: "gpt-5-codex"},
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig codex failed: %v", err)
+	}
+
+	now := time.Now()
+	if err := store.BatchAddLogs(ctx, []*model.LogEntry{
+		{
+			Time:            model.JSONTime{Time: now},
+			Model:           "gpt-5-codex",
+			ChannelID:       cfg.ID,
+			LogSource:       model.LogSourceProxy,
+			StatusCode:      util.StatusCodexReasoningGuard,
+			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2]",
+			ReasoningTokens: 516,
+		},
+		{
+			Time:       model.JSONTime{Time: now},
+			Model:      "gpt-5-codex",
+			ChannelID:  cfg.ID,
+			LogSource:  model.LogSourceProxy,
+			StatusCode: 200,
+			Message:    "ok [retried_after_codex_guard]",
+		},
+	}); err != nil {
+		t.Fatalf("BatchAddLogs failed: %v", err)
+	}
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/public/summary?range=today", nil))
+	server.HandlePublicSummary(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			CodexGuard model.CodexGuardSummary `json:"codex_guard"`
+		} `json:"data"`
+	}
+	mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatalf("expected success=true, body=%s", w.Body.String())
+	}
+	if resp.Data.CodexGuard.HitCount != 1 || resp.Data.CodexGuard.RetrySuccessCount != 1 {
+		t.Fatalf("unexpected codex_guard summary: %+v", resp.Data.CodexGuard)
+	}
+}

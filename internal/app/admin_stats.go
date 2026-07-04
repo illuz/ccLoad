@@ -120,15 +120,17 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		channelMetas  map[int64]ChannelMeta
 		tokenCostRows []model.CostByChannelTokenRow
 		authTokens    []*model.AuthToken
+		codexGuard    *model.CodexGuardSummary
 		statsErr      error
 		rpmErr        error
 		typesErr      error
 		tokenCostErr  error
 		authTokensErr error
+		codexGuardErr error
 		wg            sync.WaitGroup
 	)
 
-	wg.Add(5)
+	wg.Add(6)
 
 	// 查询1: 基础统计（使用 Lite 版本跳过 fillStatsRPM）
 	go func() {
@@ -160,6 +162,12 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		authTokens, authTokensErr = s.store.ListAuthTokens(ctx)
 	}()
 
+	// 查询6: Codex Guard 命中与重试恢复摘要
+	go func() {
+		defer wg.Done()
+		codexGuard, codexGuardErr = s.store.GetCodexGuardSummary(ctx, startTime, endTime)
+	}()
+
 	wg.Wait()
 
 	// 错误处理
@@ -181,6 +189,10 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 	}
 	if authTokensErr != nil {
 		RespondError(c, http.StatusInternalServerError, authTokensErr)
+		return
+	}
+	if codexGuardErr != nil {
+		RespondError(c, http.StatusInternalServerError, codexGuardErr)
 		return
 	}
 
@@ -378,6 +390,7 @@ func (s *Server) HandlePublicSummary(c *gin.Context) {
 		"rpm_stats":        rpmStats,
 		"is_today":         isToday,
 		"by_type":          typeStats, // 按渠道类型分组的统计
+		"codex_guard":      codexGuard,
 	}
 
 	RespondJSON(c, http.StatusOK, response)

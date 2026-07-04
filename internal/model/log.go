@@ -17,6 +17,14 @@ const (
 	LogSourceAll       = "all"
 )
 
+const (
+	CodexGuardLogMarker          = "codex_guard"
+	CodexGuardRetrySuccessMarker = "retried_after_codex_guard"
+	CodexGuardFilterAll          = "all"
+	CodexGuardFilterHit          = "hit"
+	CodexGuardFilterRetrySuccess = "retry_success"
+)
+
 // NormalizeStoredLogSource maps stored or legacy log sources to supported persisted values.
 func NormalizeStoredLogSource(raw string) string {
 	switch strings.TrimSpace(raw) {
@@ -30,6 +38,21 @@ func NormalizeStoredLogSource(raw string) string {
 		return LogSourceManualChat
 	default:
 		return LogSourceProxy
+	}
+}
+
+func NormalizeCodexGuardFilterMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "0", "false", "off", "none":
+		return ""
+	case "1", "true", "on", "yes", "all", "guard", "codex_guard":
+		return CodexGuardFilterAll
+	case "hit", "hits", "trigger", "triggered":
+		return CodexGuardFilterHit
+	case "retry", "retried", "success", "retry_success", "retried_success":
+		return CodexGuardFilterRetrySuccess
+	default:
+		return ""
 	}
 }
 
@@ -110,6 +133,7 @@ type LogFilter struct {
 	ChannelType     string // 渠道类型过滤（anthropic/openai/gemini/codex）
 	AuthTokenID     *int64 // API令牌ID过滤
 	LogSource       string
+	CodexGuardMode  string // Codex Guard 日志筛选：all/hit/retry_success
 }
 
 // ChannelURLLogStat 是基于持久化日志聚合出的 URL 启动快照。

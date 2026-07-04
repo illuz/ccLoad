@@ -168,6 +168,18 @@ test('日志页为来源筛选和来源 badge 预留 DOM/CSS 契约', () => {
   assert.match(css, /\.log-source-badge\s*\{/);
 });
 
+test('日志页提供 Codex Guard 筛选和命中/重试 badge 契约', () => {
+  const filtersHtml = renderLogsFilters();
+  assert.match(filtersHtml, /id="f_codex_guard"/);
+  assert.match(filtersHtml, /value="hit"/);
+  assert.match(filtersHtml, /value="retry_success"/);
+  assert.match(logsSource, /CODEX_GUARD_LOG_MARKER/);
+  assert.match(logsSource, /CODEX_GUARD_RETRY_MARKER/);
+  assert.match(logsSource, /log-guard-badge--hit/);
+  assert.match(logsSource, /log-guard-badge--retry/);
+  assert.match(css, /\.log-guard-badge\s*\{/);
+});
+
 test('日志页桌面筛选按钮固定在筛选栏最右侧', () => {
   const desktopCss = css.split(/@media\s*\(max-width:\s*768px\)/)[0];
   const summaryMatch = desktopCss.match(/\.logs-filter-summary-row\s*\{[^}]+\}/);

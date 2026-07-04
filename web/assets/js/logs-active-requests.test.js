@@ -25,6 +25,7 @@ test('全部日志视图仍会保留进行中请求轮询', () => {
   assert.equal(shouldSkipActiveRequestsFetch('today', '', 'detection'), true);
   assert.equal(shouldSkipActiveRequestsFetch('yesterday', '', 'all'), true);
   assert.equal(shouldSkipActiveRequestsFetch('today', '500', 'all'), true);
+  assert.equal(shouldSkipActiveRequestsFetch('today', '', 'proxy', 'hit'), true);
 });
 
 test('进行中请求令牌列按 token_id 显示令牌描述', () => {
