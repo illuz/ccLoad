@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"ccLoad/internal/cooldown"
 	"ccLoad/internal/model"
 	"ccLoad/internal/protocol"
 	"ccLoad/internal/util"
@@ -197,5 +198,67 @@ func TestCodexReasoningGuard_RetriesNextKeyBeforeClientCommit(t *testing.T) {
 	}
 	if !strings.Contains(bodyText, `"reasoning_tokens":0`) {
 		t.Fatalf("final client body=%s, want second successful response", bodyText)
+	}
+}
+
+func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
+	srv := newInMemoryServer(t)
+	srv.maxKeyRetries = 1
+
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
+	}))
+	srv.client = upstream.Client()
+
+	req := ChannelRequest{
+		Name:        "codex-guard-no-cooldown",
+		APIKey:      "sk-single",
+		ChannelType: "codex",
+		URL:         upstream.URL,
+		Models:      []model.ModelEntry{{Model: "gpt-5-codex"}},
+		Enabled:     true,
+	}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate channel request: %v", err)
+	}
+	cfg, err := srv.createChannelFromRequest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("createChannelFromRequest: %v", err)
+	}
+
+	body := []byte(`{"model":"gpt-5-codex","input":"hi","stream":false}`)
+	res, err := srv.tryChannelWithKeys(context.Background(), cfg, &proxyRequestContext{
+		originalModel:     "gpt-5-codex",
+		clientProtocol:    protocol.Codex,
+		requestMethod:     http.MethodPost,
+		requestPath:       "/v1/responses",
+		body:              body,
+		translatedBody:    body,
+		header:            http.Header{"Content-Type": []string{"application/json"}},
+		startTime:         time.Now(),
+		codexGuardEnabled: true,
+	}, newRecorder())
+	if err != nil {
+		t.Fatalf("tryChannelWithKeys error: %v", err)
+	}
+	if res == nil || res.status != util.StatusCodexReasoningGuard || res.nextAction != cooldown.ActionRetryKey {
+		t.Fatalf("result=%+v, want guard failure with ActionRetryKey", res)
+	}
+
+	channelCooldowns, err := srv.store.GetAllChannelCooldowns(context.Background())
+	if err != nil {
+		t.Fatalf("GetAllChannelCooldowns failed: %v", err)
+	}
+	if len(channelCooldowns) != 0 {
+		t.Fatalf("channel cooldowns=%v, want none", channelCooldowns)
+	}
+
+	keyCooldowns, err := srv.store.GetAllKeyCooldowns(context.Background())
+	if err != nil {
+		t.Fatalf("GetAllKeyCooldowns failed: %v", err)
+	}
+	if len(keyCooldowns) != 0 {
+		t.Fatalf("key cooldowns=%v, want none", keyCooldowns)
 	}
 }

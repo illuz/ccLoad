@@ -520,6 +520,13 @@ func (s *Server) handleProxyErrorResponse(
 		succeeded: false,
 	}
 
+	if res.Status == util.StatusCodexReasoningGuard {
+		// Codex Guard 是令牌级保护策略命中，不代表当前渠道或 Key 健康异常。
+		// 只在本次请求内切换到下一个 Key/渠道，不写入任何持久化冷却状态。
+		failure.nextAction = cooldown.ActionRetryKey
+		return failure, cooldown.ActionRetryKey
+	}
+
 	if forceReturnClient {
 		failure.nextAction = cooldown.ActionReturnClient
 		return failure, cooldown.ActionReturnClient
