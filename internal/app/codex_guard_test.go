@@ -133,7 +133,7 @@ func TestCodexReasoningGuard_StreamStrictBuffer(t *testing.T) {
 	}
 }
 
-func TestCodexReasoningGuard_RetriesNextKeyBeforeClientCommit(t *testing.T) {
+func TestCodexReasoningGuard_RetriesSameUpstreamBeforeClientCommit(t *testing.T) {
 	srv := newInMemoryServer(t)
 	srv.maxKeyRetries = 2
 
@@ -189,8 +189,8 @@ func TestCodexReasoningGuard_RetriesNextKeyBeforeClientCommit(t *testing.T) {
 	if got := attempts.Load(); got != 2 {
 		t.Fatalf("attempts=%d, want 2", got)
 	}
-	if len(authHeaders) != 2 || authHeaders[0] != "Bearer sk-guarded" || authHeaders[1] != "Bearer sk-good" {
-		t.Fatalf("auth headers=%v, want first guarded key then good key", authHeaders)
+	if len(authHeaders) != 2 || authHeaders[0] != "Bearer sk-guarded" || authHeaders[1] != "Bearer sk-guarded" {
+		t.Fatalf("auth headers=%v, want same guarded key retried", authHeaders)
 	}
 	bodyText := rec.Body.String()
 	if strings.Contains(bodyText, `"reasoning_tokens":516`) {
@@ -242,8 +242,8 @@ func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tryChannelWithKeys error: %v", err)
 	}
-	if res == nil || res.status != util.StatusCodexReasoningGuard || res.nextAction != cooldown.ActionRetryKey {
-		t.Fatalf("result=%+v, want guard failure with ActionRetryKey", res)
+	if res == nil || res.status != util.StatusCodexReasoningGuard || res.nextAction != cooldown.ActionReturnClient {
+		t.Fatalf("result=%+v, want guard failure stopped without channel fallback", res)
 	}
 
 	channelCooldowns, err := srv.store.GetAllChannelCooldowns(context.Background())
@@ -260,5 +260,78 @@ func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
 	}
 	if len(keyCooldowns) != 0 {
 		t.Fatalf("key cooldowns=%v, want none", keyCooldowns)
+	}
+}
+
+func TestCodexReasoningGuard_DoesNotFallbackToNextChannel(t *testing.T) {
+	srv := newInMemoryServer(t)
+	srv.maxKeyRetries = 2
+
+	var inputAttempts atomic.Int32
+	inputUpstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch inputAttempts.Add(1) {
+		case 1:
+			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
+		default:
+			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0}}},"usage":{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0}}}`))
+		}
+	}))
+	srv.client = inputUpstream.Client()
+
+	var fallbackAttempts atomic.Int32
+	fallbackUpstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fallbackAttempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":9,"output_tokens":9,"output_tokens_details":{"reasoning_tokens":0}}}}`))
+	}))
+
+	inputCfg, err := srv.createChannelFromRequest(context.Background(), ChannelRequest{
+		Name:        "input-channel",
+		APIKey:      "sk-input",
+		ChannelType: "codex",
+		URL:         inputUpstream.URL,
+		Models:      []model.ModelEntry{{Model: "gpt-5-codex"}},
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create input channel: %v", err)
+	}
+	fallbackCfg, err := srv.createChannelFromRequest(context.Background(), ChannelRequest{
+		Name:        "fallback-channel",
+		APIKey:      "sk-fallback",
+		ChannelType: "codex",
+		URL:         fallbackUpstream.URL,
+		Models:      []model.ModelEntry{{Model: "gpt-5-codex"}},
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback channel: %v", err)
+	}
+
+	body := []byte(`{"model":"gpt-5-codex","input":"hi","stream":false}`)
+	c, rec := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body))))
+	lastResult, succeeded := srv.runProxyAttemptLoop(context.Background(), []*model.Config{inputCfg, fallbackCfg}, &proxyRequestContext{
+		originalModel:     "gpt-5-codex",
+		clientProtocol:    protocol.Codex,
+		requestMethod:     http.MethodPost,
+		requestPath:       "/v1/responses",
+		body:              body,
+		translatedBody:    body,
+		header:            http.Header{"Content-Type": []string{"application/json"}},
+		startTime:         time.Now(),
+		codexGuardEnabled: true,
+	}, c.Writer)
+	if !succeeded || lastResult != nil {
+		t.Fatalf("succeeded=%v lastResult=%+v, want success on input retry", succeeded, lastResult)
+	}
+	if got := inputAttempts.Load(); got != 2 {
+		t.Fatalf("input attempts=%d, want 2", got)
+	}
+	if got := fallbackAttempts.Load(); got != 0 {
+		t.Fatalf("fallback attempts=%d, want 0", got)
+	}
+	if bodyText := rec.Body.String(); !strings.Contains(bodyText, `"reasoning_tokens":0`) {
+		t.Fatalf("client body=%s, want successful same-channel retry", bodyText)
 	}
 }

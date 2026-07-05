@@ -2023,53 +2023,74 @@ func (s *Server) attemptKeyAcrossURLs(
 			s.activeRequests.SetBaseURL(reqCtx.activeReqID, urlEntry.url)
 		}
 
-		shouldDeferChannelCooldown := urlsCount > 1 && urlIdx < len(sortedURLs)-1
-		result, nextAction, attemptErr := s.forwardAttempt(
-			ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, urlEntry.url, w, shouldDeferChannelCooldown)
-		if attemptErr != nil {
-			return nil, nil, attemptErr
-		}
-
-		if result != nil && result.succeeded {
-			// 成功：记录TTFB到URLSelector（仅多URL场景）
-			recordSuccessTTFBToSelector(selector, cfg.ID, urlsCount, urlEntry.url, result)
-			return result, nil, nil
-		}
-
-		if result != nil {
-			urlLastFailure = result
-		}
-
-		// Key级错误：换URL无意义，跳出URL循环
-		if nextAction == cooldown.ActionRetryKey {
-			break
-		}
-		// 客户端错误：直接返回
-		if nextAction == cooldown.ActionReturnClient {
-			return urlLastFailure, nil, nil
-		}
-		// 渠道级错误 (ActionRetryChannel) 或网络错误：
-		// 在多URL场景下，默认先尝试下一个URL
-		if urlsCount > 1 {
-			if selector != nil {
-				selector.CooldownURL(cfg.ID, urlEntry.url)
+		for {
+			shouldDeferChannelCooldown := urlsCount > 1 && urlIdx < len(sortedURLs)-1
+			result, nextAction, attemptErr := s.forwardAttempt(
+				ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, urlEntry.url, w, shouldDeferChannelCooldown)
+			if attemptErr != nil {
+				return nil, nil, attemptErr
 			}
 
-			// 新策略：上游明确返回 5xx（598 首字节超时除外）时，直接切换下一个渠道。
-			// 该分支命中时，当前URL若使用了 deferChannelCooldown，需要补做一次渠道级冷却写入。
-			if shouldSwitchChannelImmediatelyOnHTTP5xx(result) {
-				if shouldDeferChannelCooldown && result != nil {
-					input := httpErrorInputFromParts(cfg.ID, keyIndex, result.status, result.body, result.header)
-					s.applyCooldownDecision(ctx, cfg, input)
-				}
+			if result != nil && result.succeeded {
+				// 成功：记录TTFB到URLSelector（仅多URL场景）
+				recordSuccessTTFBToSelector(selector, cfg.ID, urlsCount, urlEntry.url, result)
+				return result, nil, nil
+			}
+
+			if result != nil {
+				urlLastFailure = result
+			}
+
+			// Codex Guard 是令牌级保护，不代表 Key/渠道故障；在同一渠道、同一 Key、同一 URL 内重试。
+			if shouldRetryCodexGuardSameUpstream(result, reqCtx, s.maxKeyRetries) {
+				continue
+			}
+			if result != nil && result.status == util.StatusCodexReasoningGuard {
+				result.nextAction = cooldown.ActionReturnClient
+				return result, nil, nil
+			}
+
+			// Key级错误：换URL无意义，跳出URL循环
+			if nextAction == cooldown.ActionRetryKey {
 				break
 			}
-			continue // 下一个URL
+			// 客户端错误：直接返回
+			if nextAction == cooldown.ActionReturnClient {
+				return urlLastFailure, nil, nil
+			}
+			// 渠道级错误 (ActionRetryChannel) 或网络错误：
+			// 在多URL场景下，默认先尝试下一个URL
+			if urlsCount > 1 {
+				if selector != nil {
+					selector.CooldownURL(cfg.ID, urlEntry.url)
+				}
+
+				// 新策略：上游明确返回 5xx（598 首字节超时除外）时，直接切换下一个渠道。
+				// 该分支命中时，当前URL若使用了 deferChannelCooldown，需要补做一次渠道级冷却写入。
+				if shouldSwitchChannelImmediatelyOnHTTP5xx(result) {
+					if shouldDeferChannelCooldown && result != nil {
+						input := httpErrorInputFromParts(cfg.ID, keyIndex, result.status, result.body, result.header)
+						s.applyCooldownDecision(ctx, cfg, input)
+					}
+					break
+				}
+				break // 下一个URL
+			}
+			// 单URL：保持原有行为
+			break
 		}
-		// 单URL：保持原有行为
-		break
 	}
 	return nil, urlLastFailure, nil
+}
+
+func shouldRetryCodexGuardSameUpstream(result *proxyResult, reqCtx *proxyRequestContext, maxAttempts int) bool {
+	if result == nil || result.status != util.StatusCodexReasoningGuard || reqCtx == nil {
+		return false
+	}
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	return reqCtx.codexGuardRetries > 0 && reqCtx.codexGuardRetries < maxAttempts
 }
 
 func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqCtx *proxyRequestContext, w http.ResponseWriter) (*proxyResult, error) {
