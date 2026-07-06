@@ -9,7 +9,12 @@ import (
 	"ccLoad/internal/util"
 )
 
-const codexGuardMaxBufferedBytes = 32 * 1024 * 1024
+const (
+	codexGuardMaxBufferedBytes = 32 * 1024 * 1024
+	// codexGuardMaxRetries 是 Guard 命中后的最大重试次数，不包含首次请求。
+	// 即最多 1 次首次请求 + 4 次 guard retry。
+	codexGuardMaxRetries = 4
+)
 
 type codexGuardVerdict struct {
 	Triggered       bool

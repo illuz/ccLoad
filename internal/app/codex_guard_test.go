@@ -205,7 +205,9 @@ func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
 	srv := newInMemoryServer(t)
 	srv.maxKeyRetries = 1
 
+	var attempts atomic.Int32
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
 	}))
@@ -242,8 +244,11 @@ func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tryChannelWithKeys error: %v", err)
 	}
-	if res == nil || res.status != util.StatusCodexReasoningGuard || res.nextAction != cooldown.ActionReturnClient {
-		t.Fatalf("result=%+v, want guard failure stopped without channel fallback", res)
+	if res == nil || res.status != util.StatusCodexReasoningGuard || res.nextAction != cooldown.ActionRetryChannel {
+		t.Fatalf("result=%+v, want guard failure to request channel fallback", res)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("attempts=%d, want initial + one same-upstream retry", got)
 	}
 
 	channelCooldowns, err := srv.store.GetAllChannelCooldowns(context.Background())
@@ -263,19 +268,15 @@ func TestCodexReasoningGuard_DoesNotWriteCooldown(t *testing.T) {
 	}
 }
 
-func TestCodexReasoningGuard_DoesNotFallbackToNextChannel(t *testing.T) {
+func TestCodexReasoningGuard_FallbacksToNextChannelAfterSameRetryFails(t *testing.T) {
 	srv := newInMemoryServer(t)
 	srv.maxKeyRetries = 2
 
 	var inputAttempts atomic.Int32
 	inputUpstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inputAttempts.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		switch inputAttempts.Add(1) {
-		case 1:
-			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
-		default:
-			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0}}},"usage":{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0}}}`))
-		}
+		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
 	}))
 	srv.client = inputUpstream.Client()
 
@@ -323,15 +324,71 @@ func TestCodexReasoningGuard_DoesNotFallbackToNextChannel(t *testing.T) {
 		codexGuardEnabled: true,
 	}, c.Writer)
 	if !succeeded || lastResult != nil {
-		t.Fatalf("succeeded=%v lastResult=%+v, want success on input retry", succeeded, lastResult)
+		t.Fatalf("succeeded=%v lastResult=%+v, want success on fallback channel", succeeded, lastResult)
 	}
 	if got := inputAttempts.Load(); got != 2 {
-		t.Fatalf("input attempts=%d, want 2", got)
+		t.Fatalf("input attempts=%d, want initial + one same-upstream retry", got)
 	}
-	if got := fallbackAttempts.Load(); got != 0 {
-		t.Fatalf("fallback attempts=%d, want 0", got)
+	if got := fallbackAttempts.Load(); got != 1 {
+		t.Fatalf("fallback attempts=%d, want 1", got)
 	}
 	if bodyText := rec.Body.String(); !strings.Contains(bodyText, `"reasoning_tokens":0`) {
-		t.Fatalf("client body=%s, want successful same-channel retry", bodyText)
+		t.Fatalf("client body=%s, want successful fallback response", bodyText)
+	}
+}
+
+func TestCodexReasoningGuard_MaxFourRetries(t *testing.T) {
+	srv := newInMemoryServer(t)
+	srv.maxKeyRetries = 1
+
+	var attempts atomic.Int32
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := attempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if attempt <= int32(1+codexGuardMaxRetries) {
+			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":9,"output_tokens":9,"output_tokens_details":{"reasoning_tokens":0}}}}`))
+	}))
+	srv.client = upstream.Client()
+
+	cands := make([]*model.Config, 0, codexGuardMaxRetries+2)
+	for i := 0; i < codexGuardMaxRetries+2; i++ {
+		cfg, err := srv.createChannelFromRequest(context.Background(), ChannelRequest{
+			Name:        fmt.Sprintf("guard-budget-%d", i),
+			APIKey:      fmt.Sprintf("sk-budget-%d", i),
+			ChannelType: "codex",
+			URL:         upstream.URL,
+			Models:      []model.ModelEntry{{Model: "gpt-5-codex"}},
+			Enabled:     true,
+		})
+		if err != nil {
+			t.Fatalf("create channel %d: %v", i, err)
+		}
+		cands = append(cands, cfg)
+	}
+
+	body := []byte(`{"model":"gpt-5-codex","input":"hi","stream":false}`)
+	c, _ := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body))))
+	lastResult, succeeded := srv.runProxyAttemptLoop(context.Background(), cands, &proxyRequestContext{
+		originalModel:     "gpt-5-codex",
+		clientProtocol:    protocol.Codex,
+		requestMethod:     http.MethodPost,
+		requestPath:       "/v1/responses",
+		body:              body,
+		translatedBody:    body,
+		header:            http.Header{"Content-Type": []string{"application/json"}},
+		startTime:         time.Now(),
+		codexGuardEnabled: true,
+	}, c.Writer)
+	if succeeded {
+		t.Fatal("succeeded=true, want guard failure after retry budget exhausted")
+	}
+	if lastResult == nil || lastResult.status != util.StatusCodexReasoningGuard || lastResult.nextAction != cooldown.ActionReturnClient {
+		t.Fatalf("lastResult=%+v, want final codex guard failure", lastResult)
+	}
+	if got, want := attempts.Load(), int32(1+codexGuardMaxRetries); got != want {
+		t.Fatalf("attempts=%d, want %d (initial + max guard retries)", got, want)
 	}
 }

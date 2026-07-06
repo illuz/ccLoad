@@ -1636,10 +1636,6 @@ func (s *Server) forwardAttempt(
 	result, action := s.handleProxyErrorResponse(
 		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown, forceReturnClient,
 	)
-	if res != nil && res.Status == util.StatusCodexReasoningGuard &&
-		(action == cooldown.ActionRetryKey || action == cooldown.ActionRetryChannel) {
-		reqCtx.codexGuardRetries++
-	}
 	return result, action, nil
 }
 
@@ -2041,11 +2037,31 @@ func (s *Server) attemptKeyAcrossURLs(
 				urlLastFailure = result
 			}
 
-			// Codex Guard 是令牌级保护，不代表 Key/渠道故障；在同一渠道、同一 Key、同一 URL 内重试。
-			if shouldRetryCodexGuardSameUpstream(result, reqCtx, s.maxKeyRetries) {
+			// Codex Guard 是令牌级保护，不代表 Key/渠道故障。
+			// 策略：首次 Guard 命中后只在同 channel/key/url 原地重试一次；
+			// 如果该次仍失败，则直接切换渠道，避免在同一上游池子里空转。
+			if shouldRetryCodexGuardSameUpstream(result, reqCtx) {
+				reqCtx.codexGuardRetries++
 				continue
 			}
 			if result != nil && result.status == util.StatusCodexReasoningGuard {
+				if shouldRetryCodexGuardNextChannel(result, reqCtx) {
+					reqCtx.codexGuardRetries++
+					result.nextAction = cooldown.ActionRetryChannel
+					return nil, result, nil
+				}
+				result.nextAction = cooldown.ActionReturnClient
+				return result, nil, nil
+			}
+			if isCodexGuardRetryFlowActive(reqCtx) && result != nil && !result.succeeded {
+				if nextAction == cooldown.ActionReturnClient {
+					return urlLastFailure, nil, nil
+				}
+				if hasCodexGuardRetryBudget(reqCtx) {
+					reqCtx.codexGuardRetries++
+					result.nextAction = cooldown.ActionRetryChannel
+					return nil, result, nil
+				}
 				result.nextAction = cooldown.ActionReturnClient
 				return result, nil, nil
 			}
@@ -2083,14 +2099,26 @@ func (s *Server) attemptKeyAcrossURLs(
 	return nil, urlLastFailure, nil
 }
 
-func shouldRetryCodexGuardSameUpstream(result *proxyResult, reqCtx *proxyRequestContext, maxAttempts int) bool {
+func shouldRetryCodexGuardSameUpstream(result *proxyResult, reqCtx *proxyRequestContext) bool {
 	if result == nil || result.status != util.StatusCodexReasoningGuard || reqCtx == nil {
 		return false
 	}
-	if maxAttempts < 1 {
-		maxAttempts = 1
+	return reqCtx.codexGuardRetries == 0
+}
+
+func shouldRetryCodexGuardNextChannel(result *proxyResult, reqCtx *proxyRequestContext) bool {
+	if result == nil || result.status != util.StatusCodexReasoningGuard {
+		return false
 	}
-	return reqCtx.codexGuardRetries > 0 && reqCtx.codexGuardRetries < maxAttempts
+	return isCodexGuardRetryFlowActive(reqCtx) && hasCodexGuardRetryBudget(reqCtx)
+}
+
+func hasCodexGuardRetryBudget(reqCtx *proxyRequestContext) bool {
+	return reqCtx != nil && reqCtx.codexGuardRetries < codexGuardMaxRetries
+}
+
+func isCodexGuardRetryFlowActive(reqCtx *proxyRequestContext) bool {
+	return reqCtx != nil && reqCtx.codexGuardRetries > 0
 }
 
 func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqCtx *proxyRequestContext, w http.ResponseWriter) (*proxyResult, error) {

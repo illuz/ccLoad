@@ -361,6 +361,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		expiresAt,
 		lastUsedAt,
 		boolToInt(token.IsActive),
+		boolToInt(token.CodexGuardEnabled),
 		token.SuccessCount,
 		token.FailureCount,
 		token.StreamAvgTTFB,

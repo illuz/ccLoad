@@ -146,7 +146,7 @@ type proxyRequestContext struct {
 	tokenHash         string               // Token哈希值（用于统计）
 	tokenID           int64                // Token ID（用于日志记录，0表示未使用token）
 	codexGuardEnabled bool                 // 当前访问令牌是否启用 Codex reasoning guard
-	codexGuardRetries int                  // 本次客户端请求内 Codex Guard 触发后的重试次数
+	codexGuardRetries int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
 	clientIP          string               // 客户端IP地址（用于日志记录）
 	activeReqID       int64                // 活跃请求ID（用于更新渠道信息）
 	observer          *ForwardObserver     // 转发观测回调（可选）
