@@ -502,6 +502,10 @@
     document.getElementById('editTokenValue').value = token.plain_token || '';
     document.getElementById('editTokenDescription').value = token.description || '';
     document.getElementById('editTokenActive').checked = token.is_active !== false;
+    const editCodexGuardInput = document.getElementById('editCodexGuardEnabled');
+    if (editCodexGuardInput) {
+      editCodexGuardInput.checked = !!token.codex_guard_enabled;
+    }
     refreshEditGroupOptions(token.group_id || 0);
 
     const expiresAt = tokenExpiresAtMs(token.expires_at);
@@ -521,6 +525,10 @@
     document.getElementById('editCostLimitUSD').value = String(editRawCostLimitUSD);
     document.getElementById('editDailyCostLimitUSD').value = String(editRawDailyCostLimitUSD);
     document.getElementById('editMaxConcurrency').value = String(editRawMaxConcurrency);
+    const editDailyLimitDoubleInput = document.getElementById('editDailyLimitDoubleEnabled');
+    if (editDailyLimitDoubleInput) {
+      editDailyLimitDoubleInput.checked = !!token.daily_limit_double_enabled;
+    }
 
     const costUsed = Number(token.cost_used_usd) || 0;
     const dailyCostUsed = Number(token.daily_cost_used_usd) || 0;
@@ -558,6 +566,10 @@
     if (valueInput) valueInput.value = '';
     const expiry = document.getElementById('editCustomExpiryContainer');
     if (expiry) expiry.style.display = 'none';
+    const editCodexGuardInput = document.getElementById('editCodexGuardEnabled');
+    if (editCodexGuardInput) editCodexGuardInput.checked = false;
+    const editDailyLimitDoubleInput = document.getElementById('editDailyLimitDoubleEnabled');
+    if (editDailyLimitDoubleInput) editDailyLimitDoubleInput.checked = false;
 
     editAllowedModels = [];
     editRawAllowedModels = [];
@@ -1165,6 +1177,7 @@
     const plainToken = document.getElementById('editTokenValue').value.trim();
     const description = document.getElementById('editTokenDescription').value.trim();
     const isActive = document.getElementById('editTokenActive').checked;
+    const codexGuardEnabled = !!document.getElementById('editCodexGuardEnabled')?.checked;
     const expiryType = document.getElementById('editTokenExpiry').value;
 
     if (!editInheritQuota || !editInheritChannels || !editInheritModels) {
@@ -1174,6 +1187,7 @@
     const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
     const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
     const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
+    const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
     const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
     if (editInheritQuota) {
       maxConcurrencyResult.value = editRawMaxConcurrency || 0;
@@ -1220,6 +1234,7 @@
           plain_token: plainToken,
           description,
           is_active: isActive,
+          codex_guard_enabled: codexGuardEnabled,
           expires_at: expiresAt,
           group_id: groupID,
           inherit_quota: groupID > 0 && editInheritQuota,
@@ -1229,6 +1244,7 @@
           allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
+          daily_limit_double_enabled: dailyLimitDoubleEnabled,
           max_concurrency: maxConcurrencyResult.value
         })
       });

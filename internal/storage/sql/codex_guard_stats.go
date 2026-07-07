@@ -88,6 +88,9 @@ func (s *SQLStore) GetCodexGuardSummary(ctx context.Context, startTime, endTime 
 	if err := s.fillCodexGuardSummaryCounts(ctx, summary, startTime, endTime, channelIDs); err != nil {
 		return nil, err
 	}
+	if err := s.fillCodexGuardRequestCounts(ctx, summary, startTime, endTime, channelIDs); err != nil {
+		return nil, err
+	}
 	if summary.HitCount > summary.RetrySuccessCount {
 		summary.FinalFailureCount = summary.HitCount - summary.RetrySuccessCount
 	}
@@ -96,6 +99,9 @@ func (s *SQLStore) GetCodexGuardSummary(ctx context.Context, startTime, endTime 
 	}
 	if summary.HitCount > 0 {
 		summary.RetrySuccessRate = float64(summary.RetrySuccessCount) / float64(summary.HitCount)
+	}
+	if summary.RequestHitCount > 0 {
+		summary.RequestRescueRate = float64(summary.RequestRescuedCount) / float64(summary.RequestHitCount)
 	}
 
 	var aggErr error
@@ -142,6 +148,111 @@ func (s *SQLStore) fillCodexGuardSummaryCounts(ctx context.Context, summary *mod
 		return fmt.Errorf("query codex guard counts: %w", err)
 	}
 	return nil
+}
+
+type codexGuardRequestState struct {
+	hit     bool
+	rescued bool
+}
+
+func (s *SQLStore) fillCodexGuardRequestCounts(ctx context.Context, summary *model.CodexGuardSummary, startTime, endTime time.Time, channelIDs []int64) error {
+	baseWhere, baseTailArgs := buildCodexGuardBaseWhere("l", channelIDs)
+	hitCond, hitArgs := codexGuardHitCondition("l")
+	retryCond, retryArgs := codexGuardRetrySuccessCondition("l")
+
+	query := fmt.Sprintf(`
+		SELECT l.status_code, l.message
+		FROM logs l
+		WHERE %s AND (%s OR %s)
+	`, baseWhere, hitCond, retryCond)
+
+	args := codexGuardBaseArgs(startTime, endTime, baseTailArgs)
+	args = append(args, hitArgs...)
+	args = append(args, retryArgs...)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("query codex guard request counts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byTrace := make(map[string]*codexGuardRequestState)
+	for rows.Next() {
+		var statusCode int
+		var message string
+		if err := rows.Scan(&statusCode, &message); err != nil {
+			return err
+		}
+		traceID := extractCodexGuardTraceID(message)
+		if traceID == "" {
+			continue
+		}
+		state := byTrace[traceID]
+		if state == nil {
+			state = &codexGuardRequestState{}
+			byTrace[traceID] = state
+		}
+		if isCodexGuardHitLog(statusCode, message) {
+			state.hit = true
+		}
+		if isCodexGuardRetrySuccessLog(statusCode, message) {
+			state.rescued = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, state := range byTrace {
+		if !state.hit {
+			continue
+		}
+		summary.RequestHitCount++
+		if state.rescued {
+			summary.RequestRescuedCount++
+		}
+	}
+	if summary.RequestHitCount > summary.RequestRescuedCount {
+		summary.RequestFailureCount = summary.RequestHitCount - summary.RequestRescuedCount
+	}
+	return nil
+}
+
+func isCodexGuardHitLog(statusCode int, message string) bool {
+	if statusCode == util.StatusCodexReasoningGuard {
+		return true
+	}
+	return strings.Contains(message, model.CodexGuardLogMarker) &&
+		!strings.Contains(message, model.CodexGuardRetrySuccessMarker)
+}
+
+func isCodexGuardRetrySuccessLog(statusCode int, message string) bool {
+	return statusCode >= 200 && statusCode < 300 &&
+		strings.Contains(message, model.CodexGuardRetrySuccessMarker)
+}
+
+func extractCodexGuardTraceID(message string) string {
+	needle := model.CodexGuardTraceMarker + "="
+	idx := strings.Index(message, needle)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(needle)
+	end := start
+	for end < len(message) && isCodexGuardTraceChar(message[end]) {
+		end++
+	}
+	if end == start {
+		return ""
+	}
+	return message[start:end]
+}
+
+func isCodexGuardTraceChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '-' || b == '_'
 }
 
 func (s *SQLStore) codexGuardReasoningTokenCounts(ctx context.Context, startTime, endTime time.Time, channelIDs []int64) ([]model.CodexGuardCountEntry, error) {

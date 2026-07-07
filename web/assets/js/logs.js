@@ -495,12 +495,14 @@ function renderLogSourceBadge(logSource) {
 
 const CODEX_GUARD_LOG_MARKER = 'codex_guard';
 const CODEX_GUARD_RETRY_MARKER = 'retried_after_codex_guard';
+const CODEX_GUARD_LAST_ATTEMPT_PASSTHROUGH_MARKER = 'guard_last_attempt_passthrough';
 
 function getCodexGuardLogState(entry) {
   const message = String(entry?.message || '').toLowerCase();
   const retried = message.includes(CODEX_GUARD_RETRY_MARKER);
-  const hit = Number(entry?.status_code) === 595 || (message.includes(CODEX_GUARD_LOG_MARKER) && !retried);
-  return { hit, retried };
+  const passthrough = message.includes(CODEX_GUARD_LAST_ATTEMPT_PASSTHROUGH_MARKER);
+  const hit = passthrough || Number(entry?.status_code) === 595 || (message.includes(CODEX_GUARD_LOG_MARKER) && !retried);
+  return { hit, retried, passthrough };
 }
 
 function renderCodexGuardBadges(entry) {
@@ -511,6 +513,9 @@ function renderCodexGuardBadges(entry) {
   }
   if (state.retried) {
     badges.push(`<span class="log-guard-badge log-guard-badge--retry">${escapeHtml(t('logs.codexGuardRetriedBadge'))}</span>`);
+  }
+  if (state.passthrough) {
+    badges.push(`<span class="log-guard-badge log-guard-badge--passthrough">${escapeHtml(t('logs.codexGuardLastAttemptPassthroughBadge'))}</span>`);
   }
   return badges.join('');
 }

@@ -103,25 +103,44 @@ func (s *Server) logProxyResult(
 	res *fwResult,
 	errMsg string,
 ) {
+	hasCodexGuardAttempt := reqCtx.codexGuardTraceID != ""
+	codexGuardReceivedBytes := int64(0)
+	codexGuardDuration := 0.0
+	if res != nil && (statusCode == util.StatusCodexReasoningGuard || res.CodexGuardPassthrough) {
+		codexGuardReceivedBytes = res.BytesReceived
+		codexGuardDuration = reqCtx.codexGuardLastDuration
+	}
+	codexGuardMaxRetries := 0
+	if reqCtx.codexGuardTraceID != "" {
+		codexGuardMaxRetries = codexGuardMaxRetriesForRequest(reqCtx)
+	}
+
 	s.AddLogAsync(buildLogEntry(logEntryParams{
-		RequestModel:   reqCtx.originalModel,
-		ActualModel:    actualModel,
-		Channel:        cfg,
-		ChannelID:      cfg.ID,
-		StatusCode:     statusCode,
-		Duration:       duration,
-		IsStreaming:    reqCtx.isStreaming,
-		APIKeyUsed:     selectedKey,
-		AuthTokenID:    reqCtx.tokenID,
-		ClientIP:       reqCtx.clientIP,
-		BaseURL:        reqCtx.baseURL,
-		Result:         res,
-		ErrMsg:         errMsg,
-		StartTime:      reqCtx.attemptStartTime,
-		DebugData:      reqCtx.debugData,
-		CostMultiplier: cfg.CostMultiplier,
-		ThinkingEffort: reqCtx.thinkingEffort,
-		TimingSummary:  timingSummary(reqCtx),
+		RequestModel:            reqCtx.originalModel,
+		ActualModel:             actualModel,
+		Channel:                 cfg,
+		ChannelID:               cfg.ID,
+		StatusCode:              statusCode,
+		Duration:                duration,
+		IsStreaming:             reqCtx.isStreaming,
+		APIKeyUsed:              selectedKey,
+		AuthTokenID:             reqCtx.tokenID,
+		ClientIP:                reqCtx.clientIP,
+		BaseURL:                 reqCtx.baseURL,
+		Result:                  res,
+		ErrMsg:                  errMsg,
+		StartTime:               reqCtx.attemptStartTime,
+		DebugData:               reqCtx.debugData,
+		CostMultiplier:          cfg.CostMultiplier,
+		ThinkingEffort:          reqCtx.thinkingEffort,
+		TimingSummary:           timingSummary(reqCtx),
+		CodexGuardTraceID:       reqCtx.codexGuardTraceID,
+		CodexGuardAttempt:       reqCtx.codexGuardRetries,
+		HasCodexGuardAttempt:    hasCodexGuardAttempt,
+		CodexGuardMaxRetries:    codexGuardMaxRetries,
+		CodexGuardReceivedBytes: codexGuardReceivedBytes,
+		CodexGuardDuration:      codexGuardDuration,
+		CodexGuardExhausted:     reqCtx.codexGuardExhausted,
 	}))
 }
 
@@ -414,8 +433,17 @@ func (s *Server) handleProxySuccess(
 	// 冷却状态已恢复，刷新相关缓存避免下次命中过期数据
 	s.invalidateChannelRelatedCache(cfg.ID)
 
-	if reqCtx != nil && reqCtx.codexGuardRetries > 0 && res != nil {
-		res.RetryStrategy = appendRetryStrategyName(res.RetryStrategy, model.CodexGuardRetrySuccessMarker)
+	if reqCtx != nil && res != nil {
+		if res.CodexGuardPassthrough {
+			ensureCodexGuardTraceID(reqCtx)
+			reqCtx.codexGuardHitAttempts++
+			reqCtx.codexGuardLastDuration = duration
+			markCodexGuardExhausted(reqCtx)
+			res.RetryStrategy = appendRetryStrategyName(res.RetryStrategy, model.CodexGuardLastAttemptPassthroughMarker)
+		} else if reqCtx.codexGuardRetries > 0 {
+			ensureCodexGuardTraceID(reqCtx)
+			res.RetryStrategy = appendRetryStrategyName(res.RetryStrategy, model.CodexGuardRetrySuccessMarker)
+		}
 	}
 
 	// 记录成功日志
@@ -500,6 +528,15 @@ func (s *Server) handleProxyErrorResponse(
 	errMsg := ""
 	if res.Status == 499 {
 		errMsg = "upstream returned 499 (not client cancel)"
+	}
+	if res.Status == util.StatusCodexReasoningGuard {
+		ensureCodexGuardTraceID(reqCtx)
+		reqCtx.codexGuardHitAttempts++
+		reqCtx.codexGuardLastDuration = duration
+		observeCodexGuardResponse(reqCtx, res, duration)
+		if !hasCodexGuardRetryBudget(reqCtx) {
+			markCodexGuardExhausted(reqCtx)
+		}
 	}
 
 	// Duration 使用「当前渠道开始到现在」的累计耗时（覆盖同渠道多URL尝试，不跨渠道）

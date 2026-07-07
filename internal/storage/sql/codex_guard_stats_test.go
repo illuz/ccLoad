@@ -50,7 +50,16 @@ func TestCodexGuardSummaryAndLogFilter(t *testing.T) {
 			ChannelID:       codexCfg.ID,
 			LogSource:       model.LogSourceProxy,
 			StatusCode:      util.StatusCodexReasoningGuard,
-			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2]",
+			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2] [guard_trace=req-a]",
+			ReasoningTokens: 516,
+		},
+		{
+			Time:            model.JSONTime{Time: now},
+			Model:           "gpt-5-codex",
+			ChannelID:       codexCfg.ID,
+			LogSource:       model.LogSourceProxy,
+			StatusCode:      util.StatusCodexReasoningGuard,
+			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2] [guard_trace=req-a]",
 			ReasoningTokens: 516,
 		},
 		{
@@ -59,7 +68,7 @@ func TestCodexGuardSummaryAndLogFilter(t *testing.T) {
 			ChannelID:  codexCfg.ID,
 			LogSource:  model.LogSourceProxy,
 			StatusCode: 200,
-			Message:    "ok [retried_after_codex_guard]",
+			Message:    "ok [retried_after_codex_guard] [guard_trace=req-a]",
 		},
 		{
 			Time:       model.JSONTime{Time: now},
@@ -94,16 +103,22 @@ func TestCodexGuardSummaryAndLogFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCodexGuardSummary failed: %v", err)
 	}
-	if summary.TotalCodexRequests != 3 || summary.HitCount != 1 || summary.RetrySuccessCount != 1 || summary.FinalFailureCount != 0 {
+	if summary.TotalCodexRequests != 4 || summary.HitCount != 2 || summary.RetrySuccessCount != 1 || summary.FinalFailureCount != 1 {
 		t.Fatalf("unexpected summary counts: %+v", summary)
 	}
-	if summary.HitRate < 0.33 || summary.HitRate > 0.34 {
-		t.Fatalf("hit_rate=%v, want ~0.333", summary.HitRate)
+	if summary.RequestHitCount != 1 || summary.RequestRescuedCount != 1 || summary.RequestFailureCount != 0 {
+		t.Fatalf("unexpected request-level summary counts: %+v", summary)
 	}
-	if summary.RetrySuccessRate != 1 {
-		t.Fatalf("retry_success_rate=%v, want 1", summary.RetrySuccessRate)
+	if summary.HitRate != 0.5 {
+		t.Fatalf("hit_rate=%v, want 0.5", summary.HitRate)
 	}
-	if len(summary.ByReasoningTokens) != 1 || summary.ByReasoningTokens[0].Key != "516" || summary.ByReasoningTokens[0].Count != 1 {
+	if summary.RetrySuccessRate != 0.5 {
+		t.Fatalf("retry_success_rate=%v, want 0.5", summary.RetrySuccessRate)
+	}
+	if summary.RequestRescueRate != 1 {
+		t.Fatalf("request_rescue_rate=%v, want 1", summary.RequestRescueRate)
+	}
+	if len(summary.ByReasoningTokens) != 1 || summary.ByReasoningTokens[0].Key != "516" || summary.ByReasoningTokens[0].Count != 2 {
 		t.Fatalf("unexpected reasoning breakdown: %+v", summary.ByReasoningTokens)
 	}
 	if len(summary.ByChannel) != 1 || summary.ByChannel[0].Name != "codex-main" {
@@ -115,8 +130,8 @@ func TestCodexGuardSummaryAndLogFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListLogsRangeWithCount(hit) failed: %v", err)
 	}
-	if hitTotal != 2 {
-		t.Fatalf("hit filter total=%d, want 2 (codex + openai hits)", hitTotal)
+	if hitTotal != 3 {
+		t.Fatalf("hit filter total=%d, want 3 (codex attempts + openai hit)", hitTotal)
 	}
 
 	retryFilter := &model.LogFilter{LogSource: model.LogSourceProxy, CodexGuardMode: model.CodexGuardFilterRetrySuccess}

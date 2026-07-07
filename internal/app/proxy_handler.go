@@ -607,13 +607,21 @@ func (s *Server) writeFinalProxyResponse(
 	} else if finalStatus != http.StatusServiceUnavailable {
 		msg = fmt.Sprintf("upstream status %d", finalStatus)
 	}
+	if lastResult != nil && lastResult.status == util.StatusCodexReasoningGuard {
+		markCodexGuardExhausted(reqCtx)
+	}
+	msg = appendCodexGuardSummaryLogTags(msg, reqCtx)
+	hasCodexGuardFinalTrace := reqCtx != nil &&
+		reqCtx.codexGuardTraceID != "" &&
+		lastResult != nil &&
+		lastResult.status == util.StatusCodexReasoningGuard
 
 	// 过滤不需要汇总日志的场景
 	// - 客户端取消（499）：已在 handleNetworkError 中记录渠道级日志
 	// - 客户端错误（400）：已在渠道级日志记录，汇总日志冗余
 	// - 候选池 ≤1：实际只尝试了 1 个渠道，渠道级日志已完整反映失败原因，汇总日志冗余
 	skipLog := lastResult != nil && (lastResult.isClientCanceled || finalStatus == http.StatusBadRequest)
-	skipLog = skipLog || candidateCount <= 1
+	skipLog = skipLog || (candidateCount <= 1 && !hasCodexGuardFinalTrace)
 	if !skipLog {
 		s.AddLogAsync(&model.LogEntry{
 			Time:        model.JSONTime{Time: reqCtx.startTime},

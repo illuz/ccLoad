@@ -522,6 +522,11 @@
       background: #d1fae5;
     }
 
+    .log-guard-badge--passthrough {
+      color: var(--warning-700);
+      background: var(--warning-100);
+    }
+
     .logs-filter-summary-row {
       display: flex;
       align-items: center;

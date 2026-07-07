@@ -271,6 +271,13 @@
       return `${(n * 100).toFixed(1)}%`;
     }
 
+    function formatCodexGuardSuccessRate(rate, numerator, denominator) {
+      const den = Number(denominator) || 0;
+      const num = Number(numerator) || 0;
+      if (den <= 0) return '--';
+      return `${formatPercentRatio(rate)} (${formatNumber(num)}/${formatNumber(den)})`;
+    }
+
     function setTextContent(id, text) {
       const el = document.getElementById(id);
       if (el) el.textContent = text;
@@ -304,7 +311,16 @@
       setTextContent('codex-guard-retry-success-count', formatNumber(summary.retry_success_count || 0));
       setTextContent('codex-guard-final-failure-count', formatNumber(summary.final_failure_count || 0));
       setTextContent('codex-guard-hit-rate', formatPercentRatio(summary.hit_rate || 0));
-      setTextContent('codex-guard-retry-success-rate', formatPercentRatio(summary.retry_success_rate || 0));
+      setTextContent('codex-guard-retry-success-rate', formatCodexGuardSuccessRate(
+        summary.retry_success_rate || 0,
+        summary.retry_success_count || 0,
+        summary.hit_count || 0
+      ));
+      setTextContent('codex-guard-request-rescue-rate', formatCodexGuardSuccessRate(
+        summary.request_rescue_rate || 0,
+        summary.request_rescued_count || 0,
+        summary.request_hit_count || 0
+      ));
 
       renderCodexGuardTopList('codex-guard-top-reasoning', summary.by_reasoning_tokens, { suffix: ' tok' });
       renderCodexGuardTopList('codex-guard-top-channel', summary.by_channel);

@@ -168,16 +168,21 @@ test('日志页为来源筛选和来源 badge 预留 DOM/CSS 契约', () => {
   assert.match(css, /\.log-source-badge\s*\{/);
 });
 
-test('日志页提供 Codex Guard 筛选和命中/重试 badge 契约', () => {
+test('日志页提供 Codex Guard 筛选和命中/重试/最后放行 badge 契约', () => {
   const filtersHtml = renderLogsFilters();
   assert.match(filtersHtml, /id="f_codex_guard"/);
   assert.match(filtersHtml, /value="hit"/);
   assert.match(filtersHtml, /value="retry_success"/);
   assert.match(logsSource, /CODEX_GUARD_LOG_MARKER/);
   assert.match(logsSource, /CODEX_GUARD_RETRY_MARKER/);
+  assert.match(logsSource, /CODEX_GUARD_LAST_ATTEMPT_PASSTHROUGH_MARKER/);
   assert.match(logsSource, /log-guard-badge--hit/);
   assert.match(logsSource, /log-guard-badge--retry/);
+  assert.match(logsSource, /log-guard-badge--passthrough/);
   assert.match(css, /\.log-guard-badge\s*\{/);
+  assert.match(css, /\.log-guard-badge--passthrough\s*\{/);
+  assert.match(zhLocale, /'logs\.codexGuardLastAttemptPassthroughBadge':\s*'最后放行'/);
+  assert.match(enLocale, /'logs\.codexGuardLastAttemptPassthroughBadge':\s*'Last-pass'/);
 });
 
 test('日志页桌面筛选按钮固定在筛选栏最右侧', () => {

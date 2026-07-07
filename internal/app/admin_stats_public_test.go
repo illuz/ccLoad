@@ -314,7 +314,7 @@ func TestHandlePublicSummaryIncludesCodexGuard(t *testing.T) {
 			ChannelID:       cfg.ID,
 			LogSource:       model.LogSourceProxy,
 			StatusCode:      util.StatusCodexReasoningGuard,
-			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2]",
+			Message:         "upstream status 595 [codex_guard reasoning_tokens=516 match=518n-2] [guard_trace=req-public]",
 			ReasoningTokens: 516,
 		},
 		{
@@ -323,7 +323,7 @@ func TestHandlePublicSummaryIncludesCodexGuard(t *testing.T) {
 			ChannelID:  cfg.ID,
 			LogSource:  model.LogSourceProxy,
 			StatusCode: 200,
-			Message:    "ok [retried_after_codex_guard]",
+			Message:    "ok [retried_after_codex_guard] [guard_trace=req-public]",
 		},
 	}); err != nil {
 		t.Fatalf("BatchAddLogs failed: %v", err)
@@ -345,7 +345,8 @@ func TestHandlePublicSummaryIncludesCodexGuard(t *testing.T) {
 	if !resp.Success {
 		t.Fatalf("expected success=true, body=%s", w.Body.String())
 	}
-	if resp.Data.CodexGuard.HitCount != 1 || resp.Data.CodexGuard.RetrySuccessCount != 1 {
+	if resp.Data.CodexGuard.HitCount != 1 || resp.Data.CodexGuard.RetrySuccessCount != 1 ||
+		resp.Data.CodexGuard.RequestHitCount != 1 || resp.Data.CodexGuard.RequestRescuedCount != 1 {
 		t.Fatalf("unexpected codex_guard summary: %+v", resp.Data.CodexGuard)
 	}
 }

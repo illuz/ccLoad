@@ -206,6 +206,61 @@ func TestAppendRetryStrategyToMessageUsesCompactDisplay(t *testing.T) {
 	}
 }
 
+func TestBuildLogEntry_AppendsCodexGuardTraceID(t *testing.T) {
+	t.Parallel()
+
+	entry := buildLogEntry(logEntryParams{
+		RequestModel:            "gpt-5.5",
+		ChannelID:               1,
+		StatusCode:              util.StatusCodexReasoningGuard,
+		Result:                  &fwResult{Status: util.StatusCodexReasoningGuard, StreamDiagMsg: "codex_guard reasoning_tokens=516 match=518n-2"},
+		CodexGuardTraceID:       "trace-abc",
+		CodexGuardAttempt:       2,
+		HasCodexGuardAttempt:    true,
+		CodexGuardMaxRetries:    1,
+		CodexGuardReceivedBytes: 600 * 1024,
+		CodexGuardDuration:      51.2,
+		CodexGuardExhausted:     true,
+	})
+	for _, want := range []string{
+		"[guard_attempt=2]",
+		"[guard_max_retries=1]",
+		"[guard_received=600.0KB]",
+		"[guard_duration=51.2s]",
+		"[guard_exhausted]",
+		"[guard_trace=trace-abc]",
+	} {
+		if !bytes.Contains([]byte(entry.Message), []byte(want)) {
+			t.Fatalf("message=%q, want tag %s", entry.Message, want)
+		}
+	}
+	if len(entry.Message) > 512 {
+		t.Fatalf("message length=%d, want <=512", len(entry.Message))
+	}
+}
+
+func TestAppendCodexGuardSummaryLogTags(t *testing.T) {
+	t.Parallel()
+
+	reqCtx := &proxyRequestContext{
+		codexGuardTraceID:       "trace-summary",
+		codexGuardHitAttempts:   3,
+		codexGuardReducedBudget: true,
+		codexGuardExhausted:     true,
+	}
+	msg := appendCodexGuardSummaryLogTags("upstream status 502", reqCtx)
+	for _, want := range []string{
+		"[guard_attempts=3]",
+		"[guard_max_retries=1]",
+		"[guard_exhausted]",
+		"[guard_trace=trace-summary]",
+	} {
+		if !bytes.Contains([]byte(msg), []byte(want)) {
+			t.Fatalf("message=%q, want tag %s", msg, want)
+		}
+	}
+}
+
 func TestExtractThinkingEffortPrefersOutputConfigEffortOverThinkingType(t *testing.T) {
 	t.Parallel()
 

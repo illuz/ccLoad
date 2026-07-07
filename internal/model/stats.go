@@ -140,16 +140,20 @@ type CostByChannelTokenRow struct {
 
 // CodexGuardSummary 汇总 Codex reasoning guard 在指定时间范围内的命中与重试恢复情况。
 type CodexGuardSummary struct {
-	TotalCodexRequests int64                  `json:"total_codex_requests"`
-	HitCount           int64                  `json:"hit_count"`
-	RetrySuccessCount  int64                  `json:"retry_success_count"`
-	FinalFailureCount  int64                  `json:"final_failure_count"` // 缺少 request_id 时按 hit-retry_success 估算
-	HitRate            float64                `json:"hit_rate"`
-	RetrySuccessRate   float64                `json:"retry_success_rate"`
-	ByReasoningTokens  []CodexGuardCountEntry `json:"by_reasoning_tokens,omitempty"`
-	ByToken            []CodexGuardCountEntry `json:"by_token,omitempty"`
-	ByChannel          []CodexGuardCountEntry `json:"by_channel,omitempty"`
-	ByModel            []CodexGuardCountEntry `json:"by_model,omitempty"`
+	TotalCodexRequests  int64                  `json:"total_codex_requests"`
+	HitCount            int64                  `json:"hit_count"`
+	RetrySuccessCount   int64                  `json:"retry_success_count"`
+	FinalFailureCount   int64                  `json:"final_failure_count"` // attempt 级估算：hit-retry_success
+	HitRate             float64                `json:"hit_rate"`
+	RetrySuccessRate    float64                `json:"retry_success_rate"` // attempt 级：retry_success_count / hit_count
+	RequestHitCount     int64                  `json:"request_hit_count"`
+	RequestRescuedCount int64                  `json:"request_rescued_count"`
+	RequestFailureCount int64                  `json:"request_failure_count"`
+	RequestRescueRate   float64                `json:"request_rescue_rate"` // request 级：request_rescued_count / request_hit_count
+	ByReasoningTokens   []CodexGuardCountEntry `json:"by_reasoning_tokens,omitempty"`
+	ByToken             []CodexGuardCountEntry `json:"by_token,omitempty"`
+	ByChannel           []CodexGuardCountEntry `json:"by_channel,omitempty"`
+	ByModel             []CodexGuardCountEntry `json:"by_model,omitempty"`
 }
 
 // CodexGuardCountEntry 是 Codex Guard Top N 聚合行。

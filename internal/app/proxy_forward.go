@@ -826,7 +826,11 @@ func (s *Server) handleSuccessResponse(
 	}
 
 	if verdict := evaluateCodexReasoningGuard(reqCtx, result); verdict.Triggered && !result.ResponseCommitted {
-		return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+		if verdict.AllowPassthrough {
+			markCodexGuardPassthroughResult(result, verdict)
+		} else {
+			return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+		}
 	}
 	if deferredWriter != nil && !deferredWriter.Committed() && result.SSEErrorEvent == nil && result.StreamDiagMsg == "" && streamErr == nil {
 		if commitErr := deferredWriter.Commit(); commitErr != nil {
@@ -885,7 +889,9 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 	preGuardResult.ToolCostUSD = parser.GetToolCostUSD()
 	preGuardResult.ThinkingEffort = parser.GetThinkingEffort()
 	if verdict := evaluateCodexReasoningGuard(reqCtx, preGuardResult); verdict.Triggered {
-		return codexGuardBlockedResult(preGuardResult, verdict), reqCtx.Duration().Seconds(), nil
+		if !verdict.AllowPassthrough {
+			return codexGuardBlockedResult(preGuardResult, verdict), reqCtx.Duration().Seconds(), nil
+		}
 	}
 
 	translatedBody, err := s.protocolRegistry.TranslateResponseNonStream(
@@ -930,6 +936,9 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 	result.ServiceTier = parser.ServiceTier
 	result.ToolCostUSD = parser.GetToolCostUSD()
 	result.ThinkingEffort = parser.GetThinkingEffort()
+	if verdict := evaluateCodexReasoningGuard(reqCtx, result); verdict.Triggered && verdict.AllowPassthrough {
+		markCodexGuardPassthroughResult(result, verdict)
+	}
 
 	return result, reqCtx.Duration().Seconds(), nil
 }
@@ -1040,7 +1049,11 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	}
 
 	if verdict := evaluateCodexReasoningGuard(reqCtx, result); verdict.Triggered && !result.ResponseCommitted {
-		return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+		if verdict.AllowPassthrough {
+			markCodexGuardPassthroughResult(result, verdict)
+		} else {
+			return codexGuardBlockedResult(result, verdict), reqCtx.Duration().Seconds(), nil
+		}
 	}
 	if !deferredWriter.Committed() && result.SSEErrorEvent == nil && result.StreamDiagMsg == "" && streamErr == nil {
 		if commitErr := deferredWriter.Commit(); commitErr != nil {
@@ -1184,11 +1197,20 @@ func isSSERateLimitError(body []byte) bool {
 			Type string `json:"type"`
 			Code string `json:"code"`
 		} `json:"error"`
+		Response struct {
+			Error struct {
+				Type string `json:"type"`
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"response"`
 	}
 	if err := sonic.Unmarshal(body, &payload); err != nil {
 		return false
 	}
-	return isRateLimitErrorType(payload.Error.Type) || isRateLimitErrorType(payload.Error.Code)
+	return isRateLimitErrorType(payload.Error.Type) ||
+		isRateLimitErrorType(payload.Error.Code) ||
+		isRateLimitErrorType(payload.Response.Error.Type) ||
+		isRateLimitErrorType(payload.Response.Error.Code)
 }
 
 func isRateLimitErrorType(value string) bool {
@@ -1334,7 +1356,12 @@ func (s *Server) handleResponse(
 // 从proxy.go提取，遵循SRP原则
 // 参数新增 apiKey 用于直接传递已选中的API Key（从KeySelector获取）
 // 参数新增 method 用于支持任意HTTP方法（GET、POST、PUT、DELETE等）
-func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, plan protocol.TransformPlan, hdr http.Header, rawQuery string, baseURL string, w http.ResponseWriter, observer *ForwardObserver, codexGuardEnabled ...bool) (*fwResult, float64, error) {
+type codexGuardAttemptConfig struct {
+	Enabled                  bool
+	PassthroughOnLastAttempt bool
+}
+
+func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, plan protocol.TransformPlan, hdr http.Header, rawQuery string, baseURL string, w http.ResponseWriter, observer *ForwardObserver, guardCfg ...codexGuardAttemptConfig) (*fwResult, float64, error) {
 	// 1. 创建请求上下文（处理超时）
 	reqCtx := s.newRequestContextWithTimeouts(ctx, plan.UpstreamPath, plan.TranslatedBody, s.resolveProtocolTimeouts(cfg, plan))
 	reqCtx.transformPlan = plan
@@ -1343,7 +1370,10 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 	reqCtx.originalBody = plan.OriginalBody
 	reqCtx.translatedBody = plan.TranslatedBody
 	reqCtx.originalModel = plan.ResponseModel()
-	reqCtx.codexGuardEnabled = len(codexGuardEnabled) > 0 && codexGuardEnabled[0]
+	if len(guardCfg) > 0 {
+		reqCtx.codexGuardEnabled = guardCfg[0].Enabled
+		reqCtx.codexGuardPassthroughOnLastAttempt = guardCfg[0].PassthroughOnLastAttempt
+	}
 	defer reqCtx.cleanup() // [INFO] 统一清理：定时器 + context（总是安全）
 
 	if s.protocolRegistry != nil && plan.NeedsTransform {
@@ -1574,7 +1604,7 @@ func (s *Server) forwardAttempt(
 	}
 
 	res, duration, err := s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
-		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, reqCtx.codexGuardEnabled)
+		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, codexGuardAttemptConfigForProxyRequest(reqCtx))
 	if err != nil && errors.Is(err, protocol.ErrUnsupportedRequestShape) {
 		channelID := cfg.ID
 		return &proxyResult{
@@ -1596,7 +1626,7 @@ func (s *Server) forwardAttempt(
 		retryPlan := plan
 		retryPlan.TranslatedBody = retryBody
 		res, duration, err = s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
-			retryPlan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, reqCtx.codexGuardEnabled)
+			retryPlan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, codexGuardAttemptConfigForProxyRequest(reqCtx))
 		if res != nil && res.DebugData != nil {
 			reqCtx.debugData = res.DebugData
 		}
@@ -2113,8 +2143,18 @@ func shouldRetryCodexGuardNextChannel(result *proxyResult, reqCtx *proxyRequestC
 	return isCodexGuardRetryFlowActive(reqCtx) && hasCodexGuardRetryBudget(reqCtx)
 }
 
+func codexGuardAttemptConfigForProxyRequest(reqCtx *proxyRequestContext) codexGuardAttemptConfig {
+	if reqCtx == nil {
+		return codexGuardAttemptConfig{}
+	}
+	return codexGuardAttemptConfig{
+		Enabled:                  reqCtx.codexGuardEnabled,
+		PassthroughOnLastAttempt: !hasCodexGuardRetryBudget(reqCtx),
+	}
+}
+
 func hasCodexGuardRetryBudget(reqCtx *proxyRequestContext) bool {
-	return reqCtx != nil && reqCtx.codexGuardRetries < codexGuardMaxRetries
+	return reqCtx != nil && reqCtx.codexGuardRetries < codexGuardMaxRetriesForRequest(reqCtx)
 }
 
 func isCodexGuardRetryFlowActive(reqCtx *proxyRequestContext) bool {

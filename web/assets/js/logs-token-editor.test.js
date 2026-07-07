@@ -32,6 +32,13 @@ test('日志页令牌编辑器复用 tokens.html 编辑弹窗标记但不加载 
   assert.doesNotMatch(tokenEditorScript, /tokens\.js/);
 });
 
+test('日志页令牌编辑器同步并保存 Codex Guard 开关', () => {
+  assert.match(tokenEditorScript, /const editCodexGuardInput = document\.getElementById\('editCodexGuardEnabled'\);/);
+  assert.match(tokenEditorScript, /editCodexGuardInput\.checked = !!token\.codex_guard_enabled;/);
+  assert.match(tokenEditorScript, /const codexGuardEnabled = !!document\.getElementById\('editCodexGuardEnabled'\)\?\.checked;/);
+  assert.match(tokenEditorScript, /codex_guard_enabled:\s*codexGuardEnabled,/);
+});
+
 test('日志页令牌编辑保存后刷新日志令牌筛选和列表', () => {
   assert.match(tokenEditorScript, /window\.loadAuthTokensIntoSelect\('f_auth_token'/);
   assert.match(tokenEditorScript, /if \(typeof authTokens !== 'undefined'\)/);

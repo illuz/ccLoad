@@ -343,13 +343,9 @@ func TestCodexReasoningGuard_MaxFourRetries(t *testing.T) {
 
 	var attempts atomic.Int32
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempt := attempts.Add(1)
+		attempts.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		if attempt <= int32(1+codexGuardMaxRetries) {
-			_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":9,"output_tokens":9,"output_tokens_details":{"reasoning_tokens":0}}}}`))
+		_, _ = w.Write([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}}`))
 	}))
 	srv.client = upstream.Client()
 
@@ -370,8 +366,7 @@ func TestCodexReasoningGuard_MaxFourRetries(t *testing.T) {
 	}
 
 	body := []byte(`{"model":"gpt-5-codex","input":"hi","stream":false}`)
-	c, _ := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body))))
-	lastResult, succeeded := srv.runProxyAttemptLoop(context.Background(), cands, &proxyRequestContext{
+	reqCtx := &proxyRequestContext{
 		originalModel:     "gpt-5-codex",
 		clientProtocol:    protocol.Codex,
 		requestMethod:     http.MethodPost,
@@ -381,14 +376,137 @@ func TestCodexReasoningGuard_MaxFourRetries(t *testing.T) {
 		header:            http.Header{"Content-Type": []string{"application/json"}},
 		startTime:         time.Now(),
 		codexGuardEnabled: true,
-	}, c.Writer)
-	if succeeded {
-		t.Fatal("succeeded=true, want guard failure after retry budget exhausted")
 	}
-	if lastResult == nil || lastResult.status != util.StatusCodexReasoningGuard || lastResult.nextAction != cooldown.ActionReturnClient {
-		t.Fatalf("lastResult=%+v, want final codex guard failure", lastResult)
+	c, rec := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body))))
+	lastResult, succeeded := srv.runProxyAttemptLoop(context.Background(), cands, reqCtx, c.Writer)
+	if !succeeded || lastResult != nil {
+		t.Fatalf("succeeded=%v lastResult=%+v, want final last-attempt passthrough success", succeeded, lastResult)
 	}
 	if got, want := attempts.Load(), int32(1+codexGuardMaxRetries); got != want {
 		t.Fatalf("attempts=%d, want %d (initial + max guard retries)", got, want)
 	}
+	if !strings.Contains(rec.Body.String(), `"reasoning_tokens":516`) {
+		t.Fatalf("client body=%s, want final guarded upstream body passthrough", rec.Body.String())
+	}
+	if !reqCtx.codexGuardExhausted {
+		t.Fatal("codexGuardExhausted=false, want true after terminal passthrough")
+	}
+	if got, want := reqCtx.codexGuardHitAttempts, 1+codexGuardMaxRetries; got != want {
+		t.Fatalf("codexGuardHitAttempts=%d, want %d", got, want)
+	}
+	entry := waitForCodexGuardLogMarker(t, srv, model.CodexGuardLastAttemptPassthroughMarker)
+	if strings.Contains(entry.Message, model.CodexGuardRetrySuccessMarker) {
+		t.Fatalf("message=%q, want no retry success marker", entry.Message)
+	}
+}
+
+func TestCodexReasoningGuard_LargeResponseCapsRetriesAtOne(t *testing.T) {
+	srv := newInMemoryServer(t)
+	srv.maxKeyRetries = 1
+
+	largeGuardBody := []byte(`{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}}},"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":516}},"padding":"` +
+		strings.Repeat("x", codexGuardReducedBudgetThresholdBytes) + `"}`)
+
+	var attempts atomic.Int32
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(largeGuardBody)
+	}))
+	srv.client = upstream.Client()
+
+	cands := make([]*model.Config, 0, codexGuardMaxRetries+2)
+	for i := 0; i < codexGuardMaxRetries+2; i++ {
+		cfg, err := srv.createChannelFromRequest(context.Background(), ChannelRequest{
+			Name:        fmt.Sprintf("guard-large-budget-%d", i),
+			APIKey:      fmt.Sprintf("sk-large-budget-%d", i),
+			ChannelType: "codex",
+			URL:         upstream.URL,
+			Models:      []model.ModelEntry{{Model: "gpt-5-codex"}},
+			Enabled:     true,
+		})
+		if err != nil {
+			t.Fatalf("create channel %d: %v", i, err)
+		}
+		cands = append(cands, cfg)
+	}
+
+	body := []byte(`{"model":"gpt-5-codex","input":"hi","stream":false}`)
+	reqCtx := &proxyRequestContext{
+		originalModel:     "gpt-5-codex",
+		clientProtocol:    protocol.Codex,
+		requestMethod:     http.MethodPost,
+		requestPath:       "/v1/responses",
+		body:              body,
+		translatedBody:    body,
+		header:            http.Header{"Content-Type": []string{"application/json"}},
+		startTime:         time.Now(),
+		codexGuardEnabled: true,
+	}
+	c, rec := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body))))
+	lastResult, succeeded := srv.runProxyAttemptLoop(context.Background(), cands, reqCtx, c.Writer)
+	if !succeeded || lastResult != nil {
+		t.Fatalf("succeeded=%v lastResult=%+v, want final last-attempt passthrough success", succeeded, lastResult)
+	}
+	if got, want := attempts.Load(), int32(1+codexGuardReducedBudgetMaxRetries); got != want {
+		t.Fatalf("attempts=%d, want %d (initial + large-response max guard retries)", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), `"reasoning_tokens":516`) {
+		t.Fatalf("client body=%s, want final guarded upstream body passthrough", rec.Body.String())
+	}
+	if !reqCtx.codexGuardReducedBudget {
+		t.Fatal("codexGuardReducedBudget=false, want true")
+	}
+	if !reqCtx.codexGuardExhausted {
+		t.Fatal("codexGuardExhausted=false, want true")
+	}
+	if got, want := reqCtx.codexGuardHitAttempts, 1+codexGuardReducedBudgetMaxRetries; got != want {
+		t.Fatalf("codexGuardHitAttempts=%d, want %d", got, want)
+	}
+	entry := waitForCodexGuardLogMarker(t, srv, model.CodexGuardLastAttemptPassthroughMarker)
+	if strings.Contains(entry.Message, model.CodexGuardRetrySuccessMarker) {
+		t.Fatalf("message=%q, want no retry success marker", entry.Message)
+	}
+}
+
+func TestCodexReasoningGuard_SlowAttemptReducesRetryBudgetForRequest(t *testing.T) {
+	reqCtx := &proxyRequestContext{}
+
+	observeCodexGuardResponse(reqCtx, &fwResult{BytesReceived: 1}, codexGuardReducedBudgetThresholdSeconds)
+	if reqCtx.codexGuardReducedBudget {
+		t.Fatal("budget reduced at exact threshold, want only > threshold")
+	}
+	if got := codexGuardMaxRetriesForRequest(reqCtx); got != codexGuardMaxRetries {
+		t.Fatalf("max retries=%d, want default %d", got, codexGuardMaxRetries)
+	}
+
+	observeCodexGuardResponse(reqCtx, &fwResult{BytesReceived: 1}, codexGuardReducedBudgetThresholdSeconds+0.1)
+	if !reqCtx.codexGuardReducedBudget {
+		t.Fatal("codexGuardReducedBudget=false, want true after slow attempt")
+	}
+	if got := codexGuardMaxRetriesForRequest(reqCtx); got != codexGuardReducedBudgetMaxRetries {
+		t.Fatalf("max retries=%d, want reduced %d", got, codexGuardReducedBudgetMaxRetries)
+	}
+}
+
+func waitForCodexGuardLogMarker(t testing.TB, srv *Server, marker string) *model.LogEntry {
+	t.Helper()
+
+	ctx := context.Background()
+	since := time.Now().Add(-time.Minute)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, err := srv.store.ListLogs(ctx, since, 50, 0, &model.LogFilter{LogSource: model.LogSourceProxy})
+		if err != nil {
+			t.Fatalf("ListLogs failed: %v", err)
+		}
+		for _, entry := range logs {
+			if strings.Contains(entry.Message, marker) {
+				return entry
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("proxy log with marker %q not found within deadline", marker)
+	return nil
 }

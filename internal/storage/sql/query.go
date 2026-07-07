@@ -81,10 +81,11 @@ func (wb *WhereBuilder) ApplyLogFilter(filter *model.LogFilter) *WhereBuilder {
 	}
 	switch model.NormalizeCodexGuardFilterMode(filter.CodexGuardMode) {
 	case model.CodexGuardFilterAll:
-		wb.AddCondition("(status_code = ? OR message LIKE ? OR message LIKE ?)",
+		wb.AddCondition("(status_code = ? OR message LIKE ? OR message LIKE ? OR message LIKE ?)",
 			util.StatusCodexReasoningGuard,
 			"%"+model.CodexGuardLogMarker+"%",
 			"%"+model.CodexGuardRetrySuccessMarker+"%",
+			"%"+model.CodexGuardTraceMarker+"%",
 		)
 	case model.CodexGuardFilterHit:
 		wb.AddCondition("(status_code = ? OR (message LIKE ? AND message NOT LIKE ?))",

@@ -18,11 +18,19 @@ const (
 )
 
 const (
-	CodexGuardLogMarker          = "codex_guard"
-	CodexGuardRetrySuccessMarker = "retried_after_codex_guard"
-	CodexGuardFilterAll          = "all"
-	CodexGuardFilterHit          = "hit"
-	CodexGuardFilterRetrySuccess = "retry_success"
+	CodexGuardLogMarker                    = "codex_guard"
+	CodexGuardRetrySuccessMarker           = "retried_after_codex_guard"
+	CodexGuardLastAttemptPassthroughMarker = "guard_last_attempt_passthrough"
+	CodexGuardTraceMarker                  = "guard_trace"
+	CodexGuardAttemptMarker                = "guard_attempt"
+	CodexGuardAttemptsMarker               = "guard_attempts"
+	CodexGuardMaxRetriesMarker             = "guard_max_retries"
+	CodexGuardReceivedMarker               = "guard_received"
+	CodexGuardDurationMarker               = "guard_duration"
+	CodexGuardExhaustedMarker              = "guard_exhausted"
+	CodexGuardFilterAll                    = "all"
+	CodexGuardFilterHit                    = "hit"
+	CodexGuardFilterRetrySuccess           = "retry_success"
 )
 
 // NormalizeStoredLogSource maps stored or legacy log sources to supported persisted values.

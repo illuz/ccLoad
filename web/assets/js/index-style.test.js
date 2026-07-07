@@ -39,6 +39,9 @@ test('首页在渠道卡片和总览状态栏之间展示 Codex Guard 卡片', (
   assert.match(html, /id="codex-guard-card"/);
   assert.match(html, /id="codex-guard-hit-count"/);
   assert.match(html, /id="codex-guard-retry-success-count"/);
+  assert.match(html, /id="codex-guard-request-rescue-rate"/);
+  assert.match(html, /data-i18n="index\.codexGuard\.attemptRetrySuccessRate"/);
+  assert.match(html, /data-i18n="index\.codexGuard\.requestRescueRate"/);
   assert.match(html, /id="codex-guard-top-reasoning"/);
   assert.match(css, /\.codex-guard-card\s*\{/);
   assert.match(css, /\.codex-guard-metrics\s*\{/);

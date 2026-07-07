@@ -100,6 +100,9 @@ type fwResult struct {
 	// 重试策略（例如 Codex 400 后剥离 reasoning/thinking 再成功）
 	RetryStrategy string
 
+	// CodexGuardPassthrough 表示本次成功响应命中了 Guard，但因已到最后一次而放行返回 2xx。
+	CodexGuardPassthrough bool
+
 	// 上游响应字节数（2026-02新增）
 	// 用于499场景诊断：区分客户端在首字节前取消还是接收部分数据后取消
 	BytesReceived int64
@@ -134,29 +137,34 @@ type ForwardObserver struct {
 
 // proxyRequestContext 代理请求上下文（封装请求信息，遵循DIP原则）
 type proxyRequestContext struct {
-	originalModel     string
-	clientProtocol    protocol.Protocol
-	requestMethod     string
-	requestPath       string
-	rawQuery          string
-	body              []byte
-	translatedBody    []byte
-	header            http.Header
-	isStreaming       bool
-	tokenHash         string               // Token哈希值（用于统计）
-	tokenID           int64                // Token ID（用于日志记录，0表示未使用token）
-	codexGuardEnabled bool                 // 当前访问令牌是否启用 Codex reasoning guard
-	codexGuardRetries int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
-	clientIP          string               // 客户端IP地址（用于日志记录）
-	activeReqID       int64                // 活跃请求ID（用于更新渠道信息）
-	observer          *ForwardObserver     // 转发观测回调（可选）
-	startTime         time.Time            // 请求开始时间（用于统计）
-	channelStartTime  time.Time            // 当前渠道尝试开始时间（每次切换渠道时重置）
-	attemptStartTime  time.Time            // 渠道内单次 Key/URL 尝试开始时间
-	baseURL           string               // 当前尝试使用的上游URL（多URL场景）
-	debugData         *model.DebugLogEntry // Debug日志数据（debug开启时填充）
-	thinkingEffort    string
-	timing            *proxyTimingTrace
+	originalModel           string
+	clientProtocol          protocol.Protocol
+	requestMethod           string
+	requestPath             string
+	rawQuery                string
+	body                    []byte
+	translatedBody          []byte
+	header                  http.Header
+	isStreaming             bool
+	tokenHash               string               // Token哈希值（用于统计）
+	tokenID                 int64                // Token ID（用于日志记录，0表示未使用token）
+	codexGuardEnabled       bool                 // 当前访问令牌是否启用 Codex reasoning guard
+	codexGuardRetries       int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
+	codexGuardTraceID       string               // 本次客户端请求的 Codex Guard 重试追踪 ID
+	codexGuardHitAttempts   int                  // 本次客户端请求内实际命中 Guard 的 attempt 数
+	codexGuardLastDuration  float64              // 最近一次 Guard attempt 实际耗时（秒）
+	codexGuardReducedBudget bool                 // 本次 Guard 链路中是否因大响应/慢响应降低重试预算
+	codexGuardExhausted     bool                 // 本次 Guard 链路是否已确认不再继续重试
+	clientIP                string               // 客户端IP地址（用于日志记录）
+	activeReqID             int64                // 活跃请求ID（用于更新渠道信息）
+	observer                *ForwardObserver     // 转发观测回调（可选）
+	startTime               time.Time            // 请求开始时间（用于统计）
+	channelStartTime        time.Time            // 当前渠道尝试开始时间（每次切换渠道时重置）
+	attemptStartTime        time.Time            // 渠道内单次 Key/URL 尝试开始时间
+	baseURL                 string               // 当前尝试使用的上游URL（多URL场景）
+	debugData               *model.DebugLogEntry // Debug日志数据（debug开启时填充）
+	thinkingEffort          string
+	timing                  *proxyTimingTrace
 }
 
 // proxyResult 代理请求结果
@@ -762,24 +770,32 @@ func stringMapValue(values map[string]any, key string) string {
 
 // logEntryParams 日志条目构建参数（避免多个 string 参数顺序混淆）
 type logEntryParams struct {
-	RequestModel   string // 客户端请求的原始模型名称
-	ActualModel    string // 实际转发到上游的模型名称（可能经过重定向）
-	Channel        *model.Config
-	ChannelID      int64
-	StatusCode     int
-	Duration       float64
-	IsStreaming    bool
-	APIKeyUsed     string
-	AuthTokenID    int64
-	ClientIP       string
-	BaseURL        string // 请求使用的上游URL
-	Result         *fwResult
-	ErrMsg         string
-	StartTime      time.Time            // 渠道尝试开始时间（用于日志记录）
-	DebugData      *model.DebugLogEntry // Debug日志数据
-	CostMultiplier float64              // 渠道成本倍率快照（0=免费，<0 视为 1）
-	ThinkingEffort string
-	TimingSummary  string
+	RequestModel            string // 客户端请求的原始模型名称
+	ActualModel             string // 实际转发到上游的模型名称（可能经过重定向）
+	Channel                 *model.Config
+	ChannelID               int64
+	StatusCode              int
+	Duration                float64
+	IsStreaming             bool
+	APIKeyUsed              string
+	AuthTokenID             int64
+	ClientIP                string
+	BaseURL                 string // 请求使用的上游URL
+	Result                  *fwResult
+	ErrMsg                  string
+	StartTime               time.Time            // 渠道尝试开始时间（用于日志记录）
+	DebugData               *model.DebugLogEntry // Debug日志数据
+	CostMultiplier          float64              // 渠道成本倍率快照（0=免费，<0 视为 1）
+	ThinkingEffort          string
+	TimingSummary           string
+	CodexGuardTraceID       string
+	CodexGuardAttempt       int
+	HasCodexGuardAttempt    bool
+	CodexGuardAttempts      int
+	CodexGuardMaxRetries    int
+	CodexGuardReceivedBytes int64
+	CodexGuardDuration      float64
+	CodexGuardExhausted     bool
 }
 
 // buildLogEntry 构建日志条目（消除重复代码，遵循DRY原则）
@@ -879,8 +895,64 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 	if p.TimingSummary != "" {
 		entry.Message = appendTimingSummary(entry.Message, p.TimingSummary)
 	}
+	if p.HasCodexGuardAttempt {
+		entry.Message = appendBoundedLogTag(entry.Message, fmt.Sprintf("%s=%d", model.CodexGuardAttemptMarker, p.CodexGuardAttempt))
+	}
+	if p.CodexGuardAttempts > 0 {
+		entry.Message = appendBoundedLogTag(entry.Message, fmt.Sprintf("%s=%d", model.CodexGuardAttemptsMarker, p.CodexGuardAttempts))
+	}
+	if p.CodexGuardMaxRetries > 0 {
+		entry.Message = appendBoundedLogTag(entry.Message, fmt.Sprintf("%s=%d", model.CodexGuardMaxRetriesMarker, p.CodexGuardMaxRetries))
+	}
+	if p.CodexGuardReceivedBytes > 0 {
+		entry.Message = appendBoundedLogTag(entry.Message, fmt.Sprintf("%s=%s", model.CodexGuardReceivedMarker, formatBytes(p.CodexGuardReceivedBytes)))
+	}
+	if p.CodexGuardDuration > 0 {
+		entry.Message = appendBoundedLogTag(entry.Message, fmt.Sprintf("%s=%.1fs", model.CodexGuardDurationMarker, p.CodexGuardDuration))
+	}
+	if p.CodexGuardExhausted {
+		entry.Message = appendBoundedLogTag(entry.Message, model.CodexGuardExhaustedMarker)
+	}
+	if p.CodexGuardTraceID != "" {
+		entry.Message = appendBoundedLogTag(entry.Message, model.CodexGuardTraceMarker+"="+p.CodexGuardTraceID)
+	}
 	entry.DebugData = p.DebugData
 	return entry
+}
+
+func appendBoundedLogTag(message, tag string) string {
+	message = strings.TrimSpace(message)
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return truncateErr(message)
+	}
+	if message == "" {
+		return truncateErr("[" + tag + "]")
+	}
+	suffix := " [" + tag + "]"
+	const maxLen = 512
+	if len(message)+len(suffix) <= maxLen {
+		return message + suffix
+	}
+	keep := maxLen - len(suffix)
+	if keep <= 0 {
+		return truncateErr(strings.TrimSpace(suffix))
+	}
+	return strings.TrimSpace(message[:keep]) + suffix
+}
+
+func appendCodexGuardSummaryLogTags(message string, reqCtx *proxyRequestContext) string {
+	if reqCtx == nil || reqCtx.codexGuardTraceID == "" {
+		return message
+	}
+	if reqCtx.codexGuardHitAttempts > 0 {
+		message = appendBoundedLogTag(message, fmt.Sprintf("%s=%d", model.CodexGuardAttemptsMarker, reqCtx.codexGuardHitAttempts))
+	}
+	message = appendBoundedLogTag(message, fmt.Sprintf("%s=%d", model.CodexGuardMaxRetriesMarker, codexGuardMaxRetriesForRequest(reqCtx)))
+	if reqCtx.codexGuardExhausted {
+		message = appendBoundedLogTag(message, model.CodexGuardExhaustedMarker)
+	}
+	return appendBoundedLogTag(message, model.CodexGuardTraceMarker+"="+reqCtx.codexGuardTraceID)
 }
 
 func appendTimingSummary(message, timing string) string {
