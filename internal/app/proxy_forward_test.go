@@ -117,6 +117,10 @@ func TestClassifySSEErrorStatus_RateLimits(t *testing.T) {
 			name: "too_many_requests",
 			body: []byte(`{"type":"error","error":{"type":"too_many_requests","code":"too_many_requests","headers":{"x-ms-fe-error":"true"},"message":"Too Many Requests","param":null},"sequence_number":2}`),
 		},
+		{
+			name: "responses_failed_nested_rate_limit_exceeded",
+			body: []byte(`{"type":"response.failed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for user, please retry later"}}}`),
+		},
 	}
 
 	for _, tt := range tests {

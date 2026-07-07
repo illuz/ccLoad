@@ -479,10 +479,13 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	// 问题：anyrouter等聚合服务使用非标准事件类型（如"."），导致usage丢失
 	// 方案：改为黑名单模式 - 只过滤已知无用事件，其他都尝试解析
 
-	// [WARN] 特殊处理：error事件（记录日志 + 存储错误体用于后续冷却处理）
-	if eventType == "error" {
-		log.Printf("[WARN]  [SSE错误事件] 上游返回error事件: %s", data)
-		// [INFO] 新增：存储错误事件的完整JSON（用于流结束后触发冷却逻辑）
+	// [WARN] 特殊处理：SSE错误事件（记录日志 + 存储错误体用于后续冷却/重试处理）
+	// 除标准 event:error 外，OpenAI Responses API 会用 event:response.failed
+	// 返回 200 OK + 失败终态。它不是正常输出，必须在首个客户端写入前中止本次尝试，
+	// 否则会被误记为 ok，且无法切换到其他 Key/渠道。
+	if isSSEFailureEvent(eventType, data) {
+		log.Printf("[WARN]  [SSE错误事件] 上游返回失败事件: %s", data)
+		// [INFO] 存储错误事件的完整JSON（用于流结束后触发冷却/重试逻辑）
 		p.lastError = []byte(data)
 		return nil // 不解析usage，避免误判
 	}
@@ -491,7 +494,9 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 		return nil
 	}
 
-	p.hasStreamOutput = true
+	if !isMetadataOnlySSEEvent(eventType, data) {
+		p.hasStreamOutput = true
+	}
 
 	// 已知无用事件（不包含usage）
 	ignoredEvents := []string{
@@ -540,6 +545,51 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	p.applyToolUsageFromPayload(event)
 
 	return nil
+}
+
+func isSSEFailureEvent(eventType, data string) bool {
+	if eventType == "error" || eventType == "response.failed" {
+		return true
+	}
+	if data == "" {
+		return false
+	}
+	var event struct {
+		Type     string `json:"type"`
+		Response struct {
+			Status string          `json:"status"`
+			Error  json.RawMessage `json:"error"`
+		} `json:"response"`
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(data), &event); err != nil {
+		return false
+	}
+	if event.Type == "error" || event.Type == "response.failed" {
+		return true
+	}
+	return event.Response.Status == "failed" && len(event.Response.Error) > 0
+}
+
+func isMetadataOnlySSEEvent(eventType, data string) bool {
+	if eventType == "response.created" || eventType == "response.in_progress" || eventType == "response.queued" {
+		return true
+	}
+	if data == "" {
+		return false
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(data), &event); err != nil {
+		return false
+	}
+	switch event.Type {
+	case "response.created", "response.in_progress", "response.queued":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetUsage 获取累积的usage统计

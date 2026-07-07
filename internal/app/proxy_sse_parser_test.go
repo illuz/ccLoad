@@ -130,6 +130,22 @@ func TestSSEUsageParser_StreamOutputIgnoresHeartbeat(t *testing.T) {
 	}
 }
 
+func TestSSEUsageParser_ResponseFailedIsErrorNotOutput(t *testing.T) {
+	parser := newSSEUsageParser("codex")
+	chunk := "event: response.failed\n" +
+		`data: {"type":"response.failed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for user, please retry later"}}}` + "\n\n"
+
+	if err := parser.Feed([]byte(chunk)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.GetLastError() == nil {
+		t.Fatalf("response.failed must be captured as SSE error")
+	}
+	if parser.HasStreamOutput() {
+		t.Fatalf("response.failed must not count as stream output")
+	}
+}
+
 // ============================================================================
 // 边界测试：分块读取（真实SSE流场景）
 // ============================================================================

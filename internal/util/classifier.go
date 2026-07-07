@@ -117,6 +117,13 @@ type sseErrorResponse struct {
 		Code    string `json:"code"` // 其他渠道使用
 		Message string `json:"message"`
 	} `json:"error"`
+	Response struct {
+		Error struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	} `json:"response"`
 }
 
 type structuredQuotaErrorResponse struct {
@@ -151,7 +158,20 @@ func (r *sseErrorResponse) ErrorType() string {
 	if r.Error.Type != "" {
 		return r.Error.Type
 	}
-	return r.Error.Code
+	if r.Error.Code != "" {
+		return r.Error.Code
+	}
+	if r.Response.Error.Type != "" {
+		return r.Response.Error.Type
+	}
+	return r.Response.Error.Code
+}
+
+func (r *sseErrorResponse) ErrorMessage() string {
+	if r.Error.Message != "" {
+		return r.Error.Message
+	}
+	return r.Response.Error.Message
 }
 
 // statusCodeMetaMap 状态码元数据映射表
@@ -766,7 +786,7 @@ func ParseResetTimeFrom1308Error(responseBody []byte) (time.Time, bool) {
 
 	// 3. 使用正则从message中提取时间字符串（不依赖具体语言文案）
 	// 匹配格式: YYYY-MM-DD HH:MM:SS
-	timeStr := resetTime1308Regex.FindString(errResp.Error.Message)
+	timeStr := resetTime1308Regex.FindString(errResp.ErrorMessage())
 	if timeStr == "" {
 		return time.Time{}, false
 	}

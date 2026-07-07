@@ -4075,3 +4075,114 @@ func TestProxy_SSEErrorEventBeforeClientOutput_RetriesNextChannel(t *testing.T) 
 		t.Fatalf("expected second channel to be tried once, got %d", secondCalls.Load())
 	}
 }
+
+func TestProxy_ResponseFailedBeforeClientOutput_RetriesNextChannel(t *testing.T) {
+	t.Parallel()
+
+	var firstCalls atomic.Int32
+	upstream1 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		// response.created 是元事件，不应让代理过早向客户端提交响应；
+		// 随后的 response.failed 必须被识别为错误并触发重试。
+		_, _ = fmt.Fprint(w, "event: response.created\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5.4"}}`+"\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = fmt.Fprint(w, "event: response.failed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.failed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for user, please retry later"}}}`+"\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstream1.Close()
+
+	var secondCalls atomic.Int32
+	upstream2 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		chunks := []string{
+			`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","delta":"from-ch2"}`,
+			`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		}
+		for _, chunk := range chunks {
+			_, _ = fmt.Fprintf(w, "%s\n\n", chunk)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer upstream2.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "codex-rate-limited", channelType: util.ChannelTypeCodex, models: "gpt-5.4", apiKey: "sk-1", priority: 100},
+		{name: "codex-ok", channelType: util.ChannelTypeCodex, models: "gpt-5.4", apiKey: "sk-2", priority: 50},
+	}, map[int]string{0: upstream1.URL, 1: upstream2.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/responses", map[string]any{
+		"model":  "gpt-5.4",
+		"stream": true,
+		"input":  "hi",
+	}, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after retrying next channel, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "from-ch2") {
+		t.Fatalf("expected response body from second channel, got: %s", body)
+	}
+	if strings.Contains(body, "rate_limit_exceeded") || strings.Contains(body, "response.failed") {
+		t.Fatalf("expected first channel response.failed not to leak to client, body: %s", body)
+	}
+	if firstCalls.Load() != 1 {
+		t.Fatalf("expected first channel to be tried once, got %d", firstCalls.Load())
+	}
+	if secondCalls.Load() != 1 {
+		t.Fatalf("expected second channel to be tried once, got %d", secondCalls.Load())
+	}
+}
+
+func TestProxy_ResponseFailedWithoutFallbackReturnsErrorCode(t *testing.T) {
+	t.Parallel()
+
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "event: response.failed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.failed","response":{"id":"resp_1","object":"response","model":"gpt-5.4","status":"failed","output":[],"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for user, please retry later"}}}`+"\n\n")
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "codex-rate-limited", channelType: util.ChannelTypeCodex, models: "gpt-5.4", apiKey: "sk-1"},
+	}, map[int]string{0: upstream.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/responses", map[string]any{
+		"model":  "gpt-5.4",
+		"stream": true,
+		"input":  "hi",
+	}, nil)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "rate_limit_exceeded") {
+		t.Fatalf("expected response.failed error code in body, got: %s", body)
+	}
+
+	entry := waitForProxyLog(t, env, "gpt-5.4")
+	if entry.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("log status=%d, want 429", entry.StatusCode)
+	}
+	if entry.Message == "ok" || !strings.Contains(entry.Message, "rate_limit_exceeded") {
+		t.Fatalf("log message=%q, want error code not ok", entry.Message)
+	}
+}
