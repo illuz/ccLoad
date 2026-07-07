@@ -52,7 +52,9 @@ const updateTokenStatsQuery = `
 		success_count = success_count + CASE WHEN ? = 1 THEN 1 ELSE 0 END,
 		failure_count = failure_count + CASE WHEN ? = 1 THEN 1 ELSE 0 END,
 
-		-- 只有成功请求才累加 token 与费用（与内存费用缓存语义保持一致）
+		-- 只有可计费请求才累加 token 与费用（与内存费用缓存语义保持一致）。
+		-- 注意：Codex Guard 命中等场景对客户端表现为失败/重试，但上游已产生实际消耗，
+		-- 因此计数成功/失败与是否计费需要分开。
 		prompt_tokens_total = prompt_tokens_total + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		completion_tokens_total = completion_tokens_total + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		cache_read_tokens_total = cache_read_tokens_total + CASE WHEN ? = 1 THEN ? ELSE 0 END,
@@ -765,6 +767,7 @@ func (s *SQLStore) UpdateTokenLastUsed(ctx context.Context, tokenHash string, no
 // 参数:
 //   - tokenHash: Token的SHA256哈希值
 //   - isSuccess: 本次请求是否成功(2xx状态码)
+//   - isBillable: 是否应累计 token 与费用（成功请求默认应为 true；Guard 命中等已产生上游消耗的失败请求也应为 true）
 //   - duration: 总响应时间(秒)
 //   - isStreaming: 是否为流式请求
 //   - firstByteTime: 流式请求的首字节时间(秒)，非流式时为0
@@ -775,6 +778,7 @@ func (s *SQLStore) UpdateTokenStats(
 	ctx context.Context,
 	tokenHash string,
 	isSuccess bool,
+	isBillable bool,
 	duration float64,
 	isStreaming bool,
 	firstByteTime float64,
@@ -788,6 +792,7 @@ func (s *SQLStore) UpdateTokenStats(
 	// 这对 SQLite（减少写锁持有时间/往返）和 MySQL（减少往返/行锁竞争）都更友好。
 	successFlag := boolToInt(isSuccess)
 	failureFlag := boolToInt(!isSuccess)
+	billableFlag := boolToInt(isSuccess || isBillable)
 	streamUpdateFlag := boolToInt(isStreaming && firstByteTime > 0)
 	nonStreamUpdateFlag := boolToInt(!isStreaming)
 	nowMs := time.Now().UnixMilli()
@@ -797,14 +802,14 @@ func (s *SQLStore) UpdateTokenStats(
 	result, err := s.db.ExecContext(ctx, updateTokenStatsQuery,
 		successFlag,
 		failureFlag,
-		successFlag, promptTokens,
-		successFlag, completionTokens,
-		successFlag, cacheReadTokens,
-		successFlag, cacheCreationTokens,
-		successFlag, costUSD,
-		successFlag, costMicroUSD,
-		successFlag, currentDayKey, costMicroUSD, costMicroUSD,
-		successFlag, currentDayKey, currentDayKey,
+		billableFlag, promptTokens,
+		billableFlag, completionTokens,
+		billableFlag, cacheReadTokens,
+		billableFlag, cacheCreationTokens,
+		billableFlag, costUSD,
+		billableFlag, costMicroUSD,
+		billableFlag, currentDayKey, costMicroUSD, costMicroUSD,
+		billableFlag, currentDayKey, currentDayKey,
 		streamUpdateFlag, firstByteTime,
 		streamUpdateFlag,
 		nonStreamUpdateFlag, duration,

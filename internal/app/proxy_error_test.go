@@ -100,6 +100,7 @@ func (s *failingTokenStatsStore) UpdateTokenStats(
 	context.Context,
 	string,
 	bool,
+	bool,
 	float64,
 	bool,
 	float64,
@@ -129,6 +130,7 @@ func TestApplyTokenStatsUpdateAddsCostToCacheWhenStoreFails(t *testing.T) {
 	srv.applyTokenStatsUpdate(tokenStatsUpdate{
 		tokenHash:      tokenHash,
 		isSuccess:      true,
+		isBillable:     true,
 		costUSD:        0.0002,
 		costMultiplier: 1,
 	})
@@ -139,6 +141,100 @@ func TestApplyTokenStatsUpdateAddsCostToCacheWhenStoreFails(t *testing.T) {
 	}
 	if limit != 1000 || exceeded {
 		t.Fatalf("limit/exceeded=(%d,%v), want (1000,false)", limit, exceeded)
+	}
+}
+
+func TestUpdateTokenStatsIncludesToolCost(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("CreateSQLiteStore failed: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	const tokenHash = "tool-cost-token"
+	if err := store.CreateAuthToken(context.Background(), &model.AuthToken{
+		Token:       tokenHash,
+		Description: "tool cost token",
+		IsActive:    true,
+	}); err != nil {
+		t.Fatalf("CreateAuthToken failed: %v", err)
+	}
+
+	srv := &Server{
+		store:        store,
+		tokenStatsCh: make(chan tokenStatsUpdate, 1),
+	}
+	srv.isShuttingDown.Store(true) // force synchronous write for deterministic assertion
+
+	const toolCostUSD = 0.041592
+	srv.updateTokenStatsAsync(tokenHash, nil, "unknown-tool-model", 1, true, 0.2, false, &fwResult{
+		Status:      http.StatusOK,
+		ToolCostUSD: toolCostUSD,
+	}, "unknown-tool-model")
+
+	got, err := store.GetAuthTokenByValue(context.Background(), tokenHash)
+	if err != nil {
+		t.Fatalf("GetAuthTokenByValue failed: %v", err)
+	}
+	if !floatEquals(got.TotalCostUSD, toolCostUSD, 0.000001) {
+		t.Fatalf("TotalCostUSD = %.6f, want %.6f", got.TotalCostUSD, toolCostUSD)
+	}
+	if want := util.USDToMicroUSD(toolCostUSD); got.CostUsedMicroUSD != want || got.DailyCostUsedMicroUSD != want {
+		t.Fatalf("cost counters = total:%d daily:%d, want %d", got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD, want)
+	}
+}
+
+func TestUpdateTokenStatsBillsCodexGuardHitWithoutSuccessCount(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("CreateSQLiteStore failed: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	const tokenHash = "guard-cost-token"
+	if err := store.CreateAuthToken(context.Background(), &model.AuthToken{
+		Token:       tokenHash,
+		Description: "guard cost token",
+		IsActive:    true,
+	}); err != nil {
+		t.Fatalf("CreateAuthToken failed: %v", err)
+	}
+
+	srv := &Server{
+		store:        store,
+		tokenStatsCh: make(chan tokenStatsUpdate, 1),
+	}
+	srv.isShuttingDown.Store(true) // force synchronous write for deterministic assertion
+
+	res := &fwResult{
+		Status:          util.StatusCodexReasoningGuard,
+		InputTokens:     100,
+		OutputTokens:    10,
+		ReasoningTokens: 516,
+	}
+	const modelName = "gpt-5.1-codex"
+	expectedCost := computeRequestCost(nil, modelName, modelName, "", res)
+	if expectedCost <= 0 {
+		t.Fatalf("test model cost = %.6f, want > 0", expectedCost)
+	}
+
+	srv.updateTokenStatsAsync(tokenHash, nil, modelName, 1, false, 0.2, false, res, modelName)
+
+	got, err := store.GetAuthTokenByValue(context.Background(), tokenHash)
+	if err != nil {
+		t.Fatalf("GetAuthTokenByValue failed: %v", err)
+	}
+	if got.SuccessCount != 0 || got.FailureCount != 1 {
+		t.Fatalf("counts = success:%d failure:%d, want success:0 failure:1", got.SuccessCount, got.FailureCount)
+	}
+	if got.PromptTokensTotal != 100 || got.CompletionTokensTotal != 10 {
+		t.Fatalf("token totals = prompt:%d completion:%d, want prompt:100 completion:10", got.PromptTokensTotal, got.CompletionTokensTotal)
+	}
+	if !floatEquals(got.TotalCostUSD, expectedCost, 0.000001) {
+		t.Fatalf("TotalCostUSD = %.6f, want %.6f", got.TotalCostUSD, expectedCost)
+	}
+	if want := util.USDToMicroUSD(expectedCost); got.CostUsedMicroUSD != want || got.DailyCostUsedMicroUSD != want {
+		t.Fatalf("cost counters = total:%d daily:%d, want %d", got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD, want)
 	}
 }
 

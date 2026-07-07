@@ -231,12 +231,14 @@ func hasConsumedTokens(res *fwResult) bool {
 		return false
 	}
 	return res.InputTokens > 0 || res.OutputTokens > 0 ||
-		res.CacheReadInputTokens > 0 || res.CacheCreationInputTokens > 0
+		res.ReasoningTokens > 0 || res.CacheReadInputTokens > 0 ||
+		res.CacheCreationInputTokens > 0 || res.Cache5mInputTokens > 0 || res.Cache1hInputTokens > 0
 }
 
 type tokenStatsUpdate struct {
 	tokenHash           string
 	isSuccess           bool
+	isBillable          bool
 	duration            float64
 	isStreaming         bool
 	firstByteTime       float64
@@ -282,7 +284,7 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 	defer cancel()
 
 	// 内存缓存是费用限额的实时权威来源。DB 落盘失败不能让限额 fail-open。
-	if upd.isSuccess && upd.costUSD > 0 && s.authService != nil {
+	if upd.isBillable && upd.costUSD > 0 && s.authService != nil {
 		multiplier := upd.costMultiplier
 		if multiplier < 0 {
 			multiplier = 1
@@ -294,7 +296,7 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 		}
 	}
 
-	if err := s.store.UpdateTokenStats(updateCtx, upd.tokenHash, upd.isSuccess, upd.duration, upd.isStreaming, upd.firstByteTime, upd.promptTokens, upd.completionTokens, upd.cacheReadTokens, upd.cacheCreationTokens, upd.costUSD); err != nil {
+	if err := s.store.UpdateTokenStats(updateCtx, upd.tokenHash, upd.isSuccess, upd.isBillable, upd.duration, upd.isStreaming, upd.firstByteTime, upd.promptTokens, upd.completionTokens, upd.cacheReadTokens, upd.cacheCreationTokens, upd.costUSD); err != nil {
 		// Token 被删除是正常的并发场景（请求进行中 token 被删除），静默忽略
 		if strings.Contains(err.Error(), "token not found") {
 			return
@@ -313,7 +315,7 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 //   - isSuccess: 请求是否成功
 //   - duration: 请求耗时
 //   - isStreaming: 是否流式请求
-//   - res: 转发结果（成功时用于提取token数量，失败时传nil）
+//   - res: 转发结果（成功或已产生上游消耗的失败/Guard attempt 用于提取 token 与费用）
 //   - actualModel: 实际模型名称（用于计费）
 func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requestModel string, costMultiplier float64, isSuccess bool, duration float64, isStreaming bool, res *fwResult, actualModel string) {
 	if tokenHash == "" || s.tokenStatsCh == nil {
@@ -327,12 +329,13 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requ
 	if res != nil {
 		firstByteTime = res.FirstByteTime
 	}
-	if isSuccess && res != nil {
+	isBillable := isSuccess || (res != nil && (hasConsumedTokens(res) || res.ToolCostUSD > 0))
+	if isBillable && res != nil {
 		promptTokens = int64(res.InputTokens)
 		completionTokens = int64(res.OutputTokens)
 		cacheReadTokens = int64(res.CacheReadInputTokens)
 		cacheCreationTokens = int64(res.CacheCreationInputTokens)
-		costUSD = computeRequestCost(cfg, requestModel, actualModel, res.ServiceTier, res)
+		costUSD = computeRequestCost(cfg, requestModel, actualModel, res.ServiceTier, res) + res.ToolCostUSD
 
 		// 财务安全检查：费用为0但有token消耗时告警（可能是定价缺失）
 		if costUSD == 0.0 && (res.InputTokens > 0 || res.OutputTokens > 0) {
@@ -349,6 +352,7 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requ
 	upd := tokenStatsUpdate{
 		tokenHash:           tokenHash,
 		isSuccess:           isSuccess,
+		isBillable:          isBillable,
 		duration:            duration,
 		isStreaming:         isStreaming,
 		firstByteTime:       firstByteTime,
@@ -368,8 +372,9 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requ
 		return
 	}
 
-	// 优先级策略：成功请求（计费关键）必须记录，失败请求可丢弃
-	if isSuccess {
+	// 优先级策略：可计费请求（成功请求或 Guard 命中等已产生上游消耗的失败请求）必须记录；
+	// 不含上游消耗的失败请求可丢弃。
+	if isBillable {
 		// 计费数据：带超时的阻塞发送（避免计费数据丢失）
 		timer := time.NewTimer(100 * time.Millisecond)
 		defer timer.Stop()
@@ -383,7 +388,7 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requ
 			case s.tokenStatsCh <- upd:
 			default:
 				count := s.tokenStatsDropCount.Add(1)
-				log.Printf("[ERROR] 计费统计队列持续饱和，成功请求统计被迫丢弃 (累计: %d)", count)
+				log.Printf("[ERROR] 计费统计队列持续饱和，可计费请求统计被迫丢弃 (累计: %d)", count)
 			}
 		}
 	} else {
@@ -544,7 +549,7 @@ func (s *Server) handleProxyErrorResponse(
 
 	// [FIX] 2026-01: 499（客户端取消）不计入成功/失败统计，与 logs 表聚合逻辑保持一致
 	if res.Status != 499 {
-		// 异步更新Token统计（失败请求不计费）
+		// 异步更新Token统计；失败请求只在响应中带有实际上游消耗时计费（如 Codex Guard 命中）。
 		s.updateTokenStatsForProxy(reqCtx, cfg, false, duration, res, actualModel)
 	}
 
