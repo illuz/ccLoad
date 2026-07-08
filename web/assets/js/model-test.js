@@ -136,6 +136,41 @@ function formatDurationMs(durationMs) {
     : '-';
 }
 
+function formatColoredDurationMs(durationMs, colorFn) {
+  const text = formatDurationMs(durationMs);
+  if (text === '-') return text;
+  const seconds = durationMs / 1000;
+  return `<span style="color: ${colorFn(seconds)};">${text}</span>`;
+}
+
+function formatFirstByteDurationMs(durationMs) {
+  return formatColoredDurationMs(durationMs, window.getFirstByteTimingColor);
+}
+
+function formatTotalDurationMs(durationMs) {
+  return formatColoredDurationMs(durationMs, window.getDurationTimingColor);
+}
+
+function formatChatStatNumber(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  return typeof window.formatNumber === 'function' ? window.formatNumber(num) : String(num);
+}
+
+function chatStatLabel(key, fallback) {
+  const label = i18nText(key, fallback);
+  return typeof window.escapeHtml === 'function' ? window.escapeHtml(label) : String(label);
+}
+
+function chatStatValue(value, className = 'stats-value-dynamic', style = '--stats-accent:var(--neutral-700);') {
+  const styleAttr = style ? ` style="${style}"` : '';
+  return `<span class="${className}"${styleAttr}>${value}</span>`;
+}
+
+function chatStatPart(labelKey, fallback, valueHtml) {
+  return `${chatStatLabel(labelKey, fallback)} ${valueHtml}`;
+}
+
 function formatChannelPriority(priority) {
   if (priority === null || priority === undefined) return '-';
   const text = String(priority).trim();
@@ -1331,8 +1366,8 @@ function resetRowStatus(row) {
 }
 
 function applyTestResultToRow(row, data) {
-  row.querySelector('.first-byte-duration').textContent = formatDurationMs(data.first_byte_duration_ms);
-  row.querySelector('.duration').textContent = formatDurationMs(data.duration_ms);
+  row.querySelector('.first-byte-duration').innerHTML = formatFirstByteDurationMs(data.first_byte_duration_ms);
+  row.querySelector('.duration').innerHTML = formatTotalDurationMs(data.duration_ms);
 
   if (data.success) {
     row.style.background = 'rgba(16, 185, 129, 0.1)';
