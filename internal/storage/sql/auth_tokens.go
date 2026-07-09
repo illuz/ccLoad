@@ -21,7 +21,7 @@ const authTokenSelectColumns = `
 	id, token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 	codex_guard_enabled,
 	success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
-	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
+	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
 	cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency,
 	group_id, inherit_quota, inherit_channels, inherit_models
 `
@@ -60,6 +60,7 @@ const updateTokenStatsQuery = `
 		cache_read_tokens_total = cache_read_tokens_total + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		cache_creation_tokens_total = cache_creation_tokens_total + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		total_cost_usd = total_cost_usd + CASE WHEN ? = 1 THEN ? ELSE 0 END,
+		effective_cost_usd = effective_cost_usd + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		cost_used_microusd = cost_used_microusd + CASE WHEN ? = 1 THEN ? ELSE 0 END,
 		daily_cost_used_microusd = CASE
 			WHEN ? = 1 THEN CASE
@@ -133,6 +134,7 @@ func scanAuthToken(scanner interface {
 		&token.CacheReadTokensTotal,
 		&token.CacheCreationTokensTotal,
 		&token.TotalCostUSD,
+		&token.EffectiveCostUSD,
 		&costUsedMicroUSD,
 		&costLimitMicroUSD,
 		&dailyCostUsedMicroUSD,
@@ -235,10 +237,10 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			INSERT INTO auth_tokens (
 				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
-				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
+				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
 				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
 				plain_token = excluded.plain_token,
@@ -259,6 +261,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				cache_read_tokens_total = excluded.cache_read_tokens_total,
 				cache_creation_tokens_total = excluded.cache_creation_tokens_total,
 				total_cost_usd = excluded.total_cost_usd,
+				effective_cost_usd = excluded.effective_cost_usd,
 				cost_used_microusd = excluded.cost_used_microusd,
 				cost_limit_microusd = excluded.cost_limit_microusd,
 				daily_cost_used_microusd = excluded.daily_cost_used_microusd,
@@ -293,6 +296,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			token.CacheReadTokensTotal,
 			token.CacheCreationTokensTotal,
 			token.TotalCostUSD,
+			token.EffectiveCostUSD,
 			token.CostUsedMicroUSD,
 			token.CostLimitMicroUSD,
 			token.DailyCostUsedMicroUSD,
@@ -320,7 +324,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
 			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
 			plain_token = VALUES(plain_token),
@@ -341,6 +345,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			cache_read_tokens_total = VALUES(cache_read_tokens_total),
 			cache_creation_tokens_total = VALUES(cache_creation_tokens_total),
 			total_cost_usd = VALUES(total_cost_usd),
+			effective_cost_usd = VALUES(effective_cost_usd),
 			cost_used_microusd = VALUES(cost_used_microusd),
 			cost_limit_microusd = VALUES(cost_limit_microusd),
 			daily_cost_used_microusd = VALUES(daily_cost_used_microusd),
@@ -404,11 +409,11 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 const (
 	authTokenInsertCommonCols = `token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 		codex_guard_enabled, success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
-		prompt_tokens_total, completion_tokens_total, total_cost_usd, allowed_models, allowed_channel_ids,
+		prompt_tokens_total, completion_tokens_total, total_cost_usd, effective_cost_usd, allowed_models, allowed_channel_ids,
 		cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key,
 		max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models`
 
-	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?`
+	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -787,6 +792,7 @@ func (s *SQLStore) UpdateTokenStats(
 	cacheReadTokens int64,
 	cacheCreationTokens int64,
 	costUSD float64,
+	effectiveCostUSD float64,
 ) error {
 	// 单条 UPDATE 保证原子性：避免每次请求都做 BEGIN+SELECT+UPDATE+COMMIT
 	// 这对 SQLite（减少写锁持有时间/往返）和 MySQL（减少往返/行锁竞争）都更友好。
@@ -796,7 +802,7 @@ func (s *SQLStore) UpdateTokenStats(
 	streamUpdateFlag := boolToInt(isStreaming && firstByteTime > 0)
 	nonStreamUpdateFlag := boolToInt(!isStreaming)
 	nowMs := time.Now().UnixMilli()
-	costMicroUSD := util.USDToMicroUSD(costUSD)
+	costMicroUSD := util.USDToMicroUSD(effectiveCostUSD)
 	currentDayKey := model.CurrentLocalDayKey()
 
 	result, err := s.db.ExecContext(ctx, updateTokenStatsQuery,
@@ -807,6 +813,7 @@ func (s *SQLStore) UpdateTokenStats(
 		billableFlag, cacheReadTokens,
 		billableFlag, cacheCreationTokens,
 		billableFlag, costUSD,
+		billableFlag, effectiveCostUSD,
 		billableFlag, costMicroUSD,
 		billableFlag, currentDayKey, costMicroUSD, costMicroUSD,
 		billableFlag, currentDayKey, currentDayKey,

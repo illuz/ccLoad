@@ -129,6 +129,7 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("cache_read_tokens_total BIGINT NOT NULL DEFAULT 0").
 		Column("cache_creation_tokens_total BIGINT NOT NULL DEFAULT 0").
 		Column("total_cost_usd DOUBLE NOT NULL DEFAULT 0.0").
+		Column("effective_cost_usd DOUBLE NOT NULL DEFAULT 0.0").
 		Column("cost_used_microusd BIGINT NOT NULL DEFAULT 0").
 		Column("cost_limit_microusd BIGINT NOT NULL DEFAULT 0").
 		Column("daily_cost_used_microusd BIGINT NOT NULL DEFAULT 0").

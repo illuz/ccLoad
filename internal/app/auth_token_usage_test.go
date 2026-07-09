@@ -31,7 +31,7 @@ func TestHandleAuthTokenUsage_DailyLimit(t *testing.T) {
 	if err := srv.store.CreateAuthToken(ctx, token); err != nil {
 		t.Fatalf("CreateAuthToken failed: %v", err)
 	}
-	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 2.5); err != nil {
+	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 2.5, 2.5); err != nil {
 		t.Fatalf("UpdateTokenStats failed: %v", err)
 	}
 	if err := srv.authService.ReloadAuthTokens(); err != nil {
@@ -82,7 +82,7 @@ func TestHandleAuthTokenUsage_Unlimited(t *testing.T) {
 	if err := srv.store.CreateAuthToken(ctx, token); err != nil {
 		t.Fatalf("CreateAuthToken failed: %v", err)
 	}
-	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 3.2); err != nil {
+	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 3.2, 3.2); err != nil {
 		t.Fatalf("UpdateTokenStats failed: %v", err)
 	}
 	if err := srv.authService.ReloadAuthTokens(); err != nil {
@@ -132,7 +132,7 @@ func TestHandleAuthTokenUsage_CostLimitExceeded(t *testing.T) {
 	if err := srv.store.CreateAuthToken(ctx, token); err != nil {
 		t.Fatalf("CreateAuthToken failed: %v", err)
 	}
-	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 12); err != nil {
+	if err := srv.store.UpdateTokenStats(ctx, hash, true, true, 0, false, 0, 0, 0, 0, 0, 12, 12); err != nil {
 		t.Fatalf("UpdateTokenStats failed: %v", err)
 	}
 	if err := srv.authService.ReloadAuthTokens(); err != nil {
