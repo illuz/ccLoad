@@ -23,7 +23,7 @@ const (
 	modelsDevCatalogURL          = "https://models.dev/api.json"
 	modelCatalogRequestTimeout   = 15 * time.Second
 	modelCatalogMaxBodyBytes     = 16 << 20
-	defaultModelCatalogSyncHours = 6.0
+	defaultModelCatalogSyncHours = 0.0
 )
 
 // ModelCatalogSyncStatus 表示一次模型目录同步的结果。

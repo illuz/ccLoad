@@ -230,6 +230,18 @@ func validateSettingValue(key, valueType, value string) error {
 			}
 		}
 
+	case "float":
+		floatVal, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("not a valid number")
+		}
+		switch key {
+		case "model_catalog_sync_interval_hours":
+			if floatVal < 0 {
+				return fmt.Errorf("%s must be >= 0", key)
+			}
+		}
+
 	case "bool":
 		if value != "true" && value != "false" && value != "1" && value != "0" {
 			return fmt.Errorf("must be true/false or 1/0")
