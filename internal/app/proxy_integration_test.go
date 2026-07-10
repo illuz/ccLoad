@@ -274,6 +274,28 @@ func waitForProxyLog(t testing.TB, env *proxyTestEnv, modelName string) *model.L
 	return nil
 }
 
+func waitForProxyRejectionLog(t testing.TB, env *proxyTestEnv, statusCode int, messageContains string) *model.LogEntry {
+	t.Helper()
+
+	ctx := context.Background()
+	since := time.Now().Add(-time.Minute)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, err := env.store.ListLogs(ctx, since, 20, 0, &model.LogFilter{LogSource: model.LogSourceProxy})
+		if err != nil {
+			t.Fatalf("ListLogs failed: %v", err)
+		}
+		for _, entry := range logs {
+			if entry.ChannelID == 0 && entry.StatusCode == statusCode && strings.Contains(entry.Message, messageContains) {
+				return entry
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("proxy rejection log status=%d containing %q not found within deadline", statusCode, messageContains)
+	return nil
+}
+
 func TestProxy_SkipsChannelAfterRPMLimitExceeded(t *testing.T) {
 	t.Parallel()
 
@@ -3832,6 +3854,84 @@ func TestProxy_CostLimitExceeded_Returns429(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "cost_limit_exceeded") {
 		t.Fatalf("expected 'cost_limit_exceeded' in body: %s", body)
+	}
+
+	entry := waitForProxyRejectionLog(t, env, http.StatusTooManyRequests, "Cost limit exceeded")
+	if entry.Model != "gpt-4" {
+		t.Fatalf("Model=%q, want gpt-4", entry.Model)
+	}
+	if entry.AuthTokenID != 1 {
+		t.Fatalf("AuthTokenID=%d, want 1", entry.AuthTokenID)
+	}
+}
+
+func TestProxy_InvalidToken_IsLoggedWithoutCredential(t *testing.T) {
+	t.Parallel()
+
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "ch1", models: "gpt-4", apiKey: "sk-1"},
+	}, map[int]string{0: upstream.URL})
+
+	const invalidToken = "definitely-invalid-secret"
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":    "gpt-4",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	}, map[string]string{"Authorization": "Bearer " + invalidToken})
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+
+	entry := waitForProxyRejectionLog(t, env, http.StatusUnauthorized, "invalid or missing authorization")
+	if entry.AuthTokenID != 0 {
+		t.Fatalf("AuthTokenID=%d, want 0 for an unknown token", entry.AuthTokenID)
+	}
+	if entry.APIKeyUsed != "" || strings.Contains(entry.Message, invalidToken) {
+		t.Fatalf("invalid credential leaked into log: api_key_used=%q message=%q", entry.APIKeyUsed, entry.Message)
+	}
+	if entry.ClientIP == "" {
+		t.Fatal("ClientIP should be recorded")
+	}
+}
+
+func TestProxy_TokenConcurrencyExceeded_IsLoggedWithToken(t *testing.T) {
+	t.Parallel()
+
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "ch1", models: "gpt-4", apiKey: "sk-1"},
+	}, map[int]string{0: upstream.URL})
+
+	tokenHash := model.HashToken("test-api-key")
+	env.server.authService.authTokensMux.Lock()
+	env.server.authService.authTokenMaxConns[tokenHash] = 1
+	env.server.authService.authTokensMux.Unlock()
+	release, _, _, ok := env.server.authService.acquireTokenConcurrencySlot(tokenHash)
+	if !ok {
+		t.Fatal("expected manual token concurrency slot acquisition to succeed")
+	}
+	defer release()
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":    "gpt-4",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	}, nil)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+
+	entry := waitForProxyRejectionLog(t, env, http.StatusTooManyRequests, "Token concurrency limit exceeded")
+	if entry.AuthTokenID != 1 {
+		t.Fatalf("AuthTokenID=%d, want 1", entry.AuthTokenID)
 	}
 }
 

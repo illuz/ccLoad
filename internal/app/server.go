@@ -736,15 +736,17 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	// 透明代理：统一处理所有 /v1/* 端点，支持所有HTTP方法
 	apiV1 := r.Group("/v1")
 	apiV1.Use(captureProxyTimingStart())
-	apiV1.Use(s.authService.RequireAPIAuth())
 	apiV1.Use(captureClientRequestMetadata())
+	apiV1.Use(s.logAPIAuthRejections())
+	apiV1.Use(s.authService.RequireAPIAuth())
 	{
 		apiV1.Any("/*path", s.HandleProxyRequest)
 	}
 	apiV1Beta := r.Group("/v1beta")
 	apiV1Beta.Use(captureProxyTimingStart())
-	apiV1Beta.Use(s.authService.RequireAPIAuth())
 	apiV1Beta.Use(captureClientRequestMetadata())
+	apiV1Beta.Use(s.logAPIAuthRejections())
+	apiV1Beta.Use(s.authService.RequireAPIAuth())
 	{
 		apiV1Beta.Any("/*path", s.HandleProxyRequest)
 	}

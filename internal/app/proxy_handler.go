@@ -298,6 +298,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		timing.MarkQueueWait(time.Since(queueStart))
 	}
 	if !ok {
+		s.recordProxyRejection(c, startTime, "", c.Writer.Status(), "request cancelled while waiting for concurrency slot", false, "")
 		return
 	}
 	defer release()
@@ -311,17 +312,19 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 
 	originalModel, all, isStreaming, err := parseIncomingRequest(c)
 	if err != nil {
+		statusCode := http.StatusBadRequest
 		if errors.Is(err, errBodyTooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
-			return
+			statusCode = http.StatusRequestEntityTooLarge
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCode, gin.H{"error": err.Error()})
+		s.recordProxyRejection(c, startTime, "", statusCode, err.Error(), false, "")
 		return
 	}
 
 	clientProtocol, effectiveRequestPath := clientRequestMetadata(c)
 	if err := validateClientBodyMatchesProtocol(clientProtocol, all); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.recordProxyRejection(c, startTime, originalModel, http.StatusBadRequest, err.Error(), isStreaming, "")
 		return
 	}
 
@@ -336,13 +339,14 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		tokenHashStr, _ = v.(string)
 	}
 
-	if !s.enforceTokenLimits(c, tokenHashStr, originalModel) {
-		return
-	}
-
 	// 从context提取tokenID（用于统计和日志，2025-12新增tokenID）
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
+
+	if !s.enforceTokenLimits(c, tokenHashStr, originalModel, startTime, isStreaming, thinkingEffort) {
+		return
+	}
+
 	codexGuardEnabled := false
 	if v, ok := c.Get("codex_guard_enabled"); ok {
 		codexGuardEnabled, _ = v.(bool)
@@ -368,20 +372,23 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, errUnknownChannelType) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "unsupported path"})
+			s.recordProxyRejection(c, startTime, originalModel, http.StatusNotFound, "unsupported path", isStreaming, thinkingEffort)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		s.recordProxyRejection(c, startTime, originalModel, http.StatusInternalServerError, "route selection failed", isStreaming, thinkingEffort)
 		return
 	}
 
 	if len(cands) == 0 {
 		diagMessage, diagAPIKey := summarizeNoAvailableUpstream(ctx, s, originalModel, clientProtocol, tokenHashStr)
 		s.AddLogAsync(&model.LogEntry{
-			Time:           model.JSONTime{Time: time.Now()},
+			Time:           model.JSONTime{Time: startTime},
 			Model:          originalModel,
 			LogSource:      model.LogSourceProxy,
 			StatusCode:     503,
 			Message:        diagMessage,
+			Duration:       time.Since(startTime).Seconds(),
 			IsStreaming:    isStreaming,
 			APIKeyUsed:     diagAPIKey,
 			AuthTokenID:    tokenIDInt64,
@@ -400,6 +407,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 				c.JSON(http.StatusForbidden, gin.H{
 					"error": "no allowed upstream channel for this token",
 				})
+				s.recordProxyRejection(c, startTime, originalModel, http.StatusForbidden, "no allowed upstream channel for this token", isStreaming, thinkingEffort)
 				return
 			}
 		}
@@ -477,13 +485,22 @@ func shouldStopTryingChannels(result *proxyResult) bool {
 
 // enforceTokenLimits 检查 token 的模型限制与费用限额。
 // 违规时已写响应并返回 false，调用方应直接 return。
-func (s *Server) enforceTokenLimits(c *gin.Context, tokenHash, originalModel string) bool {
+func (s *Server) enforceTokenLimits(
+	c *gin.Context,
+	tokenHash string,
+	originalModel string,
+	startTime time.Time,
+	isStreaming bool,
+	thinkingEffort string,
+) bool {
 	// 检查令牌模型限制（2026-01新增）
 	if tokenHash != "" && originalModel != "" {
 		if !s.authService.IsModelAllowed(tokenHash, originalModel) {
+			message := fmt.Sprintf("model '%s' is not allowed for this token", originalModel)
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": fmt.Sprintf("model '%s' is not allowed for this token", originalModel),
+				"error": message,
 			})
+			s.recordProxyRejection(c, startTime, originalModel, http.StatusForbidden, message, isStreaming, thinkingEffort)
 			return false
 		}
 	}
@@ -500,13 +517,15 @@ func (s *Server) enforceTokenLimits(c *gin.Context, tokenHash, originalModel str
 		if exceeded {
 			used := util.MicroUSDToUSD(usedMicro)
 			limit := util.MicroUSDToUSD(limitMicro)
+			message := fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", used, limit)
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
-					"message": fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", used, limit),
+					"message": message,
 					"type":    "insufficient_quota",
 					"code":    "cost_limit_exceeded",
 				},
 			})
+			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
 			return false
 		}
 
@@ -514,13 +533,15 @@ func (s *Server) enforceTokenLimits(c *gin.Context, tokenHash, originalModel str
 		if dailyExceeded {
 			used := util.MicroUSDToUSD(dailyUsedMicro)
 			limit := util.MicroUSDToUSD(dailyLimitMicro)
+			message := fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", used, limit)
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
-					"message": fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", used, limit),
+					"message": message,
 					"type":    "insufficient_quota",
 					"code":    "daily_cost_limit_exceeded",
 				},
 			})
+			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
 			return false
 		}
 	}

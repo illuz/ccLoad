@@ -248,6 +248,8 @@ func (s *AuthService) CleanExpiredTokens() {
 // 认证中间件
 // ============================================================================
 
+const apiAuthRejectionContextKey = "ccLoad.apiAuthRejection"
+
 // RequireTokenAuth Token 认证中间件（管理界面使用）
 func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -276,14 +278,19 @@ func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
 // [FIX] 2025-12: 添加过期时间校验，支持懒惰剔除过期令牌
 func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		reject := func(status int, response gin.H, logMessage string) {
+			c.Set(apiAuthRejectionContextKey, logMessage)
+			c.JSON(status, response)
+			c.Abort()
+		}
+
 		// 未配置认证令牌时，默认全部返回 401（不允许公开访问）
 		s.authTokensMux.RLock()
 		tokenCount := len(s.authTokens)
 		s.authTokensMux.RUnlock()
 
 		if tokenCount == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"})
-			c.Abort()
+			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
 			return
 		}
 
@@ -328,8 +335,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		}
 
 		if !tokenFound {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"})
-			c.Abort()
+			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
 			return
 		}
 
@@ -347,9 +353,14 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		s.authTokensMux.RUnlock()
 
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"})
-			c.Abort()
+			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
 			return
+		}
+
+		// 已识别的令牌即使随后因过期或并发限制被拒绝，也应能在请求日志中关联到令牌。
+		c.Set("token_hash", tokenHash)
+		if hasTokenID {
+			c.Set("token_id", tokenID)
 		}
 
 		// [FIX] 过期校验：expiresAt > 0 表示有过期时间，检查是否已过期
@@ -366,30 +377,24 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			delete(s.authTokenMaxConns, tokenHash)
 			s.authTokensMux.Unlock()
 
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "token expired"})
-			c.Abort()
+			reject(http.StatusUnauthorized, gin.H{"error": "token expired"}, "token expired")
 			return
 		}
 
 		releaseTokenSlot, activeConns, maxConns, acquired := s.acquireTokenConcurrencySlot(tokenHash)
 		if !acquired {
-			c.JSON(http.StatusTooManyRequests, gin.H{
+			message := fmt.Sprintf("Token concurrency limit exceeded: %d active of %d limit", activeConns, maxConns)
+			reject(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
-					"message": fmt.Sprintf("Token concurrency limit exceeded: %d active of %d limit", activeConns, maxConns),
+					"message": message,
 					"type":    "rate_limit_error",
 					"code":    "token_concurrency_exceeded",
 				},
-			})
-			c.Abort()
+			}, message)
 			return
 		}
 		defer releaseTokenSlot()
 
-		// 将tokenHash和tokenID存储到context，供后续统计使用（2025-11新增tokenHash, 2025-12新增tokenID）
-		c.Set("token_hash", tokenHash)
-		if hasTokenID {
-			c.Set("token_id", tokenID)
-		}
 		c.Set("codex_guard_enabled", s.isCodexGuardEnabledForToken(tokenHash))
 
 		// 异步更新last_used_at（发送到受控worker，不阻塞请求）
