@@ -3,6 +3,70 @@ const assert = require('node:assert/strict');
 
 const { selectFirstEnabledInlineKey } = require('./channels-keys.js');
 
+function loadChannelModals() {
+  const previousWindow = Object.getOwnPropertyDescriptor(global, 'window');
+  Object.defineProperty(global, 'window', {
+    configurable: true,
+    writable: true,
+    value: { ChannelProtocolConfig: {} }
+  });
+  const modulePath = require.resolve('./channels-modals.js');
+  delete require.cache[modulePath];
+
+  try {
+    return {
+      mod: require(modulePath),
+      restore() {
+        delete require.cache[modulePath];
+        if (previousWindow) Object.defineProperty(global, 'window', previousWindow);
+        else delete global.window;
+      }
+    };
+  } catch (error) {
+    if (previousWindow) Object.defineProperty(global, 'window', previousWindow);
+    else delete global.window;
+    throw error;
+  }
+}
+
+test('mergeCommonModels de-duplicates remote models and preserves existing rows', () => {
+  const runtime = loadChannelModals();
+  try {
+    const existing = {
+      model: 'gpt-5.6',
+      redirect_model: 'kept-target',
+      fixed_cost_per_request: '0.25'
+    };
+    const merged = runtime.mod.mergeCommonModels(
+      [existing],
+      ['GPT-5.6', 'gpt-5.7', 'gpt-5.7'],
+      ['gpt-5.4']
+    );
+
+    assert.deepEqual(merged.rows, [
+      existing,
+      { model: 'gpt-5.7', redirect_model: '', fixed_cost_per_request: '' }
+    ]);
+    assert.notEqual(merged.rows[0], existing);
+    assert.equal(merged.added, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('mergeCommonModels falls back to embedded models with local pricing defaults', () => {
+  const runtime = loadChannelModals();
+  try {
+    const merged = runtime.mod.mergeCommonModels([], [], ['claude-sonnet-5']);
+    assert.deepEqual(merged.rows, [
+      { model: 'claude-sonnet-5', redirect_model: '', fixed_cost_per_request: '' }
+    ]);
+    assert.equal(merged.added, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
 function installFetchModelsGlobals({ rows, states, onFetch, onError }) {
   const globals = {
     window: {
