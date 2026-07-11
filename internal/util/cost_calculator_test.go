@@ -217,6 +217,9 @@ func TestCalculateCost_OpenAIModels(t *testing.T) {
 		{"gpt-5.6-luna", 1000, 1000, 0, 0.007},              // $1.00/1M input, $6/1M output
 		{"gpt-5.6-sol-2026-06-26", 1000, 1000, 0, 0.035},    // 模糊匹配到gpt-5.6-sol
 		{"gpt-5.6-sol", 1000, 1000, 1000, 0.0355},           // 缓存读取90%折扣：1000×($5×0.1)/1M
+		{"gpt-5.6-sol", 300000, 1000, 0, 3.045},             // >272K: $10.00/1M input, $45.00/1M output
+		{"gpt-5.6-terra", 300000, 1000, 0, 1.5225},          // >272K: $5.00/1M input, $22.50/1M output
+		{"gpt-5.6-luna", 300000, 1000, 0, 0.609},            // >272K: $2.00/1M input, $9.00/1M output
 		{"gpt-5.5", 1000, 1000, 0, 0.035},                   // $5.00/1M input, $30/1M output (<=272K); 2× gpt-5.4
 		{"gpt-5.5", 300000, 1000, 0, 3.045},                 // $10.00/1M input, $45/1M output (>272K); 2× gpt-5.4
 		{"gpt-5.4", 1000, 1000, 0, 0.0175},                  // $2.50/1M input, $15/1M output (<=272K)
@@ -261,6 +264,23 @@ func TestCalculateCost_OpenAIModels(t *testing.T) {
 		if !floatEquals(cost, tc.expectedCost, 0.000001) {
 			t.Errorf("%s: 成本 = %.6f, 期望 %.6f", tc.model, cost, tc.expectedCost)
 		}
+	}
+}
+
+func TestCalculateCost_GPT56LongContextBoundaryAndCachedInput(t *testing.T) {
+	const outputTokens = 1_000
+
+	if got, want := CalculateCostDetailed("gpt-5.6-sol", 272_000, outputTokens, 0, 0, 0), 1.39; !floatEquals(got, want, 0.000001) {
+		t.Errorf("gpt-5.6-sol at 272K = %.6f, want %.6f", got, want)
+	}
+	if got, want := CalculateCostDetailed("gpt-5.6-sol", 272_001, outputTokens, 0, 0, 0), 2.76501; !floatEquals(got, want, 0.000001) {
+		t.Errorf("gpt-5.6-sol above 272K = %.6f, want %.6f", got, want)
+	}
+
+	// The 271K cached tokens remain billable at the cache discount, but they
+	// also make the complete 273K input request use long-context prices.
+	if got, want := CalculateCostDetailed("gpt-5.6-sol", 2_000, outputTokens, 271_000, 0, 0), 0.336; !floatEquals(got, want, 0.000001) {
+		t.Errorf("gpt-5.6-sol with cached long context = %.6f, want %.6f", got, want)
 	}
 }
 
