@@ -58,6 +58,14 @@ class ExtractBase64ImagesTest(unittest.TestCase):
         self.assertEqual(len(images), 1)
         self.assertEqual(images[0]["mime_type"], "image/png")
 
+    def test_ignores_non_string_type_values(self):
+        payload = {
+            "type": {"unexpected": "object"},
+            "content": [{"type": ["also", "unexpected"]}],
+        }
+
+        self.assertEqual(extract_base64_images(payload, "input"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

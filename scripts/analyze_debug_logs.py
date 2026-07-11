@@ -202,7 +202,7 @@ def image_from_mapping(value: dict[str, Any]) -> tuple[str, str, int] | None:
 
     # OpenAI image-generation results are PNG b64_json/result payloads and
     # commonly omit a MIME type.
-    if value.get("type") in {"image_generation_call", "image_generation"}:
+    if isinstance(value.get("type"), str) and value["type"] in {"image_generation_call", "image_generation"}:
         generated = value.get("result") or value.get("b64_json")
         return normalize_base64_image(generated, "image/png")
     return None
