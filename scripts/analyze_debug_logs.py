@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
+import hashlib
 import json
 import os
 import re
@@ -29,6 +31,14 @@ TOOL_NAME_HINTS = (
     "view", "open", "cat", "sed", "apply_patch",
 )
 PATH_RE = re.compile(r"(?:^|[\s'\"`])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.@()+,=:\\-]+)(?=$|[\s'\"`,})\]])")
+SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+DATA_IMAGE_RE = re.compile(
+    r"^data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/]+={0,2})$",
+    re.IGNORECASE,
+)
+MAX_ANALYSIS_IMAGES = 20
+MAX_ANALYSIS_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_ANALYSIS_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024
 
 
 def decode_blob(value: Any) -> str:
@@ -128,6 +138,113 @@ def extract_user_questions(req_obj: Any) -> list[dict[str, Any]]:
         if text.strip():
             out.append({"index": len(out), "role": "user", "content": text})
     return out
+
+
+def normalize_base64_image(data: Any, mime_type: Any) -> tuple[str, str, int] | None:
+    """Return a canonical, browser-safe image payload or None when unsupported."""
+    mime = str(mime_type or "").lower().strip()
+    if (mime and mime not in SUPPORTED_IMAGE_MIME_TYPES) or not isinstance(data, str):
+        return None
+    compact = re.sub(r"\s+", "", data)
+    if not compact:
+        return None
+    try:
+        decoded = base64.b64decode(compact, validate=True)
+    except (ValueError, binascii.Error):
+        return None
+    if not decoded or len(decoded) > MAX_ANALYSIS_IMAGE_BYTES:
+        return None
+    if not mime:
+        if decoded.startswith(b"\x89PNG\r\n\x1a\n"):
+            mime = "image/png"
+        elif decoded.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+        elif decoded.startswith((b"GIF87a", b"GIF89a")):
+            mime = "image/gif"
+        elif len(decoded) >= 12 and decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP":
+            mime = "image/webp"
+        else:
+            return None
+    return mime, base64.b64encode(decoded).decode("ascii"), len(decoded)
+
+
+def image_from_data_url(value: Any) -> tuple[str, str, int] | None:
+    if not isinstance(value, str):
+        return None
+    match = DATA_IMAGE_RE.fullmatch(value.strip())
+    if not match:
+        return None
+    return normalize_base64_image(match.group(2), match.group(1))
+
+
+def image_from_mapping(value: dict[str, Any]) -> tuple[str, str, int] | None:
+    """Recognize the inline image representations used by supported APIs."""
+    mime = next(
+        (
+            value.get(key)
+            for key in ("mime_type", "media_type", "mimeType", "mediaType", "content_type", "contentType")
+            if value.get(key)
+        ),
+        None,
+    )
+    data = next(
+        (
+            value.get(key)
+            for key in ("data", "base64", "data_base64", "b64_json", "result")
+            if isinstance(value.get(key), str)
+        ),
+        None,
+    )
+    if data is not None:
+        normalized = normalize_base64_image(data, mime)
+        if normalized is not None:
+            return normalized
+
+    # OpenAI image-generation results are PNG b64_json/result payloads and
+    # commonly omit a MIME type.
+    if value.get("type") in {"image_generation_call", "image_generation"}:
+        generated = value.get("result") or value.get("b64_json")
+        return normalize_base64_image(generated, "image/png")
+    return None
+
+
+def extract_base64_images(obj: Any, source: str, limit: int = MAX_ANALYSIS_IMAGES) -> list[dict[str, Any]]:
+    """Collect supported inline images without exposing arbitrary data URLs to the UI."""
+    images: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append(image: tuple[str, str, int] | None, location: str) -> None:
+        if image is None or len(images) >= limit:
+            return
+        mime_type, data, size = image
+        digest = hashlib.sha256(data.encode("ascii")).hexdigest()
+        if digest in seen:
+            return
+        seen.add(digest)
+        images.append({
+            "index": len(images),
+            "source": source,
+            "location": location,
+            "mime_type": mime_type,
+            "data": data,
+            "bytes": size,
+        })
+
+    def walk(value: Any, location: str = "$") -> None:
+        if isinstance(value, str):
+            append(image_from_data_url(value), location)
+            return
+        if isinstance(value, dict):
+            append(image_from_mapping(value), location)
+            for key, child in value.items():
+                walk(child, f"{location}.{key}")
+            return
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                walk(child, f"{location}[{index}]")
+
+    walk(obj)
+    return images
 
 
 def safe_json_arg(value: Any) -> Any:
@@ -382,6 +499,32 @@ def analyze_row(row: sqlite3.Row, db_path: str) -> dict[str, Any]:
         ai_texts = extract_ai_texts_from_events(resp_events)
     final_ai_text = ai_texts[-1]["content"] if ai_texts else ""
 
+    images: list[dict[str, Any]] = []
+    seen_images: set[tuple[str, str]] = set()
+    image_bytes = 0
+
+    def append_images(obj: Any, source: str) -> None:
+        nonlocal image_bytes
+        remaining = MAX_ANALYSIS_IMAGES - len(images)
+        if remaining <= 0:
+            return
+        for image in extract_base64_images(obj, source, remaining):
+            digest = hashlib.sha256(image["data"].encode("ascii")).hexdigest()
+            key = (source, digest)
+            if key in seen_images or image_bytes + image["bytes"] > MAX_ANALYSIS_IMAGE_TOTAL_BYTES:
+                continue
+            seen_images.add(key)
+            image["index"] = len(images)
+            images.append(image)
+            image_bytes += image["bytes"]
+
+    if req_obj is not None:
+        append_images(req_obj, "input")
+    if resp_obj is not None:
+        append_images(resp_obj, "output")
+    if resp_events:
+        append_images(resp_events, "output")
+
     seen_paths: dict[str, dict[str, Any]] = {}
     for tc in tool_calls:
         for p in paths_from_value(tc.get("arguments")):
@@ -401,6 +544,7 @@ def analyze_row(row: sqlite3.Row, db_path: str) -> dict[str, Any]:
         },
         "ai_texts": ai_texts,
         "final_ai_text": final_ai_text,
+        "images": images,
         "tool_calls": tool_calls,
         "errors": errors,
     }

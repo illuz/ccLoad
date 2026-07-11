@@ -835,6 +835,49 @@
       border-top: 1px solid var(--surface-border);
     }
 
+    .debug-analysis-images {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--space-3);
+    }
+
+    .debug-analysis-image {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      background: var(--surface-bg-muted);
+    }
+
+    .debug-analysis-image figcaption {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      color: var(--neutral-800);
+      font-size: var(--text-sm);
+    }
+
+    .debug-analysis-image figcaption span {
+      min-width: 0;
+      color: var(--neutral-600);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .debug-analysis-image img {
+      display: block;
+      width: 100%;
+      max-height: min(50vh, 480px);
+      object-fit: contain;
+      background: var(--surface-bg);
+      border-top: 1px solid var(--surface-border);
+    }
+
     .debug-analysis-paths {
       display: grid;
       gap: var(--space-2);

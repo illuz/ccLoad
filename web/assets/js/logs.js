@@ -3171,6 +3171,28 @@ function debugAnalysisRawText(data) {
   return JSON.stringify(data, null, 2);
 }
 
+function getDebugAnalysisImageData(image) {
+  if (!image || typeof image !== 'object') return null;
+  const mimeType = String(image.mime_type || image.mimeType || '').trim().toLowerCase();
+  if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mimeType)) return null;
+
+  const data = String(image.data || image.base64 || '').replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return null;
+  return {
+    mimeType,
+    data,
+    bytes: Number(image.bytes) || 0,
+    source: image.source === 'output' ? 'output' : 'input',
+  };
+}
+
+function formatDebugAnalysisImageSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function renderDebugAnalysis(targetId, data) {
   const el = document.getElementById(targetId);
   if (!el) return;
@@ -3185,6 +3207,9 @@ function renderDebugAnalysis(targetId, data) {
   const paths = Array.isArray(toolTree.paths) ? toolTree.paths : [];
   const calls = Array.isArray(data.tool_calls) ? data.tool_calls : [];
   const aiTexts = Array.isArray(data.ai_texts) ? data.ai_texts : [];
+  const images = (Array.isArray(data.images) ? data.images : [])
+    .map(getDebugAnalysisImageData)
+    .filter(Boolean);
   const finalAiText = String(data.final_ai_text || (aiTexts.length ? aiTexts[aiTexts.length - 1].content : '') || '').trim();
   const errors = Array.isArray(data.errors) ? data.errors : [];
   const treeText = String(toolTree.tree_text || '').trim();
@@ -3238,6 +3263,20 @@ function renderDebugAnalysis(targetId, data) {
         </details>`).join('')}${calls.length > 100 ? `<div class="debug-analysis-empty">+${calls.length - 100} more</div>` : ''}</div>`
     : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
 
+  const imagesHtml = images.length
+    ? `<div class="debug-analysis-images">${images.map((image, i) => {
+        const sourceLabel = image.source === 'output'
+          ? (t('logs.debugAnalysisOutput') || 'Output')
+          : (t('logs.debugAnalysisInput') || 'Input');
+        const size = formatDebugAnalysisImageSize(image.bytes);
+        const label = `${sourceLabel} #${i + 1}`;
+        return `<figure class="debug-analysis-image">
+          <figcaption><strong>${escapeHtml(label)}</strong><span>${escapeHtml([image.mimeType, size].filter(Boolean).join(' · '))}</span></figcaption>
+          <img loading="lazy" src="data:${image.mimeType};base64,${image.data}" alt="${escapeHtml(label)}">
+        </figure>`;
+      }).join('')}</div>`
+    : `<div class="debug-analysis-empty">${escapeHtml(t('logs.debugAnalysisNone') || 'None')}</div>`;
+
   const warningHtml = errors.length
     ? `<div class="debug-analysis-warnings">${errors.map(err => `<div class="debug-analysis-warning">${escapeHtml(err)}</div>`).join('')}</div>`
     : '';
@@ -3246,11 +3285,13 @@ function renderDebugAnalysis(targetId, data) {
     <div class="debug-analysis-summary">
       <div class="debug-analysis-stat"><b>${questions.length}</b><span>${escapeHtml(t('logs.debugAnalysisQuestions') || 'Questions')}</span></div>
       <div class="debug-analysis-stat"><b>${finalAiText ? 1 : 0}</b><span>${escapeHtml(t('logs.debugAnalysisAIText') || 'AI Text')}</span></div>
+      <div class="debug-analysis-stat"><b>${images.length}</b><span>${escapeHtml(t('logs.debugAnalysisImages') || 'Images')}</span></div>
       <div class="debug-analysis-stat"><b>${paths.length}</b><span>${escapeHtml(t('logs.debugAnalysisPaths') || 'Paths')}</span></div>
       <div class="debug-analysis-stat"><b>${calls.length}</b><span>${escapeHtml(t('logs.debugAnalysisToolCalls') || 'Tool calls')}</span></div>
     </div>
     <div class="debug-analysis-meta">${meta.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v ?? '-'))}</strong></div>`).join('')}</div>
     ${warningHtml}
+    <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisImages') || 'Images')}</h3>${imagesHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisAIText') || 'AI Text')}</h3>${aiTextHtml}${aiTextHistoryHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisQuestions') || 'User Questions')}</h3>${questionHtml}</section>
     <section class="debug-analysis-section"><h3>${escapeHtml(t('logs.debugAnalysisFileTree') || 'File Tree')}</h3>${treeHtml}</section>
