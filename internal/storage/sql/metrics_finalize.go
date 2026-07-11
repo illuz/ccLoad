@@ -16,6 +16,17 @@ type metricAggregationHelper struct {
 	durationCount      int
 }
 
+func metricBucketStart(t time.Time, bucket time.Duration) time.Time {
+	if bucket >= 24*time.Hour {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	}
+	return t.Truncate(bucket)
+}
+
+func metricBucketRange(since, until time.Time, bucket time.Duration) (time.Time, time.Time) {
+	return metricBucketStart(since, bucket), metricBucketStart(until, bucket).Add(bucket)
+}
+
 func (s *SQLStore) finalizeMetricPoints(ctx context.Context, mapp map[int64]*model.MetricPoint, helperMap map[int64]*metricAggregationHelper, channelIDsToFetch map[int64]bool, since, until time.Time, bucket time.Duration) []model.MetricPoint {
 	channelNames, err := s.fetchChannelNamesBatch(ctx, channelIDsToFetch)
 	if err != nil {
@@ -57,8 +68,7 @@ func (s *SQLStore) finalizeMetricPoints(ctx context.Context, mapp map[int64]*mod
 	}
 
 	out := []model.MetricPoint{}
-	endTime := until.Truncate(bucket).Add(bucket)
-	startTime := since.Truncate(bucket)
+	startTime, endTime := metricBucketRange(since, until, bucket)
 
 	for t := startTime; t.Before(endTime); t = t.Add(bucket) {
 		ts := t.Unix()

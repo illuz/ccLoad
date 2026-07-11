@@ -19,12 +19,21 @@ func (s *SQLStore) AggregateRangeWithFilter(ctx context.Context, since, until ti
 	}
 	sinceBucket := since.UnixMilli() / minuteMs
 	untilBucket := until.UnixMilli() / minuteMs
+	bucketSelect := "FLOOR(logs.minute_bucket / ?) * ? * 60"
+	args := []any{bucketMinutes, bucketMinutes}
+	if bucket >= 24*time.Hour {
+		// Day-level charts must follow the server's local calendar rather than
+		// Unix-day boundaries, which otherwise start at 08:00 in UTC+8.
+		anchorBucket := metricBucketStart(since, bucket).UnixMilli() / minuteMs
+		bucketSelect = "FLOOR((logs.minute_bucket - ?) / ?) * ? * 60 + ?"
+		args = []any{anchorBucket, bucketMinutes, bucketMinutes, anchorBucket * 60}
+	}
 
 	// 使用 minute_bucket 索引优化
 	// 排除499：客户端取消不应计入成功/失败/RPM统计
-	query := `
+	query := fmt.Sprintf(`
 		SELECT
-			FLOOR(logs.minute_bucket / ?) * ? * 60 AS bucket_ts,
+			%s AS bucket_ts,
 			logs.channel_id,
 			SUM(CASE WHEN logs.status_code >= 200 AND logs.status_code < 300 THEN 1 ELSE 0 END) AS success,
 			SUM(CASE WHEN (logs.status_code < 200 OR logs.status_code >= 300) AND logs.status_code != 499 THEN 1 ELSE 0 END) AS error,
@@ -46,9 +55,9 @@ func (s *SQLStore) AggregateRangeWithFilter(ctx context.Context, since, until ti
 			SUM(COALESCE(logs.cache_creation_input_tokens, 0)) as cache_creation_tokens
 		FROM logs
 		WHERE logs.minute_bucket >= ? AND logs.minute_bucket <= ? AND logs.status_code != 499 AND logs.channel_id > 0
-	`
+	`, bucketSelect)
 
-	args := []any{bucketMinutes, bucketMinutes, sinceBucket, untilBucket}
+	args = append(args, sinceBucket, untilBucket)
 
 	// 应用渠道筛选（channel_type、channel_id、channel_name、channel_name_like）
 	if filter != nil {
@@ -155,8 +164,7 @@ func (s *SQLStore) resolveChannelFilter(ctx context.Context, filter *model.LogFi
 // buildEmptyMetricPoints 构建空的时间序列数据点（用于无数据场景）
 func buildEmptyMetricPoints(since, until time.Time, bucket time.Duration) []model.MetricPoint {
 	var out []model.MetricPoint
-	endTime := until.Truncate(bucket).Add(bucket)
-	startTime := since.Truncate(bucket)
+	startTime, endTime := metricBucketRange(since, until, bucket)
 
 	for t := startTime; t.Before(endTime); t = t.Add(bucket) {
 		out = append(out, model.MetricPoint{

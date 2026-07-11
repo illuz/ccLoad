@@ -16,6 +16,10 @@
     let statsModelCombobox = null; // 模型筛选组合框实例
     let statsExactChannelNameValue = '';
     let statsExactModelValue = '';
+    let statsTrendData = [];
+    let statsTrendBucketMinutes = 60;
+    let statsTrendLoading = false;
+    let statsTrendRequestVersion = 0;
     let sortState = {
       column: null,
       order: null // null, 'asc', 'desc'
@@ -114,7 +118,9 @@
       try {
         renderStatsLoading();
 
-        const params = buildStatsRequestParams();
+        const filters = getStatsFilters();
+        const params = buildStatsRequestParams(filters);
+        const statsTrendPromise = loadStatsTrendData(filters);
         // 后端返回格式: {"success":true,"data":{"stats":[...],"duration_seconds":...,"rpm_stats":{...},"is_today":...}}
         statsData = (await fetchDataWithAuth('/admin/stats?' + params.toString())) || { stats: [] };
         durationSeconds = statsData.duration_seconds || 1; // 防止除零
@@ -133,6 +139,8 @@
         if (currentView === 'chart') {
           renderCharts();
         }
+
+        await statsTrendPromise;
 
       } catch (error) {
         console.error('Failed to load stats:', error);
@@ -1053,10 +1061,59 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       };
     }
 
-    function buildStatsRequestParams() {
-      const params = window.FilterQuery.buildRequestParams(getStatsFilters(), STATS_FILTER_FIELDS);
-      appendStatsTimeRangeParams(params, getStatsFilters());
+    function buildStatsRequestParams(filters = getStatsFilters()) {
+      const params = window.FilterQuery.buildRequestParams(filters, STATS_FILTER_FIELDS);
+      appendStatsTimeRangeParams(params, filters);
       return params;
+    }
+
+    function getStatsTrendRangeDurationMs(filters) {
+      if (filters?.range === 'custom') {
+        const startMs = Number(filters.customStartTime);
+        const endMs = Number(filters.customEndTime);
+        if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+          return endMs - startMs;
+        }
+      }
+
+      if (typeof window.getRangeHours === 'function') {
+        return Math.max(1, Number(window.getRangeHours(filters?.range || 'today')) || 24) * 60 * 60 * 1000;
+      }
+      return 24 * 60 * 60 * 1000;
+    }
+
+    function getStatsTrendBucketMinutes(filters) {
+      return getStatsTrendRangeDurationMs(filters) > 24 * 60 * 60 * 1000 ? 1440 : 60;
+    }
+
+    function buildStatsTrendRequestParams(filters) {
+      const params = buildStatsRequestParams(filters);
+      params.set('bucket_min', String(getStatsTrendBucketMinutes(filters)));
+      return params;
+    }
+
+    async function loadStatsTrendData(filters) {
+      const requestVersion = ++statsTrendRequestVersion;
+      statsTrendBucketMinutes = getStatsTrendBucketMinutes(filters);
+      statsTrendLoading = true;
+      renderStatsTrendCharts();
+
+      try {
+        const params = buildStatsTrendRequestParams(filters);
+        const data = await fetchDataWithAuth('/admin/metrics?' + params.toString());
+        if (requestVersion !== statsTrendRequestVersion) return;
+
+        statsTrendData = Array.isArray(data) ? data : [];
+      } catch (error) {
+        if (requestVersion !== statsTrendRequestVersion) return;
+        console.error('[Stats] 加载趋势数据失败:', error);
+        statsTrendData = [];
+      } finally {
+        if (requestVersion === statsTrendRequestVersion) {
+          statsTrendLoading = false;
+          renderStatsTrendCharts();
+        }
+      }
     }
 
     function bindStatsStaticControls() {
@@ -1165,6 +1222,7 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
         if (currentView === 'chart') {
           renderCharts();
         }
+        renderStatsTrendCharts();
       });
 
       // 事件委托：处理统计表格中的渠道名称和模型名称点击
@@ -1233,6 +1291,174 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
           axisLine: 'rgba(17, 24, 39, 0.16)',
           surface: '#ffffff'
         };
+    }
+
+    function getStatsTrendTokenTotal(point) {
+      return (Number(point?.input_tokens) || 0) +
+        (Number(point?.output_tokens) || 0) +
+        (Number(point?.cache_read_tokens) || 0) +
+        (Number(point?.cache_creation_tokens) || 0);
+    }
+
+    function getStatsTrendEffectiveCost(point) {
+      if (point?.effective_cost !== undefined && point?.effective_cost !== null) {
+        return Number(point.effective_cost) || 0;
+      }
+      return Number(point?.total_cost) || 0;
+    }
+
+    function formatStatsTrendTokenTotal(value) {
+      if (typeof window.formatNumber === 'function') {
+        return window.formatNumber(value);
+      }
+      return String(Math.round(Number(value) || 0));
+    }
+
+    function formatStatsTrendCost(value) {
+      const cost = Number(value) || 0;
+      if (cost <= 0) return '$0';
+      if (cost >= 1) return `$${cost.toFixed(2)}`;
+      if (cost >= 0.01) return `$${cost.toFixed(4)}`;
+      return `$${cost.toFixed(6)}`;
+    }
+
+    function formatStatsTrendTime(value, isDaily) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      if (isDaily) return `${date.getFullYear()}/${month}/${day}`;
+      return `${month}/${day} ${String(date.getHours()).padStart(2, '0')}:00`;
+    }
+
+    function setStatsTrendTotal(elementID, total, formatter) {
+      const element = document.getElementById(elementID);
+      if (!element) return;
+      element.textContent = t('stats.trendTotal', { total: formatter(total) });
+    }
+
+    function renderStatsTrendState(chart, text) {
+      const chartTheme = getStatsChartTheme();
+      chart.setOption({
+        animation: false,
+        title: {
+          text,
+          left: 'center',
+          top: 'middle',
+          textStyle: { color: chartTheme.mutedText, fontSize: 14, fontWeight: 'normal' }
+        },
+        xAxis: { show: false, type: 'category', data: [] },
+        yAxis: { show: false, type: 'value' },
+        series: []
+      }, true);
+    }
+
+    function renderStatsTrendChart({ containerID, totalID, seriesName, color, valueForPoint, formatValue }) {
+      const data = Array.isArray(statsTrendData) ? statsTrendData : [];
+      const total = statsTrendLoading ? 0 : data.reduce((sum, point) => sum + valueForPoint(point), 0);
+      setStatsTrendTotal(totalID, total, formatValue);
+
+      const container = document.getElementById(containerID);
+      if (!container || typeof echarts === 'undefined') return;
+
+      if (!chartInstances[containerID]) {
+        chartInstances[containerID] = echarts.init(container);
+      }
+      const chart = chartInstances[containerID];
+
+      if (statsTrendLoading) {
+        renderStatsTrendState(chart, t('stats.loading'));
+        return;
+      }
+      if (data.length === 0) {
+        renderStatsTrendState(chart, t('stats.chartNoData'));
+        return;
+      }
+
+      const chartTheme = getStatsChartTheme();
+      const isDaily = statsTrendBucketMinutes === 1440;
+      const labels = data.map((point) => formatStatsTrendTime(point.ts, isDaily));
+      const values = data.map(valueForPoint);
+      const labelInterval = Math.max(1, Math.ceil(labels.length / 8));
+      const option = {
+        animation: false,
+        color: [color],
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: chartTheme.tooltipBg,
+          borderColor: chartTheme.tooltipBorder,
+          textStyle: { color: chartTheme.tooltipText, fontSize: 12 },
+          formatter(params) {
+            const index = params?.[0]?.dataIndex || 0;
+            return `<strong>${labels[index] || ''}</strong><br/>${seriesName}: ${formatValue(values[index] || 0)}`;
+          }
+        },
+        grid: {
+          left: 56,
+          right: 20,
+          top: 16,
+          bottom: 46,
+          containLabel: false
+        },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: labels,
+          axisLabel: {
+            color: chartTheme.mutedText,
+            fontSize: 11,
+            formatter(value, index) {
+              return index % labelInterval === 0 ? value : '';
+            }
+          },
+          axisLine: { lineStyle: { color: chartTheme.axisLine } },
+          axisTick: { show: false }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          axisLabel: {
+            color: chartTheme.mutedText,
+            fontSize: 11,
+            formatter: formatValue
+          },
+          splitLine: { lineStyle: { color: chartTheme.axisLine, type: 'dashed' } }
+        },
+        series: [{
+          name: seriesName,
+          type: 'line',
+          data: values,
+          smooth: 0.2,
+          showSymbol: values.length <= 31,
+          symbol: 'circle',
+          symbolSize: 5,
+          lineStyle: { width: 2, color },
+          itemStyle: { color },
+          areaStyle: { color: `${color}1A` }
+        }]
+      };
+
+      chart.setOption(option, true);
+    }
+
+    function renderStatsTrendCharts() {
+      renderStatsTrendChart({
+        containerID: 'chart-stats-token-trend',
+        totalID: 'stats-token-trend-total',
+        seriesName: t('stats.trendTokenSeries'),
+        color: '#2563eb',
+        valueForPoint: getStatsTrendTokenTotal,
+        formatValue: formatStatsTrendTokenTotal
+      });
+      renderStatsTrendChart({
+        containerID: 'chart-stats-cost-trend',
+        totalID: 'stats-cost-trend-total',
+        seriesName: t('stats.trendCostSeries'),
+        color: '#ea580c',
+        valueForPoint: getStatsTrendEffectiveCost,
+        formatValue: formatStatsTrendCost
+      });
     }
 
     // 切换视图
@@ -1679,4 +1905,5 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       if (currentView === 'chart') {
         renderCharts();
       }
+      renderStatsTrendCharts();
     });
