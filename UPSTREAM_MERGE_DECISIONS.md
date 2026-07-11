@@ -30,3 +30,24 @@ When asked to check upstream again, use this file first:
 1. Treat merged/accepted rows above as already decided and completed.
 2. Compare upstream from `b038293` onward for genuinely new items or follow-up fixes.
 3. Do not spend analysis time re-arguing the accepted decisions above.
+
+## 2026-07-11 selected upstream follow-up batch
+
+Upstream range reviewed: `b038293..47c86fc` (latest checked upstream commit: `47c86fc`, 2026-07-10).
+Local safety branch before work: `backup-before-upstream-selected-20260711-012625`.
+
+| Review item | Decision | Status | Upstream commits merged locally | Notes for future checks |
+| --- | --- | --- | --- | --- |
+| 1. Model pricing follow-ups | Accept | Merged | `7103861` GLM-5.2; `dffc145` tiered MiniMax-M3; `3b32cee` Cerebras; `4c3346b` Grok pricing | Treat as completed pricing maintenance. Only review later pricing changes after `4c3346b`. |
+| 2. Persist token effective cost | Accept | Merged with local Codex Guard billing integration retained | `676145d` | `effective_cost_usd` stores channel-multiplied cost; local `isBillable` semantics, daily usage, and alert checks were preserved during conflict resolution. Review only later follow-up fixes. |
+| 6. Unified timing color rendering | Accept | Merged with local token summary/priority UI retained | `3683278` | Shared first-byte/total-duration color functions now apply across relevant views. Review only later fixes. |
+| 7. Codex GPT-5.6 common models | Accept | Merged | `47c86fc` | Adds `gpt-5.6-sol`, `gpt-5.6-luna`, and `gpt-5.6-terra` to the Codex common-model picker. |
+
+## 2026-07-11 explicitly not selected
+
+Do not recommend these again unless the user asks or a selected follow-up depends on them:
+
+- Active-request tab alert and its favicon compatibility fixes (`f0b9b27`, `01b385b`, `d3b8cf1`, `6bbad7d`).
+- Channel editor table/adaptive layout work (`7b32fb4`, `5b86be5`).
+
+When checking later upstream changes, use `47c86fc` as the reviewed baseline, while retaining earlier decisions above.
