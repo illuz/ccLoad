@@ -910,8 +910,9 @@ function confirmInlineKeyImport() {
 }
 
 function addInlineKey() {
-  if (inlineKeyTableData.length === 0 || inlineKeyTableData[inlineKeyTableData.length - 1].trim()) {
-    inlineKeyTableData.push('');
+  const lastKeyIndex = inlineKeyTableData.length - 1;
+  if (inlineKeyTableData.length === 0 || getInlineKeyValue(lastKeyIndex)) {
+    inlineKeyTableData.push(makeInlineKeyRow());
     renderInlineKeyTable();
     markChannelFormDirty();
   }
