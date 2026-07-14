@@ -249,4 +249,31 @@ func TestAdminSettingsHandlers(t *testing.T) {
 			t.Fatal("expected restart triggered")
 		}
 	})
+
+	t.Run("AdminBatchUpdateSettings_hot_reloads_runtime_settings", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPost, "/admin/settings/batch", []byte(`{"debug_log_enabled":"true","non_stream_timeout":"42"}`)))
+
+		server.AdminBatchUpdateSettings(c)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+		select {
+		case <-restartCh:
+			t.Fatal("hot-reload-only update must not trigger restart")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		if got := server.configService.GetBool("debug_log_enabled", false); !got {
+			t.Fatal("debug_log_enabled was not updated in ConfigService cache")
+		}
+		if got := server.currentTimeoutConfig().nonStreamTimeout; got != 42*time.Second {
+			t.Fatalf("non-stream timeout=%v, want 42s", got)
+		}
+
+		resp := mustParseAPIResponse[map[string]any](t, w.Body.Bytes())
+		if hotReloaded, _ := resp.Data["hot_reloaded"].(bool); !hotReloaded {
+			t.Fatalf("hot_reloaded=%v, want true", resp.Data["hot_reloaded"])
+		}
+	})
 }

@@ -1470,3 +1470,4 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.upstreamBalance.plan': '套餐',
   'channels.upstreamBalance.updatedAt': '更新于 {time}'
 };
+  'settings.hotReload': '保存后立即生效',

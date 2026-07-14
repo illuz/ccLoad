@@ -1470,3 +1470,4 @@ window.I18N_LOCALES['en'] = {
   'channels.upstreamBalance.plan': 'Plan',
   'channels.upstreamBalance.updatedAt': 'Updated {time}'
 };
+  'settings.hotReload': 'Takes effect immediately after saving',

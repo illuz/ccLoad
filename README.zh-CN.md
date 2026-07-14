@@ -964,9 +964,9 @@ export CCLOAD_SQLITE_LOG_DAYS=7  # 恢复最近 7 天日志（可选）
 | 纯 MySQL | 设置 `CCLOAD_MYSQL` | 标准生产环境 |
 | 混合模式 | 设置 `CCLOAD_MYSQL` + `CCLOAD_ENABLE_SQLITE_REPLICA=1` | HuggingFace Spaces |
 
-### Web 管理配置（支持热重载）
+### Web 管理配置
 
-这些配置可在 Web 界面修改，保存后立即生效，无需重启：
+设置页中带闪电图标的配置保存后立即生效：各类上游超时、渠道测试默认内容、Debug 日志开关、软错误前缀和全冷却兜底。其余配置保存后会自动重启程序以生效。
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|

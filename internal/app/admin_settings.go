@@ -32,6 +32,14 @@ func (s *Server) AdminListSettings(c *gin.Context) {
 	if settings == nil {
 		settings = make([]*model.SystemSetting, 0)
 	}
+	for i, setting := range settings {
+		if setting == nil {
+			continue
+		}
+		settingCopy := *setting
+		settingCopy.HotReload = isHotReloadableSetting(setting.Key)
+		settings[i] = &settingCopy
+	}
 	RespondJSON(c, http.StatusOK, settings)
 }
 
@@ -56,7 +64,9 @@ func (s *Server) AdminGetSetting(c *gin.Context) {
 		return
 	}
 
-	RespondJSON(c, http.StatusOK, setting)
+	settingCopy := *setting
+	settingCopy.HotReload = isHotReloadableSetting(setting.Key)
+	RespondJSON(c, http.StatusOK, &settingCopy)
 }
 
 // AdminUpdateSetting 更新配置项
@@ -92,18 +102,10 @@ func (s *Server) AdminUpdateSetting(c *gin.Context) {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
-	// log.Printf("[INFO] Setting updated: %s = %s (restart required)", key, req.Value)
-
-	// 返回成功响应，告知需要重启
-	RespondJSON(c, http.StatusOK, gin.H{
-		"message": "配置已保存，程序将在2秒后重启",
-		"key":     key,
-		"value":   req.Value,
+	respondAfterSettingsUpdate(c, s, map[string]string{key: req.Value}, gin.H{
+		"key":   key,
+		"value": req.Value,
 	})
-
-	// 异步触发重启
-	go triggerRestart()
 }
 
 // AdminResetSetting 重置配置为默认值
@@ -128,17 +130,10 @@ func (s *Server) AdminResetSetting(c *gin.Context) {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
-	// log.Printf("[INFO] Setting reset to default: %s = %s (restart required)", key, setting.DefaultValue)
-
-	RespondJSON(c, http.StatusOK, gin.H{
-		"message": "配置已重置为默认值，程序将在2秒后重启",
-		"key":     key,
-		"value":   setting.DefaultValue,
+	respondAfterSettingsUpdate(c, s, map[string]string{key: setting.DefaultValue}, gin.H{
+		"key":   key,
+		"value": setting.DefaultValue,
 	})
-
-	// 异步触发重启
-	go triggerRestart()
 }
 
 // AdminBatchUpdateSettings 批量更新配置(事务保护)
@@ -176,14 +171,31 @@ func (s *Server) AdminBatchUpdateSettings(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[INFO] 已批量更新 %d 项配置（需重启）", len(req))
+	respondAfterSettingsUpdate(c, s, req, gin.H{})
+}
 
-	RespondJSON(c, http.StatusOK, gin.H{
-		"message": fmt.Sprintf("已保存 %d 项配置，程序将在2秒后重启", len(req)),
-	})
+func respondAfterSettingsUpdate(c *gin.Context, s *Server, updates map[string]string, response gin.H) {
+	hasRestartRequiredSetting := false
+	for key := range updates {
+		if !isHotReloadableSetting(key) {
+			hasRestartRequiredSetting = true
+			break
+		}
+	}
 
-	// 异步触发重启
-	go triggerRestart()
+	s.ApplyHotReloadableSettings(updates)
+	if hasRestartRequiredSetting {
+		log.Printf("[INFO] 已保存 %d 项配置（包含需重启项）", len(updates))
+		response["message"] = fmt.Sprintf("已保存 %d 项配置，程序将立即重启", len(updates))
+		RespondJSON(c, http.StatusOK, response)
+		go triggerRestart()
+		return
+	}
+
+	log.Printf("[INFO] 已热更新 %d 项配置", len(updates))
+	response["message"] = fmt.Sprintf("已保存 %d 项配置并立即生效", len(updates))
+	response["hot_reloaded"] = true
+	RespondJSON(c, http.StatusOK, response)
 }
 
 // validateSettingValue 验证配置值的合法性

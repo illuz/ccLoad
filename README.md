@@ -928,9 +928,9 @@ export CCLOAD_SQLITE_LOG_DAYS=7  # Restore last 7 days of logs (optional)
 | Pure MySQL | Set `CCLOAD_MYSQL` | Standard production |
 | Hybrid Mode | Set `CCLOAD_MYSQL` + `CCLOAD_ENABLE_SQLITE_REPLICA=1` | HuggingFace Spaces |
 
-### Web Admin Configuration (Hot Reload Supported)
+### Web Admin Configuration
 
-These settings have been migrated to database, managed via Web interface `/web/settings.html`, changes take effect immediately without restart:
+Settings marked with the lightning icon take effect immediately after saving: upstream timeouts, default channel test content, the debug-log switch, soft-error prefixes, and all-cooled fallback. Saving any other setting automatically restarts the process so it can take effect.
 
 | Setting | Default | Description |
 |---------|---------|-------------|

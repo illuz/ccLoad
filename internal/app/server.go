@@ -62,11 +62,12 @@ type Server struct {
 	tokenStatsCh        chan tokenStatsUpdate
 	tokenStatsDropCount atomic.Int64
 
-	// 运行时配置（启动时从数据库加载，修改后重启生效）
+	// 运行时配置（超时使用原子快照，保存后对新请求生效）
 	maxKeyRetries       int                                 // 单个渠道内最大Key重试次数
 	firstByteTimeout    time.Duration                       // 上游首字节超时（流式请求）
 	nonStreamTimeout    time.Duration                       // 非流式请求超时
 	channelTypeTimeouts map[string]channelTypeTimeoutConfig // 按运行时上游协议覆盖超时，0=回退全局
+	timeoutConfig       atomic.Pointer[serverTimeoutConfig]
 	// 模型匹配配置（启动时从数据库加载，修改后重启生效）
 	modelFuzzyMatch bool // 未命中时启用模糊匹配（子串匹配+版本排序）
 
@@ -186,6 +187,7 @@ func NewServer(store storage.Store) *Server {
 		channelConcurrencyLimiter: newChannelConcurrencyLimiter(),
 		channelBalanceCache:       make(map[int64]*channelBalanceCacheEntry),
 	}
+	s.timeoutConfig.Store(newServerTimeoutConfig(runtimeCfg))
 
 	reg := protocol.NewRegistry()
 	protocolbuiltin.Register(reg)
@@ -291,6 +293,77 @@ type serverRuntimeConfig struct {
 	ChannelTypeTimeouts map[string]channelTypeTimeoutConfig
 	LogRetentionDays    int
 	ModelFuzzyMatch     bool
+}
+
+// serverTimeoutConfig 是供请求路径无锁读取的不可变超时快照。
+type serverTimeoutConfig struct {
+	firstByteTimeout    time.Duration
+	nonStreamTimeout    time.Duration
+	channelTypeTimeouts map[string]channelTypeTimeoutConfig
+}
+
+func newServerTimeoutConfig(runtimeCfg serverRuntimeConfig) *serverTimeoutConfig {
+	overrides := make(map[string]channelTypeTimeoutConfig, len(runtimeCfg.ChannelTypeTimeouts))
+	for key, value := range runtimeCfg.ChannelTypeTimeouts {
+		overrides[key] = value
+	}
+	return &serverTimeoutConfig{
+		firstByteTimeout:    runtimeCfg.FirstByteTimeout,
+		nonStreamTimeout:    runtimeCfg.NonStreamTimeout,
+		channelTypeTimeouts: overrides,
+	}
+}
+
+// currentTimeoutConfig 返回当前超时快照。字段回退仅用于未经过 NewServer 构造的测试实例。
+func (s *Server) currentTimeoutConfig() *serverTimeoutConfig {
+	if s != nil {
+		if snapshot := s.timeoutConfig.Load(); snapshot != nil {
+			return snapshot
+		}
+	}
+	if s == nil {
+		return &serverTimeoutConfig{}
+	}
+	return &serverTimeoutConfig{
+		firstByteTimeout:    s.firstByteTimeout,
+		nonStreamTimeout:    s.nonStreamTimeout,
+		channelTypeTimeouts: s.channelTypeTimeouts,
+	}
+}
+
+func isTimeoutSettingKey(key string) bool {
+	if key == "upstream_first_byte_timeout" || key == "non_stream_timeout" {
+		return true
+	}
+	for _, channelType := range util.ChannelTypes {
+		if key == channelTypeFirstByteTimeoutSettingKey(channelType.Value) ||
+			key == channelTypeNonStreamTimeoutSettingKey(channelType.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHotReloadableSetting(key string) bool {
+	if isTimeoutSettingKey(key) {
+		return true
+	}
+	switch key {
+	case "channel_test_content", "debug_log_enabled", "soft_error_text_prefixes", "cooldown_fallback_enabled":
+		return true
+	default:
+		return false
+	}
+}
+
+// ApplyHotReloadableSettings 将已持久化、已写入 ConfigService 缓存的配置应用到运行时。
+func (s *Server) ApplyHotReloadableSettings(updates map[string]string) {
+	for key := range updates {
+		if isTimeoutSettingKey(key) {
+			s.timeoutConfig.Store(newServerTimeoutConfig(loadServerRuntimeConfig(s.configService)))
+			return
+		}
+	}
 }
 
 // loadServerRuntimeConfig 从 ConfigService 加载运行时配置并校验，无效值兜底为默认值
@@ -683,8 +756,9 @@ func (s *Server) invalidateChannelRelatedCache(channelID int64) {
 // 基于 nonStreamTimeout 动态计算，确保传输层超时 >= 业务层超时
 func (s *Server) GetWriteTimeout() time.Duration {
 	const minWriteTimeout = 120 * time.Second
-	maxTimeout := s.nonStreamTimeout
-	for _, timeouts := range s.channelTypeTimeouts {
+	timeoutConfig := s.currentTimeoutConfig()
+	maxTimeout := timeoutConfig.nonStreamTimeout
+	for _, timeouts := range timeoutConfig.channelTypeTimeouts {
 		if timeouts.NonStreamTimeout > maxTimeout {
 			maxTimeout = timeouts.NonStreamTimeout
 		}
@@ -695,10 +769,20 @@ func (s *Server) GetWriteTimeout() time.Duration {
 	return minWriteTimeout
 }
 
+// applyDynamicWriteTimeout refreshes the transport write deadline for each request.
+// This lets newly received requests use a hot-reloaded non-stream timeout without
+// mutating http.Server.WriteTimeout concurrently. Streaming handlers may clear it.
+func (s *Server) applyDynamicWriteTimeout(c *gin.Context) {
+	deadline := time.Now().Add(s.GetWriteTimeout())
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(deadline)
+	c.Next()
+}
+
 func (s *Server) resolveProtocolTimeouts(cfg *model.Config, plan protocol.TransformPlan) channelTypeTimeoutConfig {
+	timeoutConfig := s.currentTimeoutConfig()
 	timeouts := channelTypeTimeoutConfig{
-		FirstByteTimeout: s.firstByteTimeout,
-		NonStreamTimeout: s.nonStreamTimeout,
+		FirstByteTimeout: timeoutConfig.firstByteTimeout,
+		NonStreamTimeout: timeoutConfig.nonStreamTimeout,
 	}
 
 	protocolKey := string(plan.UpstreamProtocol)
@@ -709,7 +793,7 @@ func (s *Server) resolveProtocolTimeouts(cfg *model.Config, plan protocol.Transf
 		return timeouts
 	}
 
-	override, ok := s.channelTypeTimeouts[util.NormalizeChannelType(protocolKey)]
+	override, ok := timeoutConfig.channelTypeTimeouts[util.NormalizeChannelType(protocolKey)]
 	if !ok {
 		return timeouts
 	}
@@ -724,6 +808,9 @@ func (s *Server) resolveProtocolTimeouts(cfg *model.Config, plan protocol.Transf
 
 // SetupRoutes - 新的路由设置函数，适配Gin
 func (s *Server) SetupRoutes(r *gin.Engine) {
+	// 超时设置在请求开始时应用；已开始的请求保留其原有截止时间。
+	r.Use(s.applyDynamicWriteTimeout)
+
 	// 安全响应头（管理界面防护）
 	r.Use(func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")

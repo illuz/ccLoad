@@ -243,6 +243,38 @@ func TestServer_ResolveProtocolTimeouts_ZeroChannelTypeFallsBackToGlobal(t *test
 	}
 }
 
+func TestServer_ApplyHotReloadableSettings_ReplacesTimeoutSnapshot(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+
+	cs := NewConfigService(store)
+	if err := cs.LoadDefaults(context.Background()); err != nil {
+		t.Fatalf("load defaults: %v", err)
+	}
+	s := &Server{configService: cs}
+	s.timeoutConfig.Store(newServerTimeoutConfig(loadServerRuntimeConfig(cs)))
+
+	if err := cs.BatchUpdateSettings(context.Background(), map[string]string{
+		"upstream_first_byte_timeout": "17",
+		"openai_non_stream_timeout":   "43",
+	}); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+	s.ApplyHotReloadableSettings(map[string]string{"upstream_first_byte_timeout": "17", "openai_non_stream_timeout": "43"})
+
+	global := s.currentTimeoutConfig()
+	if global.firstByteTimeout != 17*time.Second {
+		t.Fatalf("first-byte timeout=%v, want 17s", global.firstByteTimeout)
+	}
+	openAI := s.resolveProtocolTimeouts(nil, protocol.TransformPlan{UpstreamProtocol: protocol.OpenAI})
+	if openAI.NonStreamTimeout != 43*time.Second {
+		t.Fatalf("openai non-stream timeout=%v, want 43s", openAI.NonStreamTimeout)
+	}
+}
+
 func TestNewServer_ZeroNonStreamTimeoutDisablesTimeout(t *testing.T) {
 	t.Parallel()
 

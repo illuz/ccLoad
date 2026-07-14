@@ -196,7 +196,7 @@ func (s *Server) describeChannelTestTimeoutError(start time.Time, testReq *testu
 	if timeout.firstStreamContentTimeoutTriggered() {
 		threshold := timeout.firstByteTimeout
 		if threshold == 0 {
-			threshold = s.firstByteTimeout
+			threshold = s.currentTimeoutConfig().firstByteTimeout
 		}
 		return util.StatusFirstByteTimeout,
 			fmt.Sprintf("上游首个有效流内容超时: upstream first valid stream content timeout after %.2fs (threshold=%v): %v", durationSec, threshold, err),
@@ -205,7 +205,7 @@ func (s *Server) describeChannelTestTimeoutError(start time.Time, testReq *testu
 	if !testReq.Stream && timeout != nil && timeout.nonStreamTimeout > 0 && errors.Is(err, context.DeadlineExceeded) {
 		threshold := timeout.nonStreamTimeout
 		if threshold == 0 {
-			threshold = s.nonStreamTimeout
+			threshold = s.currentTimeoutConfig().nonStreamTimeout
 		}
 		return http.StatusGatewayTimeout,
 			fmt.Sprintf("非流式请求超时: upstream timeout after %.2fs (threshold=%v): %v", durationSec, threshold, err),

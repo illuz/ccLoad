@@ -36,9 +36,10 @@ type requestContext struct {
 // - 非流式请求：使用 nonStreamTimeout（整体超时），超时主动关闭上游连接
 // [INFO] Go 1.21+ 改进：总是返回非 nil 的 cancel，调用方无需检查（符合 Go 惯用法）
 func (s *Server) newRequestContext(parentCtx context.Context, requestPath string, body []byte) *requestContext {
+	timeoutConfig := s.currentTimeoutConfig()
 	return s.newRequestContextWithTimeouts(parentCtx, requestPath, body, channelTypeTimeoutConfig{
-		FirstByteTimeout: s.firstByteTimeout,
-		NonStreamTimeout: s.nonStreamTimeout,
+		FirstByteTimeout: timeoutConfig.firstByteTimeout,
+		NonStreamTimeout: timeoutConfig.nonStreamTimeout,
 	})
 }
 

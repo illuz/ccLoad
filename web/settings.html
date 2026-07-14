@@ -58,7 +58,7 @@
   <!-- 设置行模板 -->
   <template id="tpl-setting-row">
     <tr class="mobile-card-row setting-data-row" data-key="{{key}}">
-      <td class="setting-col-description" data-mobile-label="{{mobileLabelDescription}}">{{description}}</td>
+      <td class="setting-col-description" data-mobile-label="{{mobileLabelDescription}}">{{description}}{{{hotReloadHtml}}}</td>
       <td class="setting-col-value" data-mobile-label="{{mobileLabelValue}}">{{{inputHtml}}}</td>
       <td class="setting-col-actions" data-mobile-label="{{mobileLabelActions}}">
         <button class="btn-icon setting-reset-btn" data-key="{{key}}" data-i18n-title="settings.resetToDefault" title="重置为默认值">

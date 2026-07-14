@@ -179,7 +179,7 @@ func (s *Server) handleRequestError(
 		timeoutMsg := fmt.Sprintf("upstream first byte timeout after %.2fs", durationSec)
 		timeout := reqCtx.firstByteTimeout
 		if timeout == 0 {
-			timeout = s.firstByteTimeout
+			timeout = s.currentTimeoutConfig().firstByteTimeout
 		}
 		if timeout > 0 {
 			timeoutMsg = fmt.Sprintf("%s (threshold=%v)", timeoutMsg, timeout)
@@ -196,7 +196,7 @@ func (s *Server) handleRequestError(
 			// 非流式请求超时（context.WithTimeout触发）
 			timeout := reqCtx.nonStreamTimeout
 			if timeout == 0 {
-				timeout = s.nonStreamTimeout
+				timeout = s.currentTimeoutConfig().nonStreamTimeout
 			}
 			err = fmt.Errorf("upstream timeout after %.2fs (non-stream, threshold=%v): %w",
 				durationSec, timeout, err)
@@ -1467,7 +1467,7 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 		timeoutMsg := fmt.Sprintf("upstream first byte timeout after %.2fs", duration)
 		timeout := reqCtx.firstByteTimeout
 		if timeout == 0 {
-			timeout = s.firstByteTimeout
+			timeout = s.currentTimeoutConfig().firstByteTimeout
 		}
 		if timeout > 0 {
 			timeoutMsg = fmt.Sprintf("%s (threshold=%v)", timeoutMsg, timeout)

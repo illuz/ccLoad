@@ -104,6 +104,7 @@ function createSettingsHarness() {
   vm.runInContext(`${settingsSource}
 this.__settingsTest = {
   groupSettings,
+  isHotReloadableSetting,
   saveAllSettings,
   resetSetting,
   setOriginalSettings(value) {
@@ -154,6 +155,14 @@ test('settings 超时组按全局项和渠道类型成对排序', () => {
     'gemini_first_byte_timeout',
     'gemini_non_stream_timeout'
   ]);
+});
+
+test('可热更新的设置项包含超时项和直接读取的运行时项', () => {
+  const harness = createSettingsHarness();
+
+  assert.equal(harness.settingsTest.isHotReloadableSetting({ hot_reload: true }), true);
+  assert.equal(harness.settingsTest.isHotReloadableSetting({ hot_reload: false }), false);
+  assert.equal(harness.settingsTest.isHotReloadableSetting({}), false);
 });
 
 test('saveAllSettings 在保存成功后不应因服务重启再触发一次 loadSettings', async () => {

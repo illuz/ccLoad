@@ -4294,6 +4294,21 @@ html[data-theme="system"][data-resolved-theme="dark"] .login-button {
   text-align: right;
 }
 
+.settings-hot-reload {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  vertical-align: -3px;
+  color: var(--warning-600);
+  cursor: help;
+}
+
+.settings-hot-reload svg {
+  width: 16px;
+  height: 16px;
+}
+
 .setting-group-cell {
   background: var(--neutral-100);
   color: var(--neutral-700);

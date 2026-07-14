@@ -3,6 +3,20 @@ const t = window.t;
 
 let originalSettings = {}; // 保存原始值用于比较
 
+function isHotReloadableSetting(setting) {
+  return Boolean(setting?.hot_reload);
+}
+
+function renderHotReloadBadge(setting) {
+  if (!isHotReloadableSetting(setting)) return '';
+  const title = escapeHtml(t('settings.hotReload'));
+  return `<span class="settings-hot-reload" title="${title}" aria-label="${title}">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m13 2-9.5 12H12l-1 8 9.5-12H12l1-8z" />
+    </svg>
+  </span>`;
+}
+
 function bindSettingsPageActions() {
   const saveAllBtn = document.getElementById('save-all-btn');
   if (!saveAllBtn || saveAllBtn.dataset.bound) return;
@@ -139,6 +153,7 @@ function renderSettings(settings) {
       const row = TemplateEngine.render('tpl-setting-row', {
         key: s.key,
         description: description,
+        hotReloadHtml: renderHotReloadBadge(s),
         inputHtml: renderInput(s),
         mobileLabelDescription: t('settings.configItem'),
         mobileLabelValue: t('settings.currentValue'),

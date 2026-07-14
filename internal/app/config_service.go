@@ -14,7 +14,7 @@ import (
 
 // ConfigService 配置管理服务
 // 职责: 启动时从数据库加载配置，提供只读访问
-// 配置修改后程序会自动重启，无需热重载
+// 配置修改后由调用方决定是热应用还是重启；缓存始终与成功持久化的值保持一致。
 type ConfigService struct {
 	store  storage.Store
 	mu     sync.RWMutex                    // 保护 cache 并发访问
@@ -154,9 +154,13 @@ func (cs *ConfigService) GetSettingFresh(ctx context.Context, key string) (*mode
 	return cs.store.GetSetting(ctx, key)
 }
 
-// UpdateSetting 更新配置（仅写数据库，不更新缓存，因为会重启）
+// UpdateSetting 更新配置，并在持久化成功后替换内存缓存中的不可变副本。
 func (cs *ConfigService) UpdateSetting(ctx context.Context, key, value string) error {
-	return cs.store.UpdateSetting(ctx, key, value)
+	if err := cs.store.UpdateSetting(ctx, key, value); err != nil {
+		return err
+	}
+	cs.updateCache(map[string]string{key: value})
+	return nil
 }
 
 // ListAllSettings 获取所有配置(用于前端展示)
@@ -164,7 +168,27 @@ func (cs *ConfigService) ListAllSettings(ctx context.Context) ([]*model.SystemSe
 	return cs.store.ListAllSettings(ctx)
 }
 
-// BatchUpdateSettings 批量更新配置（仅写数据库，不更新缓存，因为会重启）
+// BatchUpdateSettings 批量更新配置，并在事务提交成功后替换内存缓存。
 func (cs *ConfigService) BatchUpdateSettings(ctx context.Context, updates map[string]string) error {
-	return cs.store.BatchUpdateSettings(ctx, updates)
+	if err := cs.store.BatchUpdateSettings(ctx, updates); err != nil {
+		return err
+	}
+	cs.updateCache(updates)
+	return nil
+}
+
+// updateCache 在持久化成功后替换配置对象，避免读路径与写路径并发修改同一对象。
+func (cs *ConfigService) updateCache(updates map[string]string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for key, value := range updates {
+		setting, ok := cs.cache[key]
+		if !ok || setting == nil {
+			continue
+		}
+		updated := *setting
+		updated.Value = value
+		cs.cache[key] = &updated
+	}
 }

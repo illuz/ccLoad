@@ -13,4 +13,5 @@ type SystemSetting struct {
 	Description  string `json:"description"`   // 配置说明(用于前端显示)
 	DefaultValue string `json:"default_value"` // 默认值(用于重置功能)
 	UpdatedAt    int64  `json:"updated_at"`    // 更新时间(Unix秒)
+	HotReload    bool   `json:"hot_reload"`    // 是否可在当前进程中立即应用
 }
