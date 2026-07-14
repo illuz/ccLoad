@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -38,4 +39,35 @@ func (s *Server) HandleGetActiveRequestDebugLog(c *gin.Context) {
 	}
 
 	RespondJSON(c, http.StatusOK, debugLogResponse(entry))
+}
+
+// HandleFailoverActiveRequest 中断一条尚未输出响应的上游尝试，并继续下一个候选渠道。
+// POST /admin/active-requests/:request_id/failover
+func (s *Server) HandleFailoverActiveRequest(c *gin.Context) {
+	requestID, err := strconv.ParseInt(c.Param("request_id"), 10, 64)
+	if err != nil || requestID <= 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "invalid request_id")
+		return
+	}
+
+	if s.activeRequests == nil {
+		RespondErrorMsg(c, http.StatusNotFound, "active request not found")
+		return
+	}
+
+	err = s.activeRequests.RequestFailover(requestID)
+	if errors.Is(err, errActiveRequestNotFound) {
+		RespondErrorMsg(c, http.StatusNotFound, "active request not found")
+		return
+	}
+	if errors.Is(err, errActiveRequestNotFailoverable) {
+		RespondErrorMsg(c, http.StatusConflict, "active request has already started responding")
+		return
+	}
+	if err != nil {
+		RespondErrorMsg(c, http.StatusInternalServerError, "failed to request upstream failover")
+		return
+	}
+
+	RespondJSON(c, http.StatusAccepted, gin.H{"request_id": requestID})
 }

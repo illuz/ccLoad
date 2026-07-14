@@ -121,14 +121,15 @@ func closeReaderOnContextCancel(ctx context.Context, src io.Reader) func() {
 
 // deferredResponseWriter 延迟提交响应头，允许在首个可见输出前中止本次流并切换到其他上游。
 type deferredResponseWriter struct {
-	target             http.ResponseWriter
-	header             http.Header
-	status             int
-	committed          bool
-	buffer             bytes.Buffer
-	maxBufferBytes     int
-	onFirstClientWrite func()
-	clientWriteMarked  bool
+	target               http.ResponseWriter
+	header               http.Header
+	status               int
+	committed            bool
+	buffer               bytes.Buffer
+	maxBufferBytes       int
+	onFirstClientWrite   func()
+	clientWriteMarked    bool
+	beforeResponseCommit func() error
 }
 
 func newDeferredResponseWriter(target http.ResponseWriter) *deferredResponseWriter {
@@ -184,6 +185,9 @@ func (w *deferredResponseWriter) Commit() error {
 	if status == 0 {
 		status = http.StatusOK
 	}
+	if err := w.prepareResponseCommit(); err != nil {
+		return err
+	}
 	w.target.WriteHeader(status)
 	w.committed = true
 	if w.buffer.Len() > 0 {
@@ -207,6 +211,10 @@ func (w *deferredResponseWriter) SetFirstClientWriteCallback(fn func()) {
 	w.onFirstClientWrite = fn
 }
 
+func (w *deferredResponseWriter) SetBeforeResponseCommitCallback(fn func() error) {
+	w.beforeResponseCommit = fn
+}
+
 func (w *deferredResponseWriter) SetMaxBufferBytes(limit int) {
 	w.maxBufferBytes = limit
 }
@@ -219,6 +227,13 @@ func (w *deferredResponseWriter) markFirstClientWrite() {
 	if w.onFirstClientWrite != nil {
 		w.onFirstClientWrite()
 	}
+}
+
+func (w *deferredResponseWriter) prepareResponseCommit() error {
+	if w.beforeResponseCommit != nil {
+		return w.beforeResponseCommit()
+	}
+	return nil
 }
 
 // streamCopy 流式复制（支持flusher与ctx取消）

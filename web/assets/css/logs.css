@@ -143,6 +143,46 @@
       transform: none;
     }
 
+    .active-request-failover-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      margin-left: 5px;
+      padding: 0;
+      border: 1px solid var(--danger-300);
+      border-radius: 3px;
+      background: transparent;
+      color: var(--danger-600);
+      cursor: pointer;
+      vertical-align: middle;
+    }
+
+    .active-request-failover-btn:hover {
+      background: var(--danger-50);
+      border-color: var(--danger-500);
+    }
+
+    .active-request-failover-btn svg {
+      width: 13px;
+      height: 13px;
+      pointer-events: none;
+    }
+
+    .active-request-failover-btn:disabled {
+      cursor: wait;
+      opacity: 0.55;
+    }
+
+    .active-request-failover-btn.is-pending svg {
+      animation: active-request-failover-spin 0.9s linear infinite;
+    }
+
+    @keyframes active-request-failover-spin {
+      to { transform: rotate(360deg); }
+    }
+
     .logs-table .channel-link {
       padding: 0;
       border: none;

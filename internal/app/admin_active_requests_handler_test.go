@@ -1,9 +1,16 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
+
+	"ccLoad/internal/util"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestHandleActiveRequests(t *testing.T) {
@@ -78,5 +85,45 @@ func TestHandleActiveRequests_PreservesZeroCostMultiplier(t *testing.T) {
 	}
 	if got, ok := value.(float64); !ok || got != 0 {
 		t.Fatalf("cost_multiplier=%v, want 0", value)
+	}
+}
+
+func TestHandleFailoverActiveRequest(t *testing.T) {
+	m := newActiveRequestManager()
+	id := m.Register(time.Now(), "m1", "1.2.3.4", true)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	m.StartAttempt(id, cancel)
+
+	s := &Server{activeRequests: m}
+	c, w := newTestContext(t, newRequest(http.MethodPost, "/admin/active-requests/1/failover", nil))
+	c.Params = gin.Params{{Key: "request_id", Value: strconv.FormatInt(id, 10)}}
+
+	s.HandleFailoverActiveRequest(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status=%d, want %d; body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+	if !errors.Is(context.Cause(ctx), util.ErrManualFailover) {
+		t.Fatalf("context cause=%v, want ErrManualFailover", context.Cause(ctx))
+	}
+}
+
+func TestHandleFailoverActiveRequest_RejectsStartedResponse(t *testing.T) {
+	m := newActiveRequestManager()
+	id := m.Register(time.Now(), "m1", "1.2.3.4", true)
+	_, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	m.StartAttempt(id, cancel)
+	m.AddBytes(id, 1)
+
+	s := &Server{activeRequests: m}
+	c, w := newTestContext(t, newRequest(http.MethodPost, "/admin/active-requests/1/failover", nil))
+	c.Params = gin.Params{{Key: "request_id", Value: strconv.FormatInt(id, 10)}}
+
+	s.HandleFailoverActiveRequest(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status=%d, want %d; body=%s", w.Code, http.StatusConflict, w.Body.String())
 	}
 }

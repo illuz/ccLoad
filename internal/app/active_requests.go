@@ -2,6 +2,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -9,6 +11,11 @@ import (
 
 	"ccLoad/internal/model"
 	"ccLoad/internal/util"
+)
+
+var (
+	errActiveRequestNotFound        = errors.New("active request not found")
+	errActiveRequestNotFailoverable = errors.New("active request cannot fail over")
 )
 
 // ActiveRequest 表示一个进行中的请求
@@ -29,6 +36,7 @@ type ActiveRequest struct {
 	CostMultiplier      float64 `json:"cost_multiplier"`                  // 渠道成本倍率
 	DebugLogAvailable   bool    `json:"debug_log_available,omitempty"`    // 运行中请求是否已有可读取的调试快照
 	ThinkingEffort      string  `json:"thinking_effort,omitempty"`
+	CanFailover         bool    `json:"can_failover"` // 当前上游尚未向客户端输出，可安全切换渠道
 }
 
 type activeRequest struct {
@@ -47,6 +55,11 @@ type activeRequest struct {
 	CostMultiplier float64 // 渠道成本倍率
 	ThinkingEffort string
 	debugCapture   *debugCapture
+
+	attemptGeneration uint64
+	attemptCancel     context.CancelCauseFunc
+	failoverRequested bool
+	responseCommitted bool
 
 	bytesCounter            atomic.Int64 // 上游已返回的字节数（原子累加）
 	clientFirstByteTimeUsec atomic.Int64 // 客户端侧首字节响应时间（微秒），CAS保证只写一次，0表示未设置
@@ -126,6 +139,80 @@ func (m *activeRequestManager) SetDebugCapture(id int64, dc *debugCapture) {
 	m.mu.Unlock()
 }
 
+// StartAttempt 绑定当前上游尝试的取消器。返回的清理函数只会清除本次尝试，
+// 避免旧尝试结束时误删已开始的下一次尝试。
+func (m *activeRequestManager) StartAttempt(id int64, cancel context.CancelCauseFunc) func() {
+	if m == nil || cancel == nil {
+		return func() {}
+	}
+
+	m.mu.Lock()
+	req, ok := m.requests[id]
+	if !ok {
+		m.mu.Unlock()
+		return func() {}
+	}
+	req.attemptGeneration++
+	generation := req.attemptGeneration
+	req.attemptCancel = cancel
+	req.failoverRequested = false
+	req.responseCommitted = false
+	req.bytesCounter.Store(0)
+	req.clientFirstByteTimeUsec.Store(0)
+	m.mu.Unlock()
+
+	return func() {
+		m.mu.Lock()
+		if current, exists := m.requests[id]; exists && current.attemptGeneration == generation {
+			current.attemptCancel = nil
+			current.failoverRequested = false
+		}
+		m.mu.Unlock()
+	}
+}
+
+// RequestFailover 中断当前尚未向客户端输出的上游尝试。
+// 已开始输出的响应不能安全重试，否则会把两个上游的内容拼接给客户端。
+func (m *activeRequestManager) RequestFailover(id int64) error {
+	if m == nil {
+		return errActiveRequestNotFound
+	}
+
+	m.mu.Lock()
+	req, ok := m.requests[id]
+	if !ok {
+		m.mu.Unlock()
+		return errActiveRequestNotFound
+	}
+	if req.attemptCancel == nil || req.failoverRequested || req.responseCommitted || req.bytesCounter.Load() > 0 {
+		m.mu.Unlock()
+		return errActiveRequestNotFailoverable
+	}
+	req.failoverRequested = true
+	cancel := req.attemptCancel
+	m.mu.Unlock()
+
+	cancel(util.ErrManualFailover)
+	return nil
+}
+
+// TryCommitResponse 在向客户端写入响应头前调用。它与 RequestFailover 互斥：
+// 先获得锁的一方决定本次上游是继续向客户端输出，还是安全地切换候选渠道。
+func (m *activeRequestManager) TryCommitResponse(id int64) error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if req, ok := m.requests[id]; ok {
+		if req.failoverRequested {
+			return util.ErrManualFailover
+		}
+		req.responseCommitted = true
+	}
+	return nil
+}
+
 // GetDebugLogSnapshot 返回运行中请求当前调试快照。
 func (m *activeRequestManager) GetDebugLogSnapshot(id int64) (*model.DebugLogEntry, bool) {
 	m.mu.RLock()
@@ -201,6 +288,7 @@ func (m *activeRequestManager) List() []*ActiveRequest {
 			CostMultiplier:    req.CostMultiplier,
 			DebugLogAvailable: req.debugCapture != nil,
 			ThinkingEffort:    req.ThinkingEffort,
+			CanFailover:       req.attemptCancel != nil && !req.failoverRequested && !req.responseCommitted && req.bytesCounter.Load() == 0,
 		}
 		if usec := req.clientFirstByteTimeUsec.Load(); usec > 0 {
 			view.ClientFirstByteTime = float64(usec) / 1e6

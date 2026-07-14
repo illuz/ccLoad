@@ -695,7 +695,7 @@ func (s *Server) handleSuccessResponse(
 			}, reqCtx.Duration().Seconds(), err
 		}
 		if transform {
-			return s.handleTranslatedNonStreamSuccessResponse(reqCtx, resp, hdrClone, w, string(detectedProtocol), readStats)
+			return s.handleTranslatedNonStreamSuccessResponse(reqCtx, resp, hdrClone, w, string(detectedProtocol), readStats, observer)
 		}
 	}
 
@@ -710,7 +710,7 @@ func (s *Server) handleSuccessResponse(
 	if !reqCtx.isStreaming &&
 		s.protocolRegistry != nil &&
 		reqCtx.transformPlan.NeedsTransform {
-		return s.handleTranslatedNonStreamSuccessResponse(reqCtx, resp, hdrClone, w, channelType, readStats)
+		return s.handleTranslatedNonStreamSuccessResponse(reqCtx, resp, hdrClone, w, channelType, readStats, observer)
 	}
 
 	// [FIX] 流式请求：禁用 WriteTimeout，避免长时间流被服务器自己切断
@@ -729,10 +729,19 @@ func (s *Server) handleSuccessResponse(
 		if observer != nil && observer.Timing != nil {
 			deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
 		}
+		if observer != nil && observer.BeforeClientResponseCommit != nil {
+			deferredWriter.SetBeforeResponseCommitCallback(observer.BeforeClientResponseCommit)
+		}
 		if guardBuffering {
 			deferredWriter.SetMaxBufferBytes(codexGuardMaxBufferedBytes)
 		}
 		streamWriter = deferredWriter
+	}
+
+	if deferredWriter == nil {
+		if err := prepareClientResponseCommit(observer); err != nil {
+			return &fwResult{Status: resp.StatusCode, Header: hdrClone}, reqCtx.Duration().Seconds(), err
+		}
 	}
 
 	// 写入响应头
@@ -849,6 +858,7 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 	w http.ResponseWriter,
 	channelType string,
 	readStats *streamReadStats,
+	observer *ForwardObserver,
 ) (*fwResult, float64, error) {
 	rawBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -918,6 +928,9 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 
 	disableResponseWriteTimeout(w, "非流式")
 
+	if err := prepareClientResponseCommit(observer); err != nil {
+		return &fwResult{Status: resp.StatusCode, Header: hdrClone}, reqCtx.Duration().Seconds(), err
+	}
 	filterAndWriteResponseHeaders(w, translatedHeader)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(translatedBody)
@@ -957,6 +970,9 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	deferredWriter := newDeferredResponseWriter(w)
 	if observer != nil && observer.Timing != nil {
 		deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
+	}
+	if observer != nil && observer.BeforeClientResponseCommit != nil {
+		deferredWriter.SetBeforeResponseCommitCallback(observer.BeforeClientResponseCommit)
 	}
 	guardBuffering := shouldApplyCodexReasoningGuard(reqCtx, channelType)
 	if guardBuffering {
@@ -1571,6 +1587,14 @@ func (s *Server) forwardAttempt(
 	w http.ResponseWriter,
 	deferChannelCooldown bool, // 多URL场景下，非最后一个URL不应触发渠道级冷却
 ) (*proxyResult, cooldown.Action, error) {
+	attemptCtx, cancelAttempt := context.WithCancelCause(ctx)
+	clearAttempt := func() {}
+	if reqCtx.activeReqID > 0 && s.activeRequests != nil {
+		clearAttempt = s.activeRequests.StartAttempt(reqCtx.activeReqID, cancelAttempt)
+	}
+	defer clearAttempt()
+	defer cancelAttempt(nil)
+
 	// 记录渠道尝试开始时间（用于日志记录，每次渠道/Key切换时更新）
 	reqCtx.attemptStartTime = time.Now()
 	reqCtx.baseURL = baseURL
@@ -1603,8 +1627,11 @@ func (s *Server) forwardAttempt(
 		}, cooldown.ActionRetryChannel, nil
 	}
 
-	res, duration, err := s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
+	res, duration, err := s.forwardOnceAsync(attemptCtx, cfg, selectedKey, reqCtx.requestMethod,
 		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, codexGuardAttemptConfigForProxyRequest(reqCtx))
+	if errors.Is(context.Cause(attemptCtx), util.ErrManualFailover) {
+		err = util.ErrManualFailover
+	}
 	if err != nil && errors.Is(err, protocol.ErrUnsupportedRequestShape) {
 		channelID := cfg.ID
 		return &proxyResult{
@@ -1625,8 +1652,11 @@ func (s *Server) forwardAttempt(
 	if retryBody, retryStrategy, ok := codexRetryBodyFor400(upstreamProtocol, cfg, plan, res); ok {
 		retryPlan := plan
 		retryPlan.TranslatedBody = retryBody
-		res, duration, err = s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
+		res, duration, err = s.forwardOnceAsync(attemptCtx, cfg, selectedKey, reqCtx.requestMethod,
 			retryPlan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, codexGuardAttemptConfigForProxyRequest(reqCtx))
+		if errors.Is(context.Cause(attemptCtx), util.ErrManualFailover) {
+			err = util.ErrManualFailover
+		}
 		if res != nil && res.DebugData != nil {
 			reqCtx.debugData = res.DebugData
 		}

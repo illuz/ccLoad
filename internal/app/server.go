@@ -915,6 +915,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.GET("/debug-log-analysis/:log_id", s.HandleGetDebugLogAnalysis)
 		admin.GET("/active-requests", s.HandleActiveRequests) // 进行中请求（内存状态）
 		admin.GET("/active-requests/:request_id/debug-log", s.HandleGetActiveRequestDebugLog)
+		admin.POST("/active-requests/:request_id/failover", s.HandleFailoverActiveRequest)
 		admin.GET("/metrics", s.HandleMetrics)
 		admin.GET("/stats", s.HandleStats)
 		admin.GET("/stats/filter-options", s.HandleStatsFilterOptions)

@@ -439,6 +439,9 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		OnFirstByteRead: func() {
 			s.activeRequests.SetClientFirstByteTime(activeID, time.Since(reqCtx.attemptStartTime))
 		},
+		BeforeClientResponseCommit: func() error {
+			return s.activeRequests.TryCommitResponse(activeID)
+		},
 		OnDebugCapture: func(dc *debugCapture) {
 			s.activeRequests.SetDebugCapture(activeID, dc)
 		},

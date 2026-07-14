@@ -897,6 +897,7 @@ function renderActiveRequests(activeRequests) {
     }
 
     const infoContent = buildActiveRequestInfoContent(req);
+    const failoverButton = buildActiveRequestFailoverButton(req);
 
     const row = document.createElement('tr');
     row.className = 'mobile-card-row pending-row';
@@ -908,6 +909,7 @@ function renderActiveRequests(activeRequests) {
               <span class="logs-mono-text" style="margin-left: 8px;" title="${escapeHtml(req.client_ip || '')}">${escapeHtml(maskIP(req.client_ip) || '-')}</span>
               <span style="margin-left: 8px;">${modelDisplay}</span>
               <span style="margin-left: 8px;">${durationDisplay} ${streamFlag}</span>
+              ${failoverButton}
               <span style="margin-left: 8px;">${infoContent}</span>
             </td>
           `;
@@ -919,7 +921,7 @@ function renderActiveRequests(activeRequests) {
             <td class="logs-col-api-key" data-mobile-label="${logMobileLabels.apiKey}" style="text-align: center; white-space: nowrap;">${keyDisplay}</td>
             <td class="logs-col-channel" data-mobile-label="${logMobileLabels.channel}" style="text-align: left;">${channelDisplay}</td>
             <td class="logs-col-model" data-mobile-label="${logMobileLabels.model}">${modelDisplay}</td>
-            <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="status-pending">进行中</span></td>
+            <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="status-pending">进行中</span>${failoverButton}</td>
             <td class="logs-col-timing" data-mobile-label="${logMobileLabels.timing}" style="text-align: right; white-space: nowrap;">${durationDisplay} ${streamFlag}</td>
             <td class="logs-col-speed mobile-empty-cell" data-mobile-label="${logMobileLabels.speed}" style="text-align: right; white-space: nowrap;"></td>
             <td class="logs-col-input mobile-empty-cell" data-mobile-label="${logMobileLabels.input}" style="text-align: right; white-space: nowrap;"></td>
@@ -936,6 +938,35 @@ function renderActiveRequests(activeRequests) {
 
   // 一次性插入所有 pending 行
   tbody.insertBefore(fragment, firstRow);
+}
+
+function buildActiveRequestFailoverButton(req) {
+  if (!req || !req.can_failover) return '';
+  const requestId = Number(req.id);
+  if (!Number.isSafeInteger(requestId) || requestId <= 0) return '';
+  const title = t('logs.failoverTitle');
+  return `<button type="button" class="active-request-failover-btn" data-action="failover-active-request" data-request-id="${requestId}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>`;
+}
+
+async function requestActiveRequestFailover(button) {
+  const requestId = Number(button?.dataset.requestId);
+  if (!Number.isSafeInteger(requestId) || requestId <= 0 || button.disabled) return;
+  if (!confirm(t('logs.failoverConfirm'))) return;
+
+  button.disabled = true;
+  button.classList.add('is-pending');
+  try {
+    const response = await fetchAPIWithAuth(`/admin/active-requests/${requestId}/failover`, {
+      method: 'POST'
+    });
+    if (!response.success) throw new Error(response.error || t('logs.failoverFailed'));
+  } catch (error) {
+    if (button.isConnected) {
+      button.disabled = false;
+      button.classList.remove('is-pending');
+    }
+    alert(error.message || t('logs.failoverFailed'));
+  }
 }
 
 // ✅ 动态计算列数（避免硬编码维护成本）
@@ -2324,6 +2355,12 @@ window.initPageBootstrap({
   const tbody = document.getElementById('tbody');
   if (tbody) {
     tbody.addEventListener('click', (e) => {
+      const failoverBtn = e.target.closest('[data-action="failover-active-request"]');
+      if (failoverBtn) {
+        requestActiveRequestFailover(failoverBtn);
+        return;
+      }
+
       // 运行中请求 Debug log 查看
       const activeDebugLink = e.target.closest('.debug-log-link[data-active-request-id]');
       if (activeDebugLink) {

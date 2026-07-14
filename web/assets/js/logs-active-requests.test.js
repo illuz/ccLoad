@@ -95,3 +95,15 @@ test('ui.js 是活动请求唯一轮询源，暴露订阅接口并向订阅者�
     'ui.js 应维护订阅者列表并推送活动请求数据'
   );
 });
+
+test('活动请求在可安全切换时提供故障转移操作', () => {
+  assert.match(
+    logsSource,
+    /function buildActiveRequestFailoverButton\(req\)[\s\S]*?req\.can_failover[\s\S]*?data-action="failover-active-request"/
+  );
+  assert.match(
+    logsSource,
+    /fetchAPIWithAuth\(`\/admin\/active-requests\/\$\{requestId\}\/failover`, \{\s*method: 'POST'/
+  );
+  assert.match(logsSource, /t\('logs\.failoverConfirm'\)/);
+});
