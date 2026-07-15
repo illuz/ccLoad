@@ -187,18 +187,35 @@ func (s *Server) pickBestChannelWhenAllCooledWithInputTokens(
 		return readyAt
 	}
 
-	// 计算有效优先级
-	getEffPriority := func(ch *modelpkg.Config) float64 {
-		if healthEnabled {
-			return s.calculateEffectivePriorityWithInputTokens(ch, s.healthCache.GetHealthStats(ch.ID), healthCfg, inputTokens)
-		}
-		return effectiveBasePriority(ch, inputTokens)
-	}
-
 	// 过滤nil并找最优
 	valid := slices.DeleteFunc(slices.Clone(channels), func(ch *modelpkg.Config) bool { return ch == nil })
 	if len(valid) == 0 {
 		return nil, 0
+	}
+
+	// 计算有效优先级（含候选集首字中位）
+	medianTTFB := 0.0
+	if healthEnabled {
+		samples := make([]float64, 0, len(valid))
+		for _, ch := range valid {
+			st := s.healthCache.GetHealthStats(ch.ID)
+			if st.FirstByteSampleCount > 0 && st.AvgFirstByteSeconds > 0 {
+				samples = append(samples, st.AvgFirstByteSeconds)
+			}
+		}
+		medianTTFB = medianFloat64(samples)
+	}
+	getEffPriority := func(ch *modelpkg.Config) float64 {
+		if healthEnabled {
+			return s.calculateEffectivePriorityWithInputTokens(
+				ch,
+				s.healthCache.GetHealthStats(ch.ID),
+				healthCfg,
+				inputTokens,
+				medianTTFB,
+			)
+		}
+		return effectiveBasePriority(ch, inputTokens)
 	}
 
 	best := slices.MinFunc(valid, func(a, b *modelpkg.Config) int {
