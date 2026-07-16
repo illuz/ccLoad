@@ -956,25 +956,35 @@ Settings marked with the lightning icon take effect immediately after saving: up
 | `health_score_window_minutes` | `30` | Success rate stats time window (minutes) |
 | `health_score_update_interval` | `30` | Success rate cache update interval (seconds) |
 | `health_min_confident_sample` | `20` | Confidence sample threshold (full penalty at this sample size) |
-| `channel_check_interval_hours` | `0` | Scheduled channel check interval (hours, 0=disabled) |
+| `enable_ttfb_score` | `false` | Enable relative first-byte latency penalty; requires `enable_health_score` |
+| `ttfb_penalty_weight` | `20` | TTFB penalty when average first-byte latency is 2× the candidate median at full confidence |
+| `ttfb_max_slow_ratio` | `2` | Upper bound for relative TTFB slowness (`avg_ttfb / median_ttfb - 1`) |
+| `ttfb_min_confident_sample` | `10` | TTFB confidence sample threshold |
+| `channel_check_interval_hours` | `5` | Scheduled channel check interval (whole hours, 0=disabled) |
 | `model_catalog_sync_interval_hours` | `0` | models.dev catalog sync interval (hours, decimals supported, 0=network sync disabled; restart required) |
 
 Per-protocol timeouts apply to the runtime upstream protocol: if a transformed request is forwarded to OpenAI, ccLoad reads `openai_*_timeout`; when that value is `0`, it falls back to the global timeout.
 
 The embedded pricing catalog remains authoritative by default. ccLoad may load a previously written local catalog cache at startup, but it makes no request to `models.dev` unless `model_catalog_sync_interval_hours` is explicitly set above `0`.
 
-#### Health Score Sorting
+#### Dynamic Channel Sorting
 
-When `enable_health_score` is enabled, the system dynamically adjusts priority based on channel success rate:
+When `enable_health_score` is enabled, ccLoad calculates an effective priority from recent channel health. The success-rate penalty is always active; the relative first-byte latency penalty is added only when `enable_ttfb_score=true`:
 
 ```
-confidence = min(1.0, sample_count / health_min_confident_sample)
-effective_priority = base_priority - (failure_rate × success_rate_penalty_weight × confidence)
+failure_confidence = min(1.0, sample_count / health_min_confident_sample)
+failure_penalty = failure_rate × success_rate_penalty_weight × failure_confidence
+
+relative_slowness = clamp(avg_ttfb / candidate_median_ttfb - 1, 0, ttfb_max_slow_ratio)
+ttfb_confidence = min(1.0, ttfb_sample_count / ttfb_min_confident_sample)
+ttfb_penalty = relative_slowness × ttfb_penalty_weight × ttfb_confidence
+
+effective_priority = base_priority - failure_penalty - ttfb_penalty
 ```
 
-**Confidence Factor**: Solves over-penalization of new or low-traffic channels due to small sample sizes. Smaller samples = lower confidence = more penalty discount.
+**Confidence factors** prevent new or low-traffic channels from receiving a full penalty from a few samples. TTFB scoring compares successful first-byte samples against the median of the current candidate channels. Channels at or faster than the median receive no TTFB penalty, and scoring is skipped when fewer than two candidates have valid TTFB data.
 
-**Example** (`success_rate_penalty_weight = 100`, `health_min_confident_sample = 20`):
+**Success-rate-only example** (`enable_ttfb_score=false`, `success_rate_penalty_weight = 100`, `health_min_confident_sample = 20`):
 
 | Channel | Base Priority | Success Rate | Samples | Confidence | Penalty | Effective Priority |
 |---------|---------------|--------------|---------|------------|---------|-------------------|
