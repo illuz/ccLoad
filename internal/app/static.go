@@ -101,6 +101,17 @@ func serveStaticFileFrom(c *gin.Context, fileSystem fs.FS) {
 		return
 	}
 
+	// 运行时主题资源：颜色由 .env 中的 CCLOAD_THEME_COLOR 控制。
+	// 这些文件不依赖嵌入资源，因此在检查静态文件存在性之前处理。
+	switch reqPath {
+	case "theme.css":
+		serveThemeCSS(c)
+		return
+	case "favicon.svg":
+		serveThemeLogoSVG(c)
+		return
+	}
+
 	// 检查文件是否存在
 	info, err := fs.Stat(fileSystem, reqPath)
 	if err != nil {
@@ -137,6 +148,7 @@ func serveHTMLWithVersionFrom(c *gin.Context, fileSystem fs.FS, filePath string)
 
 	// 替换版本号占位符
 	html := strings.ReplaceAll(string(content), "__VERSION__", htmlAssetVersion())
+	html = injectThemeIntoHTML(html)
 
 	// HTML 不缓存，确保用户总能获取最新版本号引用
 	c.Header("Cache-Control", "no-cache, must-revalidate")
@@ -190,6 +202,11 @@ func serveStaticWithCacheFrom(c *gin.Context, fileSystem fs.FS, filePath, ext st
 	} else {
 		// 静态资源：1年缓存，immutable 表示内容不会变化（通过版本号刷新）
 		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	}
+
+	if fileName == "manifest.json" {
+		serveThemedManifestFrom(c, fileSystem, filePath)
+		return
 	}
 
 	// 读取文件内容

@@ -927,6 +927,8 @@ ccLoad 使用的核心技术栈：
 | `PORT` | `8080` | 服务端口 |
 | `GIN_MODE` | `release` | 运行模式（`debug`/`release`） |
 | `GIN_LOG` | `true` | Gin 访问日志开关（`false`/`0`/`no`/`off` 关闭） |
+| `CCLOAD_THEME_COLOR` | `#3b82f6` | 管理后台品牌色，影响按钮、强调色和 SVG Logo；支持十六进制或 `green`/`red` 等名称，修改后需重启 |
+| `CCLOAD_THEME_COLOR_DARK` | 自动 | 可选 SVG Logo 渐变结束色（十六进制/名称），默认按 `CCLOAD_THEME_COLOR` 自动加深 |
 | `TRUSTED_PROXIES` | 私有网段 + Loopback + `100.64.0.0/10` | 可信代理 CIDR 列表（逗号分隔）；`none`=不信任任何代理 |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite 数据库文件路径（仅 SQLite 模式） |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal 模式（WAL/TRUNCATE/DELETE 等，容器环境建议 TRUNCATE） |

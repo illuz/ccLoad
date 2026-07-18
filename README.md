@@ -891,6 +891,8 @@ Check out the awesome admin dashboard 👇
 | `PORT` | `8080` | Service port |
 | `GIN_MODE` | `release` | Run mode (`debug`/`release`) |
 | `GIN_LOG` | `true` | Gin access log switch (`false`/`0`/`no`/`off` to disable) |
+| `CCLOAD_THEME_COLOR` | `#3b82f6` | Admin UI brand color for buttons, accents, and SVG logo. Supports hex colors or names such as `green`/`red`; restart required |
+| `CCLOAD_THEME_COLOR_DARK` | auto | Optional SVG logo gradient end color (hex/name); defaults to a darker shade of `CCLOAD_THEME_COLOR` |
 | `TRUSTED_PROXIES` | Private ranges + Loopback + `100.64.0.0/10` | Trusted proxy CIDRs (comma-separated); `none` = trust no proxies |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite database file path (SQLite mode only) |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal mode (WAL/TRUNCATE/DELETE, recommend TRUNCATE for containers) |

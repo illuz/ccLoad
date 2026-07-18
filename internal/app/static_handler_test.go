@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -139,6 +140,94 @@ func TestStaticFileServing(t *testing.T) {
 		w := serveHTTP(t, r, req)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status=%d, want %d", w.Code, http.StatusForbidden)
+		}
+	})
+}
+
+func TestRuntimeThemeResourcesFromEnv(t *testing.T) {
+	origFS := embedFS
+	origVersion := version.Version
+	origBuildTime := version.BuildTime
+	origStaticCacheDisabled := staticCacheDisabled
+	defer func() {
+		embedFS = origFS
+		version.Version = origVersion
+		version.BuildTime = origBuildTime
+		staticCacheDisabled = origStaticCacheDisabled
+	}()
+
+	t.Setenv("CCLOAD_THEME_COLOR", "red")
+	t.Setenv("CCLOAD_THEME_COLOR_DARK", "#7f1d1d")
+	version.Version = "1.2.3"
+	version.BuildTime = "unknown"
+	staticCacheDisabled = false
+
+	root := fstest.MapFS{
+		"web/index.html": &fstest.MapFile{Data: []byte(`<!doctype html>
+<html><head>
+  <meta name="theme-color" content="#3b82f6">
+  <script src="/web/assets/js/theme-init.js?v=__VERSION__"></script>
+  <link rel="stylesheet" href="/web/assets/css/styles.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/theme.css?v=__VERSION__">
+</head><body></body></html>`)},
+		"web/manifest.json": &fstest.MapFile{Data: []byte(`{"name":"x","theme_color":"#3b82f6"}`)},
+	}
+	SetEmbedFS(root, "web")
+
+	r := gin.New()
+	setupStaticFiles(r)
+
+	t.Run("theme_css_uses_env_color", func(t *testing.T) {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/theme.css", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+		}
+		if got := w.Header().Get("Cache-Control"); got != "no-cache, must-revalidate" {
+			t.Fatalf("Cache-Control=%q, want no-cache", got)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "--primary-500: #ef4444;") {
+			t.Fatalf("theme.css missing red primary color: %s", body)
+		}
+	})
+
+	t.Run("favicon_svg_uses_env_color", func(t *testing.T) {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/favicon.svg", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		for _, want := range []string{`stop-color="#ef4444"`, `stop-color="#7f1d1d"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("favicon.svg missing %q: %s", want, body)
+			}
+		}
+	})
+
+	t.Run("html_injects_theme_config_and_meta_color", func(t *testing.T) {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/index.html", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		for _, want := range []string{`content="#ef4444"`, `window.CCLOAD_THEME=`, `/web/theme.css?v=1.2.3`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("index.html missing %q: %s", want, body)
+			}
+		}
+	})
+
+	t.Run("manifest_theme_color_uses_env_color", func(t *testing.T) {
+		w := serveHTTP(t, r, newRequest(http.MethodGet, "/web/manifest.json", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d", w.Code, http.StatusOK)
+		}
+		var manifest map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &manifest); err != nil {
+			t.Fatalf("manifest json invalid: %v; body=%s", err, w.Body.String())
+		}
+		if got := manifest["theme_color"]; got != "#ef4444" {
+			t.Fatalf("theme_color=%v, want #ef4444", got)
 		}
 	})
 }

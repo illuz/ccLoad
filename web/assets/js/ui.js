@@ -186,7 +186,9 @@
 
   function setThemeMetaColor(resolvedTheme) {
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', resolvedTheme === 'dark' ? '#0f172a' : '#3b82f6');
+    const configuredThemeColor = (window.CCLOAD_THEME && window.CCLOAD_THEME.primary500)
+      || getThemeCssVar(window.getComputedStyle ? getComputedStyle(document.documentElement) : null, '--primary-500', '#3b82f6');
+    if (meta) meta.setAttribute('content', resolvedTheme === 'dark' ? '#0f172a' : configuredThemeColor);
   }
 
   function getThemeCssVar(style, name, fallback) {
