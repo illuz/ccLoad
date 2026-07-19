@@ -594,7 +594,7 @@ def rows_to_analyze(
     ).fetchall()
 
 
-def cleanup_old_outputs(out_dir: Path, retention_days: float) -> int:
+def cleanup_old_outputs(out_dir: Path, retention_days: float, max_delete: int, sleep_seconds: float) -> int:
     if retention_days <= 0:
         return 0
     cutoff = time.time() - retention_days * 24 * 60 * 60
@@ -606,6 +606,10 @@ def cleanup_old_outputs(out_dir: Path, retention_days: float) -> int:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
                 removed += 1
+                if sleep_seconds > 0:
+                    time.sleep(sleep_seconds)
+                if max_delete > 0 and removed >= max_delete:
+                    break
         except OSError:
             continue
     if removed:
@@ -658,8 +662,20 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--cleanup-interval",
         type=float,
-        default=float(os.environ.get("DEBUG_ANALYSIS_CLEANUP_INTERVAL", "3600")),
+        default=float(os.environ.get("DEBUG_ANALYSIS_CLEANUP_INTERVAL", "300")),
         help="Seconds between output retention cleanup runs in watch/follow mode",
+    )
+    parser.add_argument(
+        "--cleanup-batch-size",
+        type=int,
+        default=int(os.environ.get("DEBUG_ANALYSIS_CLEANUP_BATCH_SIZE", "500")),
+        help="Max old analysis JSON files to delete per cleanup pass; <=0 means no limit",
+    )
+    parser.add_argument(
+        "--cleanup-sleep",
+        type=float,
+        default=float(os.environ.get("DEBUG_ANALYSIS_CLEANUP_SLEEP", "0.005")),
+        help="Sleep seconds between deleting old analysis JSON files",
     )
     args = parser.parse_args(argv)
 
@@ -674,7 +690,12 @@ def main(argv: list[str]) -> int:
         if args.retention_days > 0 and (
             last_cleanup == 0.0 or not args.watch or now - last_cleanup >= args.cleanup_interval
         ):
-            cleanup_old_outputs(Path(args.out_dir), args.retention_days)
+            cleanup_old_outputs(
+                Path(args.out_dir),
+                args.retention_days,
+                args.cleanup_batch_size,
+                args.cleanup_sleep,
+            )
             last_cleanup = now
         args.since_log_id = last
         run_once(args)

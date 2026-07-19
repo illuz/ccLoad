@@ -116,8 +116,12 @@ const (
 const (
 	// LogCleanupInterval 日志清理间隔
 	LogCleanupInterval = 1 * time.Hour
-	// DebugLogCleanupInterval 调试日志清理初始间隔（首次触发后按实际保留时长动态调整）
-	DebugLogCleanupInterval = 2 * time.Minute
+	// DebugLogCleanupStartupDelay 调试日志慢速清理启动延迟。
+	// 设计原则：服务先完成启动和健康检查，再开始后台低优先级清理，避免重启时争抢 SQLite 写锁。
+	DebugLogCleanupStartupDelay = 30 * time.Second
+	// DebugLogCleanupInterval 调试日志慢速清理间隔。
+	// 每次只删很小一批，持续追赶过期数据，不再按保留时长动态放大间隔。
+	DebugLogCleanupInterval = 30 * time.Second
 )
 
 // 启动超时配置（Fail-Fast：启动阶段网络问题应快速失败，避免卡死）

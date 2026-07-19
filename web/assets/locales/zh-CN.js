@@ -1117,6 +1117,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'settings.maxRetries': '最大重试次数',
   'settings.timeout': '请求超时(秒)',
   'settings.saveSettings': '保存设置',
+  'settings.hotReload': '保存后立即生效',
   // 设置项描述（与后端 key 对应）
   'settings.desc.log_retention_days': '日志保留天数(-1永久保留,1-365天)',
   'settings.desc.max_key_retries': '单渠道最大Key重试次数',
@@ -1473,4 +1474,3 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.upstreamBalance.plan': '套餐',
   'channels.upstreamBalance.updatedAt': '更新于 {time}'
 };
-  'settings.hotReload': '保存后立即生效',

@@ -1117,6 +1117,7 @@ window.I18N_LOCALES['en'] = {
   'settings.maxRetries': 'Max Retries',
   'settings.timeout': 'Request Timeout (seconds)',
   'settings.saveSettings': 'Save Settings',
+  'settings.hotReload': 'Takes effect immediately after saving',
   // Setting descriptions (mapped to backend keys)
   'settings.desc.log_retention_days': 'Log retention days (-1 = permanent, 1-365 days)',
   'settings.desc.max_key_retries': 'Max key retries per channel',
@@ -1473,4 +1474,3 @@ window.I18N_LOCALES['en'] = {
   'channels.upstreamBalance.plan': 'Plan',
   'channels.upstreamBalance.updatedAt': 'Updated {time}'
 };
-  'settings.hotReload': 'Takes effect immediately after saving',

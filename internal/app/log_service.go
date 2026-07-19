@@ -224,18 +224,19 @@ func (s *LogService) AddLogAsync(entry *model.LogEntry) {
 // ============================================================================
 
 // StartCleanupLoop 启动日志清理后台协程
-// 每小时检查一次，删除3天前的日志
+// 普通日志按小时清理；Debug 原始日志启动后延迟进入慢速小批量清理。
 // 支持优雅关闭
 func (s *LogService) StartCleanupLoop() {
-	// 启动时立即清理调试日志：未启用则清空，已启用则删除过期条目
-	s.cleanupDebugLogsOnStartup()
-
 	s.wg.Add(1)
 	go s.cleanupOldLogsLoop()
 }
 
-// cleanupDebugLogsOnStartup 启动时清理调试日志
-func (s *LogService) cleanupDebugLogsOnStartup() {
+// cleanupDebugLogsIncremental 增量清理一小批调试日志。
+//
+// debug_logs 保存完整请求/响应体，单条可能达到数 MB 甚至数十 MB。
+// 因此这里绝不能在启动路径或定时任务里做大批量删除；实际删除批量由
+// storage 层限制为很小一批，本函数只负责按当前配置计算 cutoff 并触发一次。
+func (s *LogService) cleanupDebugLogsIncremental() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -245,10 +246,11 @@ func (s *LogService) cleanupDebugLogsOnStartup() {
 	}
 
 	if !debugEnabled {
-		if err := s.store.TruncateDebugLogs(ctx); err != nil {
-			log.Printf("[WARN] 启动时清空调试日志失败: %v", err)
-		} else {
-			log.Printf("[INFO] 调试日志未启用，已清空历史调试日志")
+		// 未启用时也不要一次性 Truncate。用“未来一点点”的 cutoff 分批删除
+		// 现有历史数据，让服务启动/运行不被 SQLite 写锁拖住。
+		cutoff := time.Now().Add(time.Second)
+		if err := s.store.CleanupDebugLogsBefore(ctx, cutoff); err != nil {
+			log.Printf("[WARN] 慢速清理调试日志失败: %v", err)
 		}
 		return
 	}
@@ -261,9 +263,7 @@ func (s *LogService) cleanupDebugLogsOnStartup() {
 	}
 	cutoff := time.Now().Add(-time.Duration(debugRetentionMinutes) * time.Minute)
 	if err := s.store.CleanupDebugLogsBefore(ctx, cutoff); err != nil {
-		log.Printf("[WARN] 启动时清理过期调试日志失败: %v", err)
-	} else {
-		log.Printf("[INFO] 已清理 %d 分钟前的过期调试日志", debugRetentionMinutes)
+		log.Printf("[WARN] 慢速清理过期调试日志失败: %v", err)
 	}
 }
 
@@ -274,8 +274,8 @@ func (s *LogService) cleanupOldLogsLoop() {
 	logTicker := time.NewTicker(config.LogCleanupInterval)
 	defer logTicker.Stop()
 
-	debugTicker := time.NewTicker(config.DebugLogCleanupInterval)
-	defer debugTicker.Stop()
+	debugTimer := time.NewTimer(config.DebugLogCleanupStartupDelay)
+	defer debugTimer.Stop()
 
 	for {
 		select {
@@ -292,23 +292,9 @@ func (s *LogService) cleanupOldLogsLoop() {
 				}()
 			}
 
-		case <-debugTicker.C:
-			func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-
-				debugRetentionMinutes := 5
-				if setting, err := s.store.GetSetting(ctx, "debug_log_retention_minutes"); err == nil && setting != nil {
-					if v, err := strconv.Atoi(setting.Value); err == nil && v > 0 {
-						debugRetentionMinutes = v
-					}
-				}
-				// 清理周期跟随保留时长动态调整
-				debugTicker.Reset(time.Duration(debugRetentionMinutes) * time.Minute)
-
-				debugCutoff := time.Now().Add(-time.Duration(debugRetentionMinutes) * time.Minute)
-				_ = s.store.CleanupDebugLogsBefore(ctx, debugCutoff)
-			}()
+		case <-debugTimer.C:
+			s.cleanupDebugLogsIncremental()
+			debugTimer.Reset(config.DebugLogCleanupInterval)
 
 		case <-s.shutdownCh:
 			return
