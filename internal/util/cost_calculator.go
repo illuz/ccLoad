@@ -193,29 +193,10 @@ var basePricing = map[string]ModelPricing{
 	"claude-haiku":  {InputPrice: 1.00, OutputPrice: 5.00},
 
 	// ========== OpenAI GPT-5系列 ==========
-	// GPT-5.6: requests with more than 272K input tokens use the long-context
-	// rate for the complete request. Cached input is part of the request input
-	// and therefore participates in the threshold calculation.
-	"gpt-5.6": {
-		InputPrice: 5.00, OutputPrice: 30.00,
-		InputPriceHigh: 10.00, OutputPriceHigh: 45.00,
-		CacheReadCountsTowardTier: true,
-	},
-	"gpt-5.6-sol": {
-		InputPrice: 5.00, OutputPrice: 30.00,
-		InputPriceHigh: 10.00, OutputPriceHigh: 45.00,
-		CacheReadCountsTowardTier: true,
-	},
-	"gpt-5.6-terra": {
-		InputPrice: 2.50, OutputPrice: 15.00,
-		InputPriceHigh: 5.00, OutputPriceHigh: 22.50,
-		CacheReadCountsTowardTier: true,
-	},
-	"gpt-5.6-luna": {
-		InputPrice: 1.00, OutputPrice: 6.00,
-		InputPriceHigh: 2.00, OutputPriceHigh: 9.00,
-		CacheReadCountsTowardTier: true,
-	},
+	"gpt-5.6":       {InputPrice: 5.00, OutputPrice: 30.00},
+	"gpt-5.6-sol":   {InputPrice: 5.00, OutputPrice: 30.00},
+	"gpt-5.6-terra": {InputPrice: 2.50, OutputPrice: 15.00},
+	"gpt-5.6-luna":  {InputPrice: 1.00, OutputPrice: 6.00},
 	"gpt-5.5": {
 		InputPrice: 5.00, OutputPrice: 30.00,
 		InputPriceHigh: 10.00, OutputPriceHigh: 45.00, // >272K context; 2× gpt-5.4
@@ -819,8 +800,7 @@ const (
 func getTierThresholdForModel(model string) int {
 	lowerModel := strings.ToLower(model)
 	switch {
-	case strings.HasPrefix(lowerModel, "gpt-5.6"),
-		strings.HasPrefix(lowerModel, "gpt-5.5"),
+	case strings.HasPrefix(lowerModel, "gpt-5.5"),
 		strings.HasPrefix(lowerModel, "gpt-5.4"):
 		return gpt54TierThreshold
 	case strings.HasPrefix(lowerModel, "minimax-m3"):
