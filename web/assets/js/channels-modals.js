@@ -407,15 +407,11 @@ function syncScheduledCheckModelState() {
 
 async function resolveEditableChannel(id) {
   const cachedChannel = Array.isArray(channels) ? channels.find(c => c.id === id) : null;
-  if (cachedChannel) {
-    return cachedChannel;
-  }
-
   try {
     return await fetchDataWithAuth(`/admin/channels/${id}`);
   } catch (error) {
     console.error('Failed to fetch channel', error);
-    return null;
+    return cachedChannel || null;
   }
 }
 
@@ -649,6 +645,7 @@ async function editChannel(id) {
 
   const scheduledVisibilityPromise = syncScheduledCheckVisibility();
   const apiKeysPromise = fetchEditableChannelKeys(id);
+  const modelStatsPromise = fetchEditableChannelModelStats(id);
   const channelType = channel.channel_type || 'anthropic';
   const channelTypeRenderPromise = window.ChannelTypeManager.renderChannelTypeRadios('channelTypeRadios', channelType);
 
@@ -665,8 +662,9 @@ async function editChannel(id) {
     fetchURLStats(id);
   }
 
-  const [apiKeys] = await Promise.all([
+  const [apiKeys, modelStats] = await Promise.all([
     apiKeysPromise,
+    modelStatsPromise,
     scheduledVisibilityPromise,
     channelTypeRenderPromise
   ]);
@@ -718,11 +716,25 @@ async function editChannel(id) {
   if (fixedPriceEnabled) fixedPriceEnabled.checked = !!channel.model_fixed_price_enabled;
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
-  redirectTableData = (channel.models || []).map(m => ({
-    model: m.model || '',
-    redirect_model: m.redirect_model || '',
-    fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request)
-  }));
+  const modelCooldowns = new Map(
+    (channel.model_cooldowns || []).map(cooldown => [cooldown.model, cooldown])
+  );
+  redirectTableData = (channel.models || []).map(m => {
+    const modelName = m.model || '';
+    const redirectModel = m.redirect_model || '';
+    const actualModel = redirectModel || modelName;
+    const cooldown = modelCooldowns.get(actualModel);
+    const stats = modelStats?.get(normalizeModelStatsKey(modelName));
+    return {
+      model: modelName,
+      redirect_model: redirectModel,
+      fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request),
+      cooldown_until: cooldown?.cooldown_until || '',
+      cooldown_remaining_ms: cooldown?.cooldown_remaining_ms || 0,
+      model_stats: stats || null,
+      model_stats_unavailable: modelStats === null
+    };
+  });
   selectedModelIndices.clear();
   currentModelFilter = '';
   const modelFilterInput = document.getElementById('modelFilterInput');
@@ -750,6 +762,23 @@ async function fetchEditableChannelKeys(id) {
   } catch (e) {
     console.error('Failed to fetch API Keys', e);
     return [];
+  }
+}
+
+function normalizeModelStatsKey(modelName) {
+  return String(modelName || '').trim().toLowerCase();
+}
+
+async function fetchEditableChannelModelStats(id) {
+  try {
+    const stats = await fetchDataWithAuth(`/admin/channels/${id}/model-stats`);
+    return new Map((Array.isArray(stats) ? stats : []).map(entry => [
+      normalizeModelStatsKey(entry.model),
+      entry
+    ]));
+  } catch (error) {
+    console.error('Failed to fetch channel model stats', error);
+    return null;
   }
 }
 
@@ -1861,15 +1890,27 @@ function updateRedirectRow(index, field, value) {
 
     redirectTableData[index][field] = nextValue;
 
-    // 当模型名称变化时，更新重定向目标的 placeholder
+    // 用户改动模型配置后，原运行态已不再对应当前行。
+    redirectTableData[index].cooldown_until = '';
+    redirectTableData[index].cooldown_remaining_ms = 0;
     if (field === 'model') {
-      const tbody = document.getElementById('redirectTableBody');
-      const row = tbody?.children[index];
-      if (row) {
-        const toInput = row.querySelector('.redirect-to-input');
-        if (toInput) {
-          toInput.placeholder = nextValue || window.t('channels.leaveEmptyNoRedirect');
-        }
+      redirectTableData[index].model_stats = null;
+      redirectTableData[index].model_stats_unavailable = false;
+    }
+
+    // 当模型名称变化时，更新重定向目标的 placeholder
+    const tbody = document.getElementById('redirectTableBody');
+    const row = tbody?.children[index];
+    if (field === 'model' && row) {
+      const toInput = row.querySelector('.redirect-to-input');
+      if (toInput) {
+        toInput.placeholder = nextValue || window.t('channels.leaveEmptyNoRedirect');
+      }
+    }
+    if (row) {
+      const statusCell = row.querySelector('.redirect-col-status');
+      if (statusCell) {
+        renderRedirectModelStatus(statusCell, redirectTableData[index]);
       }
     }
 
@@ -1895,7 +1936,7 @@ function createRedirectRow(redirect, index) {
     mobileLabelTarget: window.t('channels.modal.redirectTarget'),
     mobileLabelFixedPrice: window.t('channels.perRequestPrice'),
     fixedCostPerRequest: formatFixedCostPerRequestValue(redirect.fixed_cost_per_request),
-    mobileLabelActions: window.t('common.actions')
+    mobileLabelStatus: window.t('common.status')
   };
 
   const row = TemplateEngine.render('tpl-redirect-row', rowData);
@@ -1910,7 +1951,97 @@ function createRedirectRow(redirect, index) {
     checkbox.checked = selectedModelIndices.has(index);
   }
 
+  const statusCell = row.querySelector('.redirect-col-status');
+  if (statusCell) {
+    renderRedirectModelStatus(statusCell, redirect);
+  }
+
   return row;
+}
+
+function renderRedirectModelStatus(statusCell, redirect) {
+  statusCell.replaceChildren();
+  const cooldownUntilMS = Date.parse(redirect.cooldown_until || '');
+  const responseRemainingMS = Number(redirect.cooldown_remaining_ms || 0);
+  const cooldownRemainingMS = Number.isFinite(cooldownUntilMS)
+    ? Math.max(0, cooldownUntilMS - Date.now())
+    : Math.max(0, responseRemainingMS);
+  if (cooldownRemainingMS > 0) {
+    const badge = TemplateEngine.render('tpl-cooldown-badge', {
+      text: humanizeMS(cooldownRemainingMS)
+    });
+    if (badge) {
+      badge.classList.add('redirect-model-cooldown-badge');
+      statusCell.appendChild(badge);
+    }
+    return;
+  }
+  renderRedirectModelStats(statusCell, redirect);
+}
+
+function formatModelStatsSeconds(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+  return `${seconds.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}s`;
+}
+
+function appendRedirectModelStatus(statusCell, modifier, lines) {
+  const status = document.createElement('div');
+  status.className = `redirect-model-status redirect-model-status--${modifier}`;
+  for (const text of lines) {
+    const line = document.createElement('span');
+    line.textContent = text;
+    status.appendChild(line);
+  }
+  statusCell.appendChild(status);
+}
+
+function appendRedirectModelPerformance(statusCell, stats) {
+  const status = document.createElement('div');
+  status.className = 'redirect-model-status redirect-model-status--performance';
+  const metrics = [
+    {
+      label: window.t('channels.modelFirstByte'),
+      value: stats.avg_first_byte_time_seconds,
+      color: window.getFirstByteTimingColor(stats.avg_first_byte_time_seconds)
+    },
+    {
+      label: window.t('channels.modelDuration'),
+      value: stats.avg_duration_seconds,
+      color: window.getDurationTimingColor(stats.avg_duration_seconds)
+    }
+  ];
+  for (const metric of metrics) {
+    const line = document.createElement('span');
+    line.className = 'redirect-model-performance-line';
+
+    const label = document.createElement('span');
+    label.className = 'redirect-model-performance-label';
+    label.textContent = metric.label;
+
+    const value = document.createElement('span');
+    value.className = 'redirect-model-performance-value';
+    value.textContent = formatModelStatsSeconds(metric.value);
+    value.style.color = metric.color;
+
+    line.append(label, value);
+    status.appendChild(line);
+  }
+  statusCell.appendChild(status);
+}
+
+function renderRedirectModelStats(statusCell, redirect) {
+  const stats = redirect.model_stats;
+  if (Number(stats?.success) > 0) {
+    appendRedirectModelPerformance(statusCell, stats);
+    return;
+  }
+
+  appendRedirectModelStatus(statusCell, 'empty', [
+    window.t(redirect.model_stats_unavailable
+      ? 'channels.modelStatsUnavailable'
+      : 'channels.modelNoSamples')
+  ]);
 }
 
 /**

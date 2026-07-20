@@ -188,13 +188,15 @@ test('channels 弹窗内联表为手机布局补齐类名、标签和关键重�
   assert.match(channelsCss, /\.inline-url-table\s+tbody\s+\.mobile-inline-row\s*\{[\s\S]*?grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)\s+auto\s+auto\s+auto;[\s\S]*?align-items:\s*center;/);
   assert.match(channelsCss, /\.inline-key-table\s+tbody\s+\.mobile-inline-row\s*\{[\s\S]*?grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)\s+auto\s+auto;[\s\S]*?align-items:\s*center;/);
   assert.match(channelsCss, /\.inline-url-table\s+tbody\s+\.mobile-inline-row\s+td\.inline-url-col-url\s*\{[\s\S]*?order:\s*2;[\s\S]*?grid-column:\s*2;/);
-  assert.match(channelsCss, /\.inline-key-table\s+tbody\s+\.mobile-inline-row\s+td\.inline-key-col-key\s*\{[\s\S]*?order:\s*2;[\s\S]*?grid-column:\s*2\s*\/\s*4;/);
-  assert.match(channelsCss, /\.redirect-model-table\s+tbody\s+\.mobile-inline-row\s*\{[\s\S]*?grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)\s+auto;[\s\S]*?align-items:\s*center;/);
+  assert.match(channelsCss, /\.inline-key-table\s+tbody\s+\.mobile-inline-row\s+td\.inline-key-col-key\s*\{[\s\S]*?order:\s*2;[\s\S]*?grid-column:\s*2\s*\/\s*3;/);
+  assert.match(channelsCss, /\.redirect-model-table\s+tbody\s+\.mobile-inline-row\s*\{[\s\S]*?grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\);[\s\S]*?align-items:\s*center;/);
   assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-select\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1;/);
-  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-model\s*\{[\s\S]*?grid-column:\s*2\s*\/\s*4;[\s\S]*?grid-row:\s*1;/);
-  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-target\s*\{[\s\S]*?grid-column:\s*2\s*\/\s*3;[\s\S]*?grid-row:\s*2;/);
-  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-actions\s*\{[\s\S]*?grid-column:\s*3;[\s\S]*?grid-row:\s*2;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?border-top:\s*none;/);
-  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+td\.redirect-col-model\[data-mobile-label\]::before,\s*[\r\n\s]*\.redirect-model-table\s+\.mobile-inline-row\s+td\.redirect-col-target\[data-mobile-label\]::before,\s*[\r\n\s]*\.redirect-model-table\s+\.mobile-inline-row\s+td\.redirect-col-actions\[data-mobile-label\]::before\s*\{[\s\S]*?content:\s*none;/);
+  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-model\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*1;/);
+  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-target\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*2;/);
+  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-fixed-price\s*\{[\s\S]*?order:\s*4;[\s\S]*?grid-column:\s*2;[\s\S]*?display:\s*grid;/);
+  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+\.redirect-col-status\s*\{[\s\S]*?order:\s*5;[\s\S]*?grid-column:\s*2;[\s\S]*?display:\s*grid;/);
+  assert.match(channelsHtml, /class="redirect-col-target"[\s\S]*?class="redirect-target-field"[\s\S]*?class="redirect-delete-btn"/);
+  assert.match(channelsCss, /\.redirect-model-table\s+\.mobile-inline-row\s+td\.redirect-col-model\[data-mobile-label\]::before,\s*[\r\n\s]*\.redirect-model-table\s+\.mobile-inline-row\s+td\.redirect-col-target\[data-mobile-label\]::before\s*\{[\s\S]*?content:\s*none;/);
 });
 
 test('channels 编辑弹窗为手机布局补齐结构化骨架和分组重排样式', () => {

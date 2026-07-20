@@ -2480,12 +2480,25 @@
     .redirect-col-select,
     .redirect-col-model,
     .redirect-col-target,
-    .redirect-col-actions {
+    .redirect-col-fixed-price,
+    .redirect-col-status {
       padding: 4px 10px;
     }
 
-    .redirect-col-actions {
-      text-align: center;
+    .redirect-col-fixed-price {
+      width: 120px;
+    }
+
+    .redirect-col-fixed-price .modal-inline-input {
+      width: 100%;
+      min-width: 0;
+      padding: 3px 6px;
+    }
+
+    .redirect-col-status {
+      width: 150px;
+      text-align: left;
+      white-space: nowrap;
     }
 
     .redirect-row-select {
@@ -2511,6 +2524,14 @@
       gap: 4px;
     }
 
+    .redirect-target-field {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      min-width: 0;
+    }
+
     .redirect-model-field .modal-inline-input,
     .redirect-col-target .modal-inline-input {
       width: 100%;
@@ -2526,6 +2547,44 @@
       min-width: 0;
     }
 
+    .redirect-model-cooldown-badge {
+      display: inline-flex;
+    }
+
+    .redirect-model-status {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      font-size: 11px;
+      line-height: 1.25;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .redirect-model-status--performance {
+      color: var(--neutral-700);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .redirect-model-performance-line {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .redirect-model-performance-label {
+      color: var(--neutral-700);
+    }
+
+    .redirect-model-performance-value {
+      font-weight: 500;
+    }
+
+    .redirect-model-status--empty {
+      color: var(--neutral-400);
+    }
+
     .redirect-lowercase-btn,
     .redirect-delete-btn {
       display: inline-flex;
@@ -2536,6 +2595,15 @@
       background: var(--surface-bg);
       cursor: pointer;
       transition: all 0.2s;
+    }
+
+    .redirect-target-field .redirect-to-input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .redirect-target-field .redirect-delete-btn {
+      flex: 0 0 auto;
     }
 
     .redirect-lowercase-btn {
@@ -4022,7 +4090,7 @@
       }
 
       .redirect-model-table tbody .mobile-inline-row {
-        grid-template-columns: 36px minmax(0, 1fr) auto;
+        grid-template-columns: 36px minmax(0, 1fr);
         align-items: center;
         gap: 8px 12px;
       }
@@ -4038,27 +4106,78 @@
 
       .redirect-model-table .mobile-inline-row .redirect-col-model {
         order: 2;
-        grid-column: 2 / 4;
+        grid-column: 2;
         grid-row: 1;
         min-width: 0;
       }
 
       .redirect-model-table .mobile-inline-row .redirect-col-target {
         order: 3;
-        grid-column: 2 / 3;
+        grid-column: 2;
         grid-row: 2;
         display: block;
         min-width: 0;
       }
 
-      .redirect-model-table .mobile-inline-row .redirect-col-actions {
-        order: 10;
-        grid-column: 3;
-        grid-row: 2;
-        justify-content: flex-end;
+      .redirect-model-table .mobile-inline-row .redirect-col-status {
+        order: 5;
+        grid-column: 2;
+        grid-row: auto;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: flex-start;
+        gap: 8px;
+        width: 100% !important;
+        min-width: 0;
+        max-width: 100% !important;
+        box-sizing: border-box;
+        justify-self: stretch;
         padding-top: 0;
         border-top: none;
-        text-align: right !important;
+        text-align: left !important;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-col-fixed-price {
+        order: 4;
+        grid-column: 2;
+        grid-row: auto;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        width: 100% !important;
+        min-width: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-col-fixed-price[hidden] {
+        display: none !important;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-col-status::before {
+        width: auto;
+        margin: 0;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-model-status {
+        width: auto;
+        min-width: 0;
+        max-width: 100%;
+        justify-self: start;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-model-status--performance {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: nowrap;
+      }
+
+      .redirect-model-table .mobile-inline-row .redirect-model-performance-line,
+      .redirect-model-table .mobile-inline-row .redirect-model-status--empty,
+      .redirect-model-table .mobile-inline-row .redirect-model-cooldown-badge {
+        white-space: nowrap;
       }
 
       .inline-url-table .mobile-inline-row td[data-mobile-label]::before,
@@ -4077,16 +4196,14 @@
       .redirect-model-table .mobile-inline-row .redirect-col-model,
       .redirect-model-table .mobile-inline-row .redirect-col-target,
       .inline-url-table .mobile-inline-row .inline-url-col-actions,
-      .inline-key-table .mobile-inline-row .inline-key-col-actions,
-      .redirect-model-table .mobile-inline-row .redirect-col-actions {
+      .inline-key-table .mobile-inline-row .inline-key-col-actions {
         display: flex;
         align-items: center;
         gap: 8px;
       }
 
       .redirect-model-table .mobile-inline-row td.redirect-col-model[data-mobile-label]::before,
-      .redirect-model-table .mobile-inline-row td.redirect-col-target[data-mobile-label]::before,
-      .redirect-model-table .mobile-inline-row td.redirect-col-actions[data-mobile-label]::before {
+      .redirect-model-table .mobile-inline-row td.redirect-col-target[data-mobile-label]::before {
         content: none;
         display: none;
       }
@@ -4110,8 +4227,7 @@
       }
 
       .inline-url-table .mobile-inline-row .inline-url-col-actions .inline-url-actions,
-      .inline-key-table .mobile-inline-row .inline-key-col-actions .inline-key-actions,
-      .redirect-model-table .mobile-inline-row .redirect-col-actions .redirect-delete-btn {
+      .inline-key-table .mobile-inline-row .inline-key-col-actions .inline-key-actions {
         margin-left: auto;
       }
 
