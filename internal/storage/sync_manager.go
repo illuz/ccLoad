@@ -49,6 +49,7 @@ func (sm *SyncManager) RestoreOnStartup(ctx context.Context, logDays int) error 
 		"channel_groups",
 		"channels",
 		"channel_models",
+		"channel_model_cooldowns",
 		"channel_protocol_transforms",
 		"api_keys",
 		"auth_token_groups",

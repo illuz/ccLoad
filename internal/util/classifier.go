@@ -104,6 +104,7 @@ type StatusCodeMeta struct {
 // HTTPResponseClassification 包含 HTTP 响应分类的结果。
 type HTTPResponseClassification struct {
 	Level                   ErrorLevel
+	Model                   string
 	KeyCooldownUntil        time.Time
 	HasKeyCooldownUntil     bool
 	KeyCooldownReason       string
@@ -131,27 +132,35 @@ type sseErrorResponse struct {
 }
 
 type structuredQuotaErrorResponse struct {
-	Code         any             `json:"code"`
-	Message      string          `json:"message"`
-	ResetSeconds int64           `json:"reset_seconds"`
-	ResetTime    string          `json:"reset_time"`
-	Status       string          `json:"status"`
-	Error        json.RawMessage `json:"error"`
+	Code            any             `json:"code"`
+	Message         string          `json:"message"`
+	Model           string          `json:"model"`
+	ResetSeconds    int64           `json:"reset_seconds"`
+	ResetsInSeconds int64           `json:"resets_in_seconds"` // 部分上游使用复数形式
+	ResetsAt        int64           `json:"resets_at"`         // unix 时间戳
+	ResetTime       string          `json:"reset_time"`
+	Status          string          `json:"status"`
+	Error           json.RawMessage `json:"error"`
 }
 
 type structuredQuotaErrorObject struct {
-	Type         any    `json:"type"`
-	Code         any    `json:"code"`
-	Message      string `json:"message"`
-	ResetSeconds int64  `json:"reset_seconds"`
-	ResetTime    string `json:"reset_time"`
-	Status       string `json:"status"`
+	Type            any    `json:"type"`
+	Code            any    `json:"code"`
+	Message         string `json:"message"`
+	Model           string `json:"model"`
+	ResetSeconds    int64  `json:"reset_seconds"`
+	ResetsInSeconds int64  `json:"resets_in_seconds"` // 部分上游使用复数形式
+	ResetsAt        int64  `json:"resets_at"`         // unix 时间戳
+	ResetTime       string `json:"reset_time"`
+	Status          string `json:"status"`
 }
 
 type structuredQuotaError struct {
 	code         string
 	message      string
+	model        string
 	resetSeconds int64
+	resetsAt     int64 // unix 时间戳（秒）
 	resetTime    string
 	status       string
 }
@@ -306,6 +315,11 @@ func classifyHTTPResponseWithMetaAt(statusCode int, headers map[string][]string,
 
 	if cooldownUntil, reason, level, ok := parseStructuredQuotaCooldown(responseBody, now); ok {
 		classification := HTTPResponseClassification{Level: level}
+		if reason == "model_cooldown" {
+			if quotaErr, parsed := parseStructuredQuotaError(responseBody); parsed {
+				classification.Model = strings.TrimSpace(quotaErr.model)
+			}
+		}
 		switch level {
 		case ErrorLevelChannel:
 			classification.ChannelCooldownUntil = cooldownUntil
@@ -506,7 +520,7 @@ func parseStructuredQuotaCooldown(responseBody []byte, now time.Time) (time.Time
 		if until, ok := parseStructuredCooldownUntil(quotaErr, now); ok {
 			return until, "model_cooldown", ErrorLevelKey, true
 		}
-		return time.Time{}, "", ErrorLevelNone, false
+		return now.Add(5 * time.Minute), "model_cooldown", ErrorLevelKey, true
 	case quotaErr.status == "RESOURCE_EXHAUSTED" || strings.Contains(messageUpper, "RESOURCE_EXHAUSTED"):
 		if until, ok := parseRetryInCooldownUntil(message, now); ok {
 			return until, "RESOURCE_EXHAUSTED_RETRY_IN", ErrorLevelKey, true
@@ -548,7 +562,9 @@ func parseStructuredQuotaError(responseBody []byte) (structuredQuotaError, bool)
 	parsed := structuredQuotaError{
 		code:         normalizeStructuredScalar(errResp.Code),
 		message:      errResp.Message,
-		resetSeconds: errResp.ResetSeconds,
+		model:        strings.TrimSpace(errResp.Model),
+		resetSeconds: coalesceInt64(errResp.ResetSeconds, errResp.ResetsInSeconds),
+		resetsAt:     errResp.ResetsAt,
 		resetTime:    errResp.ResetTime,
 		status:       strings.ToUpper(strings.TrimSpace(errResp.Status)),
 	}
@@ -571,8 +587,14 @@ func parseStructuredQuotaError(responseBody []byte) (structuredQuotaError, bool)
 				if parsed.message == "" {
 					parsed.message = errorObj.Message
 				}
+				if parsed.model == "" {
+					parsed.model = strings.TrimSpace(errorObj.Model)
+				}
 				if parsed.resetSeconds == 0 {
-					parsed.resetSeconds = errorObj.ResetSeconds
+					parsed.resetSeconds = coalesceInt64(errorObj.ResetSeconds, errorObj.ResetsInSeconds)
+				}
+				if parsed.resetsAt == 0 {
+					parsed.resetsAt = errorObj.ResetsAt
 				}
 				if parsed.resetTime == "" {
 					parsed.resetTime = errorObj.ResetTime
@@ -585,6 +607,15 @@ func parseStructuredQuotaError(responseBody []byte) (structuredQuotaError, bool)
 	}
 
 	return parsed, parsed.code != "" || parsed.message != "" || parsed.status != ""
+}
+
+func coalesceInt64(values ...int64) int64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func normalizeStructuredScalar(value any) string {
@@ -611,6 +642,12 @@ func structuredScalarString(value any) string {
 func parseStructuredCooldownUntil(quotaErr structuredQuotaError, now time.Time) (time.Time, bool) {
 	if quotaErr.resetSeconds > 0 {
 		return now.Add(time.Duration(quotaErr.resetSeconds) * time.Second), true
+	}
+	if quotaErr.resetsAt > 0 {
+		until := time.Unix(quotaErr.resetsAt, 0)
+		if until.After(now) {
+			return until, true
+		}
 	}
 
 	if quotaErr.resetTime == "" {

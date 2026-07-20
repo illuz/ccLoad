@@ -71,7 +71,7 @@ func (s *Server) selectCandidatesByChannelType(ctx context.Context, channelType 
 		}
 	}
 
-	return s.filterCooldownChannels(ctx, channels)
+	return s.filterCooldownChannels(ctx, channels, "*", channelType)
 }
 
 // selectCandidatesByModelAndType 根据模型和渠道类型筛选候选渠道
@@ -86,7 +86,7 @@ func (s *Server) selectCandidatesByModelAndType(ctx context.Context, model strin
 	}
 
 	// 先做冷却/成本过滤，但不触发“全冷却兜底”，以便后续还能继续做模糊匹配回退。
-	filtered, err := s.filterCooldownChannelsStrict(ctx, channels)
+	filtered, err := s.filterCooldownChannelsStrict(ctx, channels, model, normalizedType)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (s *Server) selectCandidatesByModelAndType(ctx context.Context, model strin
 	}
 
 	// 再次过滤，但仍不触发“全冷却兜底”：先把可用的候选尽可能找出来。
-	filtered, err = s.filterCooldownChannelsStrict(ctx, allCandidates)
+	filtered, err = s.filterCooldownChannelsStrict(ctx, allCandidates, model, normalizedType)
 	if err != nil {
 		return nil, err
 	}
@@ -137,5 +137,5 @@ func (s *Server) selectCandidatesByModelAndType(ctx context.Context, model strin
 	}
 
 	// 最终兜底：如果候选存在但全部在冷却中，让全冷却兜底逻辑选择“最早恢复”的渠道。
-	return s.filterCooldownChannels(ctx, allCandidates)
+	return s.filterCooldownChannels(ctx, allCandidates, model, normalizedType)
 }

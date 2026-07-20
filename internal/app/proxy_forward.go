@@ -1271,7 +1271,7 @@ func isSSERateLimitError(body []byte) bool {
 
 func isRateLimitErrorType(value string) bool {
 	switch strings.ToLower(value) {
-	case "rate_limit_error", "rate_limit_exceeded", "too_many_requests":
+	case "rate_limit_error", "rate_limit_exceeded", "too_many_requests", "model_cooldown":
 		return true
 	default:
 		return false
@@ -2166,33 +2166,31 @@ func (s *Server) attemptKeyAcrossURLs(
 				return result, nil, nil
 			}
 
-			// Key级错误：换URL无意义，跳出URL循环
-			if nextAction == cooldown.ActionRetryKey {
+			// Key/模型级错误与 URL 无关。
+			if nextAction == cooldown.ActionRetryKey || nextAction == cooldown.ActionRetryModel {
 				break
 			}
-			// 客户端错误：直接返回
 			if nextAction == cooldown.ActionReturnClient {
 				return urlLastFailure, nil, nil
 			}
-			// 渠道级错误 (ActionRetryChannel) 或网络错误：
-			// 在多URL场景下，默认先尝试下一个URL
 			if urlsCount > 1 {
 				if selector != nil {
 					selector.CooldownURL(cfg.ID, urlEntry.url)
 				}
 
-				// 新策略：上游明确返回 5xx（598 首字节超时除外）时，直接切换下一个渠道。
-				// 该分支命中时，当前URL若使用了 deferChannelCooldown，需要补做一次渠道级冷却写入。
+				// 明确的 5xx 直接切换渠道；补写延迟的冷却时使用实际上游模型。
 				if shouldSwitchChannelImmediatelyOnHTTP5xx(result) {
 					if shouldDeferChannelCooldown && result != nil {
-						input := httpErrorInputFromParts(cfg.ID, keyIndex, result.status, result.body, result.header)
+						input := cooldownInputForModel(
+							httpErrorInputFromParts(cfg.ID, keyIndex, result.status, result.body, result.header),
+							actualModel,
+						)
 						s.applyCooldownDecision(ctx, cfg, input)
 					}
 					break
 				}
-				break // 下一个URL
+				break
 			}
-			// 单URL：保持原有行为
 			break
 		}
 	}
