@@ -436,20 +436,8 @@ func (p *sseUsageParser) parseBuffer() error {
 
 		if after, ok := strings.CutPrefix(line, "event:"); ok {
 			p.eventType = strings.TrimSpace(after)
-			// [INFO] 流结束标志检测（按事件类型）
-			// - Anthropic: event: message_stop
-			// - OpenAI Responses API: event: response.completed
-			if p.eventType == "message_stop" || p.eventType == "response.completed" {
-				p.streamComplete = true
-			}
 		} else if after0, ok0 := strings.CutPrefix(line, "data:"); ok0 {
 			dataLine := strings.TrimSpace(after0)
-			// [INFO] OpenAI 流结束标志: data: [DONE]
-			if dataLine == "[DONE]" {
-				p.streamComplete = true
-				p.hasStreamOutput = true
-				continue // [DONE]不是JSON，跳过追加
-			}
 			p.dataLines = append(p.dataLines, dataLine)
 		} else if line == "" && len(p.dataLines) > 0 {
 			// 事件结束，解析数据
@@ -478,6 +466,12 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	// [INFO] 事件类型过滤优化（2025-12-07）
 	// 问题：anyrouter等聚合服务使用非标准事件类型（如"."），导致usage丢失
 	// 方案：改为黑名单模式 - 只过滤已知无用事件，其他都尝试解析
+
+	if data == "[DONE]" {
+		p.streamComplete = true
+		p.hasStreamOutput = true
+		return nil
+	}
 
 	// [WARN] 特殊处理：SSE错误事件（记录日志 + 存储错误体用于后续冷却/重试处理）
 	// 除标准 event:error 外，OpenAI Responses API 会用 event:response.failed
@@ -512,6 +506,10 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	var event map[string]any
 	if err := json.Unmarshal([]byte(data), &event); err != nil {
 		return fmt.Errorf("json unmarshal failed: %w", err)
+	}
+	payloadType, _ := event["type"].(string)
+	if eventType == "message_stop" || (eventType == "response.completed" && payloadType == "response.completed") {
+		p.streamComplete = true
 	}
 	if eventHasTextOutput(eventType, event) {
 		p.hasTextOutput = true
