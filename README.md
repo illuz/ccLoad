@@ -897,6 +897,7 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_THEME_COLOR_DARK` | auto | Optional SVG logo gradient end color (hex/name); defaults to a darker shade of `CCLOAD_THEME_COLOR` |
 | `TRUSTED_PROXIES` | Private ranges + Loopback + `100.64.0.0/10` | Trusted proxy CIDRs (comma-separated); `none` = trust no proxies |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite database file path (SQLite mode only) |
+| `CCLOAD_MODEL_CATALOG_CACHE` | `data/model-catalog.json` | Normalized model catalog cache path; this does not enable network synchronization |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal mode (WAL/TRUNCATE/DELETE, recommend TRUNCATE for containers) |
 | `CCLOAD_MAX_CONCURRENCY` | `1000` | Max concurrent requests (limits simultaneous proxy requests) |
 | `CCLOAD_MAX_BODY_BYTES` | `10485760` | Max request body bytes (10MB, Images API auto-expands to 20MB) |
@@ -956,8 +957,11 @@ Settings marked with the lightning icon take effect immediately after saving: up
 | `health_score_update_interval` | `30` | Success rate cache update interval (seconds) |
 | `health_min_confident_sample` | `20` | Confidence sample threshold (full penalty at this sample size) |
 | `channel_check_interval_hours` | `0` | Scheduled channel check interval (hours, 0=disabled) |
+| `model_catalog_sync_interval_hours` | `0` | models.dev catalog sync interval (hours, decimals supported, 0=network sync disabled; restart required) |
 
 Per-protocol timeouts apply to the runtime upstream protocol: if a transformed request is forwarded to OpenAI, ccLoad reads `openai_*_timeout`; when that value is `0`, it falls back to the global timeout.
+
+The embedded pricing catalog remains authoritative by default. ccLoad may load a previously written local catalog cache at startup, but it makes no request to `models.dev` unless `model_catalog_sync_interval_hours` is explicitly set above `0`.
 
 #### Health Score Sorting
 

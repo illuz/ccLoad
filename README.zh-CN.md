@@ -933,6 +933,7 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_THEME_COLOR_DARK` | 自动 | 可选 SVG Logo 渐变结束色（十六进制/名称），默认按 `CCLOAD_THEME_COLOR` 自动加深 |
 | `TRUSTED_PROXIES` | 私有网段 + Loopback + `100.64.0.0/10` | 可信代理 CIDR 列表（逗号分隔）；`none`=不信任任何代理 |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite 数据库文件路径（仅 SQLite 模式） |
+| `CCLOAD_MODEL_CATALOG_CACHE` | `data/model-catalog.json` | 归一化模型目录缓存路径；设置此路径不会开启网络同步 |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal 模式（WAL/TRUNCATE/DELETE 等，容器环境建议 TRUNCATE） |
 | `CCLOAD_MAX_CONCURRENCY` | `1000` | 最大并发请求数（限制同时处理的代理请求数量） |
 | `CCLOAD_MAX_BODY_BYTES` | `10485760` | 请求体最大字节数（10MB，Images API自动放宽至20MB） |
@@ -992,8 +993,11 @@ export CCLOAD_SQLITE_LOG_DAYS=7  # 恢复最近 7 天日志（可选）
 | `health_score_update_interval` | `30` | 成功率缓存更新间隔（秒） |
 | `health_min_confident_sample` | `20` | 置信样本量阈值（样本量达到此值时惩罚全额生效） |
 | `channel_check_interval_hours` | `0` | 渠道定时检测间隔（小时，0=禁用） |
+| `model_catalog_sync_interval_hours` | `0` | models.dev 模型目录同步间隔（小时，支持小数，0=关闭网络同步；修改后需重启） |
 
 分协议超时按“实际转发到的上游协议”生效：协议转换后转发到 OpenAI，就读取 `openai_*_timeout`；对应值为 `0` 时回退全局超时。
+
+默认以程序内置价格目录为准。启动时可以加载以前写入的本地目录缓存，但只有显式将 `model_catalog_sync_interval_hours` 设置为大于 `0` 时，ccLoad 才会请求 `models.dev`。
 
 #### 健康度排序说明
 
