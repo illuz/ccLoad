@@ -95,7 +95,7 @@ func (s *SQLStore) ResetAllCooldowns(ctx context.Context, channelID int64) error
 	now := timeToUnix(time.Now())
 
 	return s.WithTransaction(ctx, func(tx *sql.Tx) error {
-		if _, err := s.execTx(ctx, tx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE channels
 			SET cooldown_until = 0, cooldown_duration_ms = 0, updated_at = ?
 			WHERE id = ? AND (cooldown_until > 0 OR cooldown_duration_ms > 0)
@@ -103,7 +103,7 @@ func (s *SQLStore) ResetAllCooldowns(ctx context.Context, channelID int64) error
 			return fmt.Errorf("reset channel cooldown: %w", err)
 		}
 
-		if _, err := s.execTx(ctx, tx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE api_keys
 			SET cooldown_until = 0, cooldown_duration_ms = 0, updated_at = ?
 			WHERE channel_id = ? AND (cooldown_until > 0 OR cooldown_duration_ms > 0)
@@ -111,7 +111,7 @@ func (s *SQLStore) ResetAllCooldowns(ctx context.Context, channelID int64) error
 			return fmt.Errorf("reset key cooldowns: %w", err)
 		}
 
-		if _, err := s.execTx(ctx, tx, `
+		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM channel_model_cooldowns
 			WHERE channel_id = ?
 		`, channelID); err != nil {

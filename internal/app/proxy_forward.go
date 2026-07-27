@@ -2109,6 +2109,8 @@ func (s *Server) attemptKeyAcrossURLs(
 ) (immediate *proxyResult, urlLastFailure *proxyResult, err error) {
 	sortedURLs := orderURLsWithSelector(selector, cfg.ID, urls)
 	urlsCount := len(urls)
+
+urlLoop:
 	for urlIdx, urlEntry := range sortedURLs {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return buildCtxDoneResult(cfg, ctxErr), nil, nil
@@ -2168,15 +2170,15 @@ func (s *Server) attemptKeyAcrossURLs(
 
 			// Key/模型级错误与 URL 无关。
 			if nextAction == cooldown.ActionRetryKey || nextAction == cooldown.ActionRetryModel {
-				break
+				break urlLoop
 			}
 			if nextAction == cooldown.ActionReturnClient {
 				return urlLastFailure, nil, nil
 			}
 			if urlsCount > 1 {
-				// 上游 5xx 已按模型冷却，不应改打同渠道的其他 URL 或冷却 URL。
-				if isModelScopedHTTPFailure(result) {
-					break
+				// 模型作用域故障不应改打同渠道的其他 URL 或冷却 URL。
+				if isModelScopedFailure(result) {
+					break urlLoop
 				}
 				if selector != nil {
 					selector.CooldownURL(cfg.ID, urlEntry.url)
@@ -2323,11 +2325,8 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	return nil, ErrAllKeysExhausted
 }
 
-func isModelScopedHTTPFailure(result *proxyResult) bool {
-	if result == nil || result.header == nil {
-		return false
-	}
-	return util.IsModelScopedHTTPStatus(result.status)
+func isModelScopedFailure(result *proxyResult) bool {
+	return result != nil && result.modelScoped
 }
 
 func shouldCheckSoftErrorForChannelType(channelType string) bool {

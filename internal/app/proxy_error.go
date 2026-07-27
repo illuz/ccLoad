@@ -249,6 +249,7 @@ func (s *Server) handleNetworkError(
 
 	input := cooldownInputForModel(networkErrorInput(cfg.ID, keyIndex, statusCode), actualModel)
 	input.ModelScoped = util.IsModelScopedNetworkError(err)
+	failure.modelScoped = input.ModelScoped || util.IsModelScopedStreamFailure(statusCode)
 	if deferChannelCooldown {
 		action := s.decideCooldownAction(ctx, cfg, input)
 		if action == cooldown.ActionRetryChannel {
@@ -611,6 +612,11 @@ func (s *Server) handleProxyErrorResponse(
 		duration:  duration,
 		succeeded: false,
 	}
+	classification := util.ClassifyHTTPResponseWithMeta(res.Status, res.Header, res.Body)
+	failure.modelScoped = classification.ModelScoped ||
+		classification.KeyCooldownReason == "model_cooldown" ||
+		util.IsModelScopedHTTPStatus(res.Status) ||
+		util.IsModelScopedStreamFailure(res.Status)
 
 	if res.Status == util.StatusCodexReasoningGuard {
 		// Codex Guard 是令牌级保护策略命中，不代表当前渠道或 Key 健康异常。

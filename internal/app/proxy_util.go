@@ -185,7 +185,8 @@ type proxyResult struct {
 	firstByteTime    float64
 	succeeded        bool
 	isClientCanceled bool            // 客户端主动取消请求（context.Canceled）
-	nextAction       cooldown.Action // 统一重试决策：RetryKey/RetryChannel/ReturnClient
+	modelScoped      bool            // 原始故障只影响当前实际上游模型，即使动作已升级为渠道级也保留
+	nextAction       cooldown.Action // 统一重试决策：RetryKey/RetryModel/RetryChannel/ReturnClient
 }
 
 // ErrorAction 已迁移到 cooldown.Action (internal/cooldown/manager.go)
