@@ -131,7 +131,7 @@ func TestProxyGemini_ListModelsHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("handleListOpenAIModels filters by token allowed channels", func(t *testing.T) {
+	t.Run("handleListOpenAIModels filters by token denied channels", func(t *testing.T) {
 		server.authService = newTestAuthService(t)
 
 		_, err := store.CreateConfig(ctx, &model.Config{
@@ -180,7 +180,11 @@ func TestProxyGemini_ListModelsHandlers(t *testing.T) {
 			} `json:"data"`
 		}
 		mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
-		if len(resp.Data) != 1 || resp.Data[0].ID != "gpt-allowed-channel" {
+		visibleModels := make(map[string]bool, len(resp.Data))
+		for _, item := range resp.Data {
+			visibleModels[item.ID] = true
+		}
+		if !visibleModels["gpt-allowed-channel"] || visibleModels["gpt-disallowed-channel"] {
 			t.Fatalf("unexpected channel-filtered resp: %+v", resp)
 		}
 	})
