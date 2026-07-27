@@ -100,6 +100,56 @@ func TestMigrate_SQLite_Idempotent(t *testing.T) {
 	}
 }
 
+func TestMigrateSQLite_ChannelRestrictionModeDefaultsAndValidation(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		db := openTestDB(t)
+		ctx := context.Background()
+		if err := migrate(ctx, db, DialectSQLite); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO auth_token_groups (name, created_at, updated_at) VALUES ('g', 1, 1)
+		`); err != nil {
+			t.Fatalf("insert group: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO auth_tokens (token, description, created_at) VALUES ('t', 'token', 1)
+		`); err != nil {
+			t.Fatalf("insert token: %v", err)
+		}
+		for _, table := range []string{"auth_tokens", "auth_token_groups"} {
+			var mode string
+			if err := db.QueryRowContext(ctx, "SELECT channel_restriction_mode FROM "+table+" LIMIT 1").Scan(&mode); err != nil {
+				t.Fatalf("select %s mode: %v", table, err)
+			}
+			if mode != "allow" {
+				t.Fatalf("%s default mode=%q, want allow", table, mode)
+			}
+		}
+	})
+
+	for _, table := range []string{"auth_tokens", "auth_token_groups"} {
+		t.Run("reject_invalid_"+table, func(t *testing.T) {
+			db := openTestDB(t)
+			ctx := context.Background()
+			if err := migrate(ctx, db, DialectSQLite); err != nil {
+				t.Fatalf("migrate: %v", err)
+			}
+			if table == "auth_tokens" {
+				_, _ = db.ExecContext(ctx, `INSERT INTO auth_tokens (token, description, created_at) VALUES ('bad', 'bad', 1)`)
+			} else {
+				_, _ = db.ExecContext(ctx, `INSERT INTO auth_token_groups (name, created_at, updated_at) VALUES ('bad', 1, 1)`)
+			}
+			if _, err := db.ExecContext(ctx, "UPDATE "+table+" SET channel_restriction_mode='denyy'"); err != nil {
+				t.Fatalf("tamper %s: %v", table, err)
+			}
+			if err := migrate(ctx, db, DialectSQLite); err == nil {
+				t.Fatalf("expected migrate to reject invalid %s mode", table)
+			}
+		})
+	}
+}
+
 func TestMigrate_SQLite_FailsOnInvalidAllowedModelsJSON(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

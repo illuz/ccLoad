@@ -25,17 +25,14 @@ func (s *Server) filterVisibleModelsForRequest(c *gin.Context, protocol string, 
 		return models
 	}
 
-	if allowedChannelSet, hasRestriction := s.authService.getAllowedChannelSet(tokenHashStr); hasRestriction {
+	if restriction, hasRestriction := s.authService.getChannelRestriction(tokenHashStr); hasRestriction {
 		channels, err := s.getEnabledChannelsByExposedProtocol(c.Request.Context(), protocol)
 		if err != nil {
 			return nil
 		}
 		modelSet := make(map[string]struct{})
 		for _, cfg := range channels {
-			if cfg == nil {
-				continue
-			}
-			if _, ok := allowedChannelSet[cfg.ID]; !ok {
+			if cfg == nil || !restriction.Allows(cfg.ID) {
 				continue
 			}
 			for _, model := range cfg.GetModels() {
@@ -115,8 +112,8 @@ func (s *Server) inferModelsChannelTypeFromToken(ctx context.Context, c *gin.Con
 	if tokenHash == "" {
 		return fallback
 	}
-	allowedChannelSet, hasRestriction := s.authService.getAllowedChannelSet(tokenHash)
-	if !hasRestriction || len(allowedChannelSet) == 0 {
+	restriction, hasRestriction := s.authService.getChannelRestriction(tokenHash)
+	if !hasRestriction {
 		return fallback
 	}
 
@@ -131,7 +128,7 @@ func (s *Server) inferModelsChannelTypeFromToken(ctx context.Context, c *gin.Con
 			if cfg == nil {
 				continue
 			}
-			if _, ok := allowedChannelSet[cfg.ID]; ok {
+			if restriction.Allows(cfg.ID) {
 				visibleProtocols = append(visibleProtocols, protocol)
 				break
 			}
@@ -152,8 +149,8 @@ func (s *Server) tokenHasVisibleProtocol(ctx context.Context, c *gin.Context, pr
 	if tokenHash == "" {
 		return false
 	}
-	allowedChannelSet, hasRestriction := s.authService.getAllowedChannelSet(tokenHash)
-	if !hasRestriction || len(allowedChannelSet) == 0 {
+	restriction, hasRestriction := s.authService.getChannelRestriction(tokenHash)
+	if !hasRestriction {
 		return false
 	}
 	channels, err := s.getEnabledChannelsByExposedProtocol(ctx, protocol)
@@ -164,7 +161,7 @@ func (s *Server) tokenHasVisibleProtocol(ctx context.Context, c *gin.Context, pr
 		if cfg == nil {
 			continue
 		}
-		if _, ok := allowedChannelSet[cfg.ID]; ok {
+		if restriction.Allows(cfg.ID) {
 			return true
 		}
 	}

@@ -20,16 +20,17 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 
 	// 创建 Auth Token
 	token := &model.AuthToken{
-		Token:             "test-token-hash",
-		PlainToken:        "test-token-plain",
-		Description:       "Test Token",
-		IsActive:          true,
-		CodexGuardEnabled: true,
-		CostLimitMicroUSD: 1000000, // $1
-		AllowedModels:     []string{"gpt-4", "claude-3"},
-		AllowedChannelIDs: []int64{11, 22},
-		MaxConcurrency:    3,
-		CreatedAt:         time.Now(),
+		Token:                  "test-token-hash",
+		PlainToken:             "test-token-plain",
+		Description:            "Test Token",
+		IsActive:               true,
+		CodexGuardEnabled:      true,
+		CostLimitMicroUSD:      1000000, // $1
+		AllowedModels:          []string{"gpt-4", "claude-3"},
+		AllowedChannelIDs:      []int64{11, 22},
+		ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
+		MaxConcurrency:         3,
+		CreatedAt:              time.Now(),
 	}
 	if err := store.CreateAuthToken(ctx, token); err != nil {
 		t.Fatalf("create auth token: %v", err)
@@ -55,6 +56,9 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	if len(got.AllowedChannelIDs) != 2 || got.AllowedChannelIDs[0] != 11 || got.AllowedChannelIDs[1] != 22 {
 		t.Fatalf("allowed_channel_ids: got %+v, want [11 22]", got.AllowedChannelIDs)
 	}
+	if got.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("channel_restriction_mode: got %q, want deny", got.ChannelRestrictionMode)
+	}
 	if got.MaxConcurrency != 3 {
 		t.Fatalf("max_concurrency: got %d, want 3", got.MaxConcurrency)
 	}
@@ -75,6 +79,31 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	_, err = store.GetAuthToken(ctx, 99999)
 	if err == nil {
 		t.Error("expected error for non-existent token")
+	}
+}
+
+func TestAuthToken_InvalidChannelRestrictionModeWriteReturnsError(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t, "invalid_channel_restriction_mode_write.db")
+	ctx := context.Background()
+	invalid := &model.AuthToken{
+		Token:                  "invalid-mode-create",
+		Description:            "invalid mode",
+		IsActive:               true,
+		ChannelRestrictionMode: "denyy",
+	}
+	if err := store.CreateAuthToken(ctx, invalid); err == nil {
+		t.Fatal("expected CreateAuthToken to reject invalid channel_restriction_mode")
+	}
+
+	valid := &model.AuthToken{Token: "invalid-mode-update", Description: "valid", IsActive: true}
+	if err := store.CreateAuthToken(ctx, valid); err != nil {
+		t.Fatalf("create valid auth token: %v", err)
+	}
+	valid.ChannelRestrictionMode = "denyy"
+	if err := store.UpdateAuthToken(ctx, valid); err == nil {
+		t.Fatal("expected UpdateAuthToken to reject invalid channel_restriction_mode")
 	}
 }
 
@@ -363,6 +392,7 @@ func TestAuthToken_Update(t *testing.T) {
 	token.CodexGuardEnabled = true
 	token.CostLimitMicroUSD = 5000000 // $5
 	token.AllowedChannelIDs = []int64{33}
+	token.ChannelRestrictionMode = model.ChannelRestrictionModeDeny
 	token.MaxConcurrency = 2
 
 	if err := store.UpdateAuthToken(ctx, token); err != nil {
@@ -394,6 +424,9 @@ func TestAuthToken_Update(t *testing.T) {
 	}
 	if len(got.AllowedChannelIDs) != 1 || got.AllowedChannelIDs[0] != 33 {
 		t.Fatalf("allowed_channel_ids: got %+v, want [33]", got.AllowedChannelIDs)
+	}
+	if got.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("channel_restriction_mode: got %q, want deny", got.ChannelRestrictionMode)
 	}
 	if got.MaxConcurrency != 2 {
 		t.Fatalf("max_concurrency: got %d, want 2", got.MaxConcurrency)

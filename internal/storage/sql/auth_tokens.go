@@ -22,7 +22,7 @@ const authTokenSelectColumns = `
 	codex_guard_enabled,
 	success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-	cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency,
+	cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency,
 	group_id, inherit_quota, inherit_channels, inherit_models
 `
 
@@ -103,6 +103,7 @@ func scanAuthToken(scanner interface {
 	var codexGuardEnabled int
 	var allowedModelsJSON string
 	var allowedChannelIDsJSON string
+	var channelRestrictionMode string
 	var costUsedMicroUSD int64
 	var costLimitMicroUSD int64
 	var dailyCostUsedMicroUSD int64
@@ -143,6 +144,7 @@ func scanAuthToken(scanner interface {
 		&dailyLimitDoubleDayKey,
 		&allowedModelsJSON,
 		&allowedChannelIDsJSON,
+		&channelRestrictionMode,
 		&token.MaxConcurrency,
 		&token.GroupID,
 		&inheritQuota,
@@ -191,6 +193,7 @@ func scanAuthToken(scanner interface {
 			return nil, fmt.Errorf("invalid allowed_channel_ids json: %w", err)
 		}
 	}
+	token.ChannelRestrictionMode = channelRestrictionMode
 	if err := token.ValidateUsageLimits(); err != nil {
 		return nil, err
 	}
@@ -238,9 +241,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
 				plain_token = excluded.plain_token,
@@ -270,6 +273,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				daily_limit_double_day_key = excluded.daily_limit_double_day_key,
 				allowed_models = excluded.allowed_models,
 				allowed_channel_ids = excluded.allowed_channel_ids,
+				channel_restriction_mode = excluded.channel_restriction_mode,
 				max_concurrency = excluded.max_concurrency,
 				group_id = excluded.group_id,
 				inherit_quota = excluded.inherit_quota,
@@ -305,6 +309,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			token.DailyLimitDoubleDayKey,
 			allowedModelsJSON,
 			allowedChannelIDsJSON,
+			token.ChannelRestrictionMode,
 			token.MaxConcurrency,
 			token.GroupID,
 			boolToInt(token.InheritQuota),
@@ -321,10 +326,10 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		INSERT INTO auth_tokens (
 			id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 			success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
-			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd,
-			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
+			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
 			plain_token = VALUES(plain_token),
@@ -354,6 +359,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			daily_limit_double_day_key = VALUES(daily_limit_double_day_key),
 			allowed_models = VALUES(allowed_models),
 			allowed_channel_ids = VALUES(allowed_channel_ids),
+			channel_restriction_mode = VALUES(channel_restriction_mode),
 			max_concurrency = VALUES(max_concurrency),
 			group_id = VALUES(group_id),
 			inherit_quota = VALUES(inherit_quota),
@@ -380,6 +386,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		token.CacheReadTokensTotal,
 		token.CacheCreationTokensTotal,
 		token.TotalCostUSD,
+		token.EffectiveCostUSD,
 		token.CostUsedMicroUSD,
 		token.CostLimitMicroUSD,
 		token.DailyCostUsedMicroUSD,
@@ -388,6 +395,7 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		token.DailyLimitDoubleDayKey,
 		allowedModelsJSON,
 		allowedChannelIDsJSON,
+		token.ChannelRestrictionMode,
 		token.MaxConcurrency,
 		token.GroupID,
 		boolToInt(token.InheritQuota),
@@ -410,10 +418,11 @@ const (
 	authTokenInsertCommonCols = `token, plain_token, description, created_at, expires_at, last_used_at, is_active,
 		codex_guard_enabled, success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 		prompt_tokens_total, completion_tokens_total, total_cost_usd, effective_cost_usd, allowed_models, allowed_channel_ids,
+		channel_restriction_mode,
 		cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key,
 		max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models`
 
-	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?`
+	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -456,7 +465,7 @@ func authTokenInsertCommonArgs(token *model.AuthToken) ([]any, error) {
 		token.Token, token.PlainToken, token.Description, token.CreatedAt.UnixMilli(),
 		expiresAt, lastUsedAt, boolToInt(token.IsActive),
 		boolToInt(token.CodexGuardEnabled),
-		allowedModelsJSON, allowedChannelIDsJSON,
+		allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode,
 		token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, model.CurrentLocalDayKey(), token.DailyLimitDoubleDayKey, token.MaxConcurrency,
 		token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels),
 	}, nil
@@ -705,13 +714,14 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    daily_limit_double_day_key = ?,
 		    allowed_models = ?,
 		    allowed_channel_ids = ?,
+		    channel_restriction_mode = ?,
 		    max_concurrency = ?,
 		    group_id = ?,
 		    inherit_quota = ?,
 		    inherit_channels = ?,
 		    inherit_models = ?
 		WHERE id = ?
-	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
+	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
 
 	if err != nil {
 		return fmt.Errorf("update auth token: %w", err)

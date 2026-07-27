@@ -366,6 +366,12 @@ func ensureAuthTokensAllowedChannelIDs(ctx context.Context, db *sql.DB, dialect 
 		"TEXT NOT NULL DEFAULT ''")
 }
 
+func ensureAuthTokensChannelRestrictionMode(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_tokens", "channel_restriction_mode",
+		"VARCHAR(16) NOT NULL DEFAULT 'allow'",
+		"TEXT NOT NULL DEFAULT 'allow'")
+}
+
 // ensureAuthTokensPlainToken 确保auth_tokens表有明文令牌字段（仅管理后台展示/修改）
 func ensureAuthTokensPlainToken(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "auth_tokens", "plain_token",
@@ -450,6 +456,12 @@ func ensureAuthTokenGroupsDailyCostLimit(ctx context.Context, db *sql.DB, dialec
 	return ensureColumn(ctx, db, dialect, "auth_token_groups", "daily_cost_limit_microusd",
 		"BIGINT NOT NULL DEFAULT 0",
 		"INTEGER NOT NULL DEFAULT 0")
+}
+
+func ensureAuthTokenGroupsChannelRestrictionMode(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_token_groups", "channel_restriction_mode",
+		"VARCHAR(16) NOT NULL DEFAULT 'allow'",
+		"TEXT NOT NULL DEFAULT 'allow'")
 }
 
 func ensureChannelsProtocolTransformMode(ctx context.Context, db *sql.DB, dialect Dialect) error {

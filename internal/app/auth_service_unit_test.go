@@ -85,8 +85,9 @@ func TestAuthService_IsChannelAllowed(t *testing.T) {
 	t.Parallel()
 
 	s := &AuthService{
-		authTokenChannels: map[string][]int64{
-			"t1": {2, 42},
+		authTokenChannels: map[string]model.ChannelRestriction{
+			"t1": mustChannelRestriction(t, model.ChannelRestrictionModeAllow, 2, 42),
+			"t2": mustChannelRestriction(t, model.ChannelRestrictionModeDeny, 2, 42),
 		},
 	}
 
@@ -98,6 +99,12 @@ func TestAuthService_IsChannelAllowed(t *testing.T) {
 	}
 	if s.IsChannelAllowed("t1", 7) {
 		t.Fatal("expected non-listed channel to be rejected")
+	}
+	if s.IsChannelAllowed("t2", 42) {
+		t.Fatal("expected deny-listed channel to be rejected")
+	}
+	if !s.IsChannelAllowed("t2", 7) {
+		t.Fatal("expected channel outside deny list to be allowed")
 	}
 }
 
@@ -205,6 +212,43 @@ func TestReloadAuthTokens_DoesNotRegressUsage(t *testing.T) {
 	}
 	if used, _, _ := s.IsCostLimitExceeded(hash); used != 150 {
 		t.Fatalf("reload regressed in-memory usage: used=%d, want 150 (DB lagging value must not overwrite memory)", used)
+	}
+}
+
+func TestReloadAuthTokens_InheritsDenyChannelRestriction(t *testing.T) {
+	t.Parallel()
+
+	const inheritedHash = "inherited-deny-hash"
+	const emptyHash = "empty-deny-hash"
+	stub := &reloadStubStore{
+		tokens: []*model.AuthToken{
+			{Token: inheritedHash, ID: 1, GroupID: 9, InheritChannels: true},
+			{Token: emptyHash, ID: 2, ChannelRestrictionMode: model.ChannelRestrictionModeDeny},
+		},
+		groups: []*model.AuthTokenGroup{{
+			ID:                     9,
+			Name:                   "deny group",
+			AllowedChannelIDs:      []int64{2},
+			ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
+		}},
+	}
+
+	s := newTestAuthService(t)
+	s.store = stub
+	if err := s.ReloadAuthTokens(); err != nil {
+		t.Fatalf("ReloadAuthTokens: %v", err)
+	}
+	if s.IsChannelAllowed(inheritedHash, 2) {
+		t.Fatal("inherited deny list should reject channel 2")
+	}
+	if !s.IsChannelAllowed(inheritedHash, 3) {
+		t.Fatal("inherited deny list should allow channel 3")
+	}
+	if !s.IsChannelAllowed(emptyHash, 2) {
+		t.Fatal("empty deny list must remain unrestricted")
+	}
+	if _, restricted := s.getChannelRestriction(emptyHash); restricted {
+		t.Fatal("empty deny list should not be stored as an active restriction")
 	}
 }
 

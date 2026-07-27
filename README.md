@@ -60,7 +60,7 @@ ccLoad handles those cases with:
 - 💰 **Cost Limits** - Per-channel daily cost limits, per-token cost limits
 - 🚦 **Channel RPM Limits** - Per-channel rolling 60-second request caps, 0=unlimited
 - 🚧 **Channel Concurrency Limits** - Per-channel in-flight request caps, 0=unlimited
-- 🔐 **Token Restrictions** - API token cost limits + model restrictions for fine-grained access control
+- 🔐 **Token Restrictions** - Per-token/group cost, model, and channel allow/deny policies
 - ⏱️ **TTFB Monitoring** - Streaming request first byte time tracking for upstream latency diagnosis
 - 🌐 **Multi-URL Load Balancing** - Multiple URLs per channel with latency-weighted random selection
 - 💵 **service_tier Pricing** - OpenAI priority/flex/default tier multipliers for accurate cost accounting
@@ -1017,6 +1017,8 @@ Base priority order: A > B > C > D
 **Advanced Token Features** (2026-01 New):
 - **Cost Limits**: Set cost limits per token (USD), requests rejected with 429 when exceeded
 - **Model Restrictions**: Restrict which models a token can access for fine-grained access control
+- **Channel Restrictions**: A token or token group can use an `allow` list or `deny` list of channel IDs. An empty list is always unrestricted
+- **Group Inheritance**: When a token inherits channel restrictions from its group, both the channel ID list and its allow/deny mode are inherited together
 - **First Byte Time**: Records streaming request TTFB (milliseconds) for upstream latency diagnosis
 
 #### Behavior Summary
@@ -1090,7 +1092,8 @@ storage/
 - `logs` - Request logs (with base_url upstream URL tracking)
 - `debug_logs` - Debug logs (upstream request/response raw data, independent cleanup policy)
 - `key_rr` - Round-robin pointers (channel_id → idx)
-- `auth_tokens` - Auth tokens (with cost limits, model restrictions, first byte time tracking)
+- `auth_token_groups` - Reusable token limit templates, including model and channel allow/deny policies
+- `auth_tokens` - Auth tokens (with cost limits, model/channel restrictions, first byte time tracking)
 - `admin_sessions` - Admin sessions
 - `system_settings` - System config (hot reload support)
 

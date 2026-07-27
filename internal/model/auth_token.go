@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,8 +62,9 @@ type AuthToken struct {
 	// 模型限制（2026-01新增）
 	AllowedModels []string `json:"allowed_models,omitempty"` // 允许的模型列表，空表示无限制
 
-	// 渠道限制（2026-04新增）
-	AllowedChannelIDs []int64 `json:"allowed_channel_ids,omitempty"` // 允许的渠道ID列表，空表示无限制
+	// 渠道限制（2026-04新增）。空列表始终表示无限制；非空列表由模式决定是白名单还是黑名单。
+	AllowedChannelIDs      []int64 `json:"allowed_channel_ids,omitempty"`
+	ChannelRestrictionMode string  `json:"channel_restriction_mode"` // allow|deny，空视为 allow
 
 	// 并发限制（2026-04新增）
 	MaxConcurrency int `json:"max_concurrency"` // 最大并发请求数，0表示无限制
@@ -78,6 +80,7 @@ type AuthToken struct {
 	EffectiveDailyCostLimitMicroUSD int64    `json:"-"`                    // 有效当日费用上限（微美元）
 	EffectiveAllowedModels          []string `json:"-"`                    // 有效模型限制
 	EffectiveAllowedChannelIDs      []int64  `json:"-"`                    // 有效渠道限制
+	EffectiveChannelRestrictionMode string   `json:"-"`                    // 有效渠道限制模式
 	EffectiveMaxConcurrency         int      `json:"-"`                    // 有效并发上限
 }
 
@@ -97,7 +100,83 @@ type AuthTokenGroup struct {
 	MaxConcurrency         int       `json:"max_concurrency"`
 	AllowedModels          []string  `json:"allowed_models,omitempty"`
 	AllowedChannelIDs      []int64   `json:"allowed_channel_ids,omitempty"`
+	ChannelRestrictionMode string    `json:"channel_restriction_mode"`
 	TokenCount             int       `json:"token_count,omitempty"`
+}
+
+const (
+	ChannelRestrictionModeAllow = "allow"
+	ChannelRestrictionModeDeny  = "deny"
+)
+
+// NormalizeChannelRestrictionMode validates and canonicalizes a channel restriction mode.
+func NormalizeChannelRestrictionMode(mode string) (string, error) {
+	switch mode {
+	case "", ChannelRestrictionModeAllow:
+		return ChannelRestrictionModeAllow, nil
+	case ChannelRestrictionModeDeny:
+		return ChannelRestrictionModeDeny, nil
+	default:
+		return "", fmt.Errorf(
+			"channel_restriction_mode must be %q or %q, got %q",
+			ChannelRestrictionModeAllow,
+			ChannelRestrictionModeDeny,
+			mode,
+		)
+	}
+}
+
+// ChannelRestriction is a validated channel access policy.
+type ChannelRestriction struct {
+	deny bool
+	ids  map[int64]struct{}
+}
+
+func NewChannelRestriction(mode string, channelIDs []int64) (ChannelRestriction, error) {
+	normalizedMode, err := NormalizeChannelRestrictionMode(mode)
+	if err != nil {
+		return ChannelRestriction{}, err
+	}
+
+	ids := make(map[int64]struct{}, len(channelIDs))
+	for _, channelID := range channelIDs {
+		ids[channelID] = struct{}{}
+	}
+	return ChannelRestriction{
+		deny: normalizedMode == ChannelRestrictionModeDeny,
+		ids:  ids,
+	}, nil
+}
+
+// Restricted reports whether a non-empty channel list is configured.
+func (r ChannelRestriction) Restricted() bool {
+	return len(r.ids) > 0
+}
+
+// Allows checks a channel against the policy. Empty lists always allow every channel.
+func (r ChannelRestriction) Allows(channelID int64) bool {
+	if !r.Restricted() {
+		return true
+	}
+	_, listed := r.ids[channelID]
+	if r.deny {
+		return !listed
+	}
+	return listed
+}
+
+func (t *AuthToken) ChannelRestriction() (ChannelRestriction, error) {
+	if t == nil {
+		return NewChannelRestriction(ChannelRestrictionModeAllow, nil)
+	}
+	return NewChannelRestriction(t.ChannelRestrictionMode, t.AllowedChannelIDs)
+}
+
+func (g *AuthTokenGroup) ChannelRestriction() (ChannelRestriction, error) {
+	if g == nil {
+		return NewChannelRestriction(ChannelRestrictionModeAllow, nil)
+	}
+	return NewChannelRestriction(g.ChannelRestrictionMode, g.AllowedChannelIDs)
 }
 
 const DefaultAuthTokenGroupColor = "#64748b"
@@ -224,18 +303,13 @@ func (t *AuthToken) IsModelAllowed(model string) bool {
 	return false
 }
 
-// IsChannelAllowed 检查渠道是否被令牌允许访问
-// 如果 AllowedChannelIDs 为空，表示无限制，允许所有渠道
+// IsChannelAllowed checks the token's allow/deny channel restriction.
 func (t *AuthToken) IsChannelAllowed(channelID int64) bool {
-	if len(t.AllowedChannelIDs) == 0 {
-		return true
+	restriction, err := t.ChannelRestriction()
+	if err != nil {
+		return false
 	}
-	for _, id := range t.AllowedChannelIDs {
-		if id == channelID {
-			return true
-		}
-	}
-	return false
+	return restriction.Allows(channelID)
 }
 
 // CostUsedUSD 返回已消耗费用（美元）
@@ -317,6 +391,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 	t.EffectiveMaxConcurrency = t.MaxConcurrency
 	t.EffectiveAllowedModels = cloneStringSlice(t.AllowedModels)
 	t.EffectiveAllowedChannelIDs = cloneInt64Slice(t.AllowedChannelIDs)
+	t.EffectiveChannelRestrictionMode = normalizedChannelRestrictionModeOrOriginal(t.ChannelRestrictionMode)
 
 	if group != nil && t.GroupID > 0 && t.GroupID == group.ID {
 		t.GroupName = group.Name
@@ -327,6 +402,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 		}
 		if t.InheritChannels {
 			t.EffectiveAllowedChannelIDs = cloneInt64Slice(group.AllowedChannelIDs)
+			t.EffectiveChannelRestrictionMode = normalizedChannelRestrictionModeOrOriginal(group.ChannelRestrictionMode)
 		}
 		if t.InheritModels {
 			t.EffectiveAllowedModels = cloneStringSlice(group.AllowedModels)
@@ -348,6 +424,15 @@ func (t *AuthToken) ApplyEffectiveValuesToRawForRuntime() {
 	t.MaxConcurrency = t.EffectiveMaxConcurrency
 	t.AllowedModels = cloneStringSlice(t.EffectiveAllowedModels)
 	t.AllowedChannelIDs = cloneInt64Slice(t.EffectiveAllowedChannelIDs)
+	t.ChannelRestrictionMode = t.EffectiveChannelRestrictionMode
+}
+
+func normalizedChannelRestrictionModeOrOriginal(mode string) string {
+	normalized, err := NormalizeChannelRestrictionMode(mode)
+	if err != nil {
+		return mode
+	}
+	return normalized
 }
 
 func cloneStringSlice(values []string) []string {
@@ -370,6 +455,11 @@ func cloneInt64Slice(values []int64) []int64 {
 
 // ValidateUsageLimits enforces invariants that keep limit checks bounded.
 func (t *AuthToken) ValidateUsageLimits() error {
+	mode, err := NormalizeChannelRestrictionMode(t.ChannelRestrictionMode)
+	if err != nil {
+		return err
+	}
+	t.ChannelRestrictionMode = mode
 	if t.CostLimitMicroUSD < 0 {
 		return errors.New("cost_limit_usd must be >= 0")
 	}
@@ -430,6 +520,11 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	if strings.TrimSpace(g.Name) == "" {
 		return errors.New("name is required")
 	}
+	mode, err := NormalizeChannelRestrictionMode(g.ChannelRestrictionMode)
+	if err != nil {
+		return err
+	}
+	g.ChannelRestrictionMode = mode
 	g.Color = CanonicalAuthTokenGroupColor(g.Color)
 	if g.CostLimitMicroUSD < 0 {
 		return errors.New("cost_limit_usd must be >= 0")
@@ -448,95 +543,111 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 
 // authTokenJSON 是用于JSON序列化的内部结构
 type authTokenJSON struct {
-	ID                         int64     `json:"id"`
-	Token                      string    `json:"token"`
-	PlainToken                 string    `json:"plain_token,omitempty"`
-	Description                string    `json:"description"`
-	CreatedAt                  time.Time `json:"created_at"`
-	ExpiresAt                  *int64    `json:"expires_at,omitempty"`
-	LastUsedAt                 *int64    `json:"last_used_at,omitempty"`
-	IsActive                   bool      `json:"is_active"`
-	CodexGuardEnabled          bool      `json:"codex_guard_enabled"`
-	SuccessCount               int64     `json:"success_count"`
-	FailureCount               int64     `json:"failure_count"`
-	StreamAvgTTFB              float64   `json:"stream_avg_ttfb"`
-	NonStreamAvgRT             float64   `json:"non_stream_avg_rt"`
-	StreamCount                int64     `json:"stream_count"`
-	NonStreamCount             int64     `json:"non_stream_count"`
-	PromptTokensTotal          int64     `json:"prompt_tokens_total"`
-	CompletionTokensTotal      int64     `json:"completion_tokens_total"`
-	CacheReadTokensTotal       int64     `json:"cache_read_tokens_total"`
-	CacheCreationTokensTotal   int64     `json:"cache_creation_tokens_total"`
-	TotalCostUSD               float64   `json:"total_cost_usd"`
-	EffectiveCostUSD           float64   `json:"effective_cost_usd"`
-	CostUsedUSD                float64   `json:"cost_used_usd"`
-	CostLimitUSD               float64   `json:"cost_limit_usd"`
-	DailyCostUsedUSD           float64   `json:"daily_cost_used_usd"`
-	DailyCostLimitUSD          float64   `json:"daily_cost_limit_usd"`
-	DailyLimitDoubleEnabled    bool      `json:"daily_limit_double_enabled"`
-	PeakRPM                    float64   `json:"peak_rpm,omitempty"`
-	AvgRPM                     float64   `json:"avg_rpm,omitempty"`
-	RecentRPM                  float64   `json:"recent_rpm,omitempty"`
-	AllowedModels              []string  `json:"allowed_models,omitempty"`
-	AllowedChannelIDs          []int64   `json:"allowed_channel_ids,omitempty"`
-	MaxConcurrency             int       `json:"max_concurrency"`
-	GroupID                    int64     `json:"group_id"`
-	GroupName                  string    `json:"group_name,omitempty"`
-	InheritQuota               bool      `json:"inherit_quota"`
-	InheritChannels            bool      `json:"inherit_channels"`
-	InheritModels              bool      `json:"inherit_models"`
-	EffectiveCostLimitUSD      float64   `json:"effective_cost_limit_usd"`
-	EffectiveDailyCostLimitUSD float64   `json:"effective_daily_cost_limit_usd"`
-	EffectiveAllowedModels     []string  `json:"effective_allowed_models,omitempty"`
-	EffectiveAllowedChannelIDs []int64   `json:"effective_allowed_channel_ids,omitempty"`
-	EffectiveMaxConcurrency    int       `json:"effective_max_concurrency"`
+	ID                              int64     `json:"id"`
+	Token                           string    `json:"token"`
+	PlainToken                      string    `json:"plain_token,omitempty"`
+	Description                     string    `json:"description"`
+	CreatedAt                       time.Time `json:"created_at"`
+	ExpiresAt                       *int64    `json:"expires_at,omitempty"`
+	LastUsedAt                      *int64    `json:"last_used_at,omitempty"`
+	IsActive                        bool      `json:"is_active"`
+	CodexGuardEnabled               bool      `json:"codex_guard_enabled"`
+	SuccessCount                    int64     `json:"success_count"`
+	FailureCount                    int64     `json:"failure_count"`
+	StreamAvgTTFB                   float64   `json:"stream_avg_ttfb"`
+	NonStreamAvgRT                  float64   `json:"non_stream_avg_rt"`
+	StreamCount                     int64     `json:"stream_count"`
+	NonStreamCount                  int64     `json:"non_stream_count"`
+	PromptTokensTotal               int64     `json:"prompt_tokens_total"`
+	CompletionTokensTotal           int64     `json:"completion_tokens_total"`
+	CacheReadTokensTotal            int64     `json:"cache_read_tokens_total"`
+	CacheCreationTokensTotal        int64     `json:"cache_creation_tokens_total"`
+	TotalCostUSD                    float64   `json:"total_cost_usd"`
+	EffectiveCostUSD                float64   `json:"effective_cost_usd"`
+	CostUsedUSD                     float64   `json:"cost_used_usd"`
+	CostLimitUSD                    float64   `json:"cost_limit_usd"`
+	DailyCostUsedUSD                float64   `json:"daily_cost_used_usd"`
+	DailyCostLimitUSD               float64   `json:"daily_cost_limit_usd"`
+	DailyLimitDoubleEnabled         bool      `json:"daily_limit_double_enabled"`
+	PeakRPM                         float64   `json:"peak_rpm,omitempty"`
+	AvgRPM                          float64   `json:"avg_rpm,omitempty"`
+	RecentRPM                       float64   `json:"recent_rpm,omitempty"`
+	AllowedModels                   []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs               []int64   `json:"allowed_channel_ids,omitempty"`
+	ChannelRestrictionMode          string    `json:"channel_restriction_mode"`
+	MaxConcurrency                  int       `json:"max_concurrency"`
+	GroupID                         int64     `json:"group_id"`
+	GroupName                       string    `json:"group_name,omitempty"`
+	InheritQuota                    bool      `json:"inherit_quota"`
+	InheritChannels                 bool      `json:"inherit_channels"`
+	InheritModels                   bool      `json:"inherit_models"`
+	EffectiveCostLimitUSD           float64   `json:"effective_cost_limit_usd"`
+	EffectiveDailyCostLimitUSD      float64   `json:"effective_daily_cost_limit_usd"`
+	EffectiveAllowedModels          []string  `json:"effective_allowed_models,omitempty"`
+	EffectiveAllowedChannelIDs      []int64   `json:"effective_allowed_channel_ids,omitempty"`
+	EffectiveChannelRestrictionMode string    `json:"effective_channel_restriction_mode"`
+	EffectiveMaxConcurrency         int       `json:"effective_max_concurrency"`
 }
 
 // MarshalJSON 自定义JSON序列化，将MicroUSD转换为USD浮点数
 func (t AuthToken) MarshalJSON() ([]byte, error) {
+	channelRestrictionMode, err := NormalizeChannelRestrictionMode(t.ChannelRestrictionMode)
+	if err != nil {
+		return nil, err
+	}
+	effectiveChannelRestrictionMode := channelRestrictionMode
+	if t.EffectiveSet {
+		effectiveChannelRestrictionMode, err = NormalizeChannelRestrictionMode(t.EffectiveChannelRestrictionMode)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return json.Marshal(authTokenJSON{
-		ID:                         t.ID,
-		Token:                      t.Token,
-		PlainToken:                 t.PlainToken,
-		Description:                t.Description,
-		CreatedAt:                  t.CreatedAt,
-		ExpiresAt:                  t.ExpiresAt,
-		LastUsedAt:                 t.LastUsedAt,
-		IsActive:                   t.IsActive,
-		CodexGuardEnabled:          t.CodexGuardEnabled,
-		SuccessCount:               t.SuccessCount,
-		FailureCount:               t.FailureCount,
-		StreamAvgTTFB:              t.StreamAvgTTFB,
-		NonStreamAvgRT:             t.NonStreamAvgRT,
-		StreamCount:                t.StreamCount,
-		NonStreamCount:             t.NonStreamCount,
-		PromptTokensTotal:          t.PromptTokensTotal,
-		CompletionTokensTotal:      t.CompletionTokensTotal,
-		CacheReadTokensTotal:       t.CacheReadTokensTotal,
-		CacheCreationTokensTotal:   t.CacheCreationTokensTotal,
-		TotalCostUSD:               t.TotalCostUSD,
-		EffectiveCostUSD:           t.EffectiveCostUSD,
-		CostUsedUSD:                t.CostUsedUSD(),
-		CostLimitUSD:               t.CostLimitUSD(),
-		DailyCostUsedUSD:           t.DailyCostUsedUSD(),
-		DailyCostLimitUSD:          t.DailyCostLimitUSD(),
-		DailyLimitDoubleEnabled:    t.IsDailyLimitDoubledToday(),
-		PeakRPM:                    t.PeakRPM,
-		AvgRPM:                     t.AvgRPM,
-		RecentRPM:                  t.RecentRPM,
-		AllowedModels:              t.AllowedModels,
-		AllowedChannelIDs:          t.AllowedChannelIDs,
-		MaxConcurrency:             t.MaxConcurrency,
-		GroupID:                    t.GroupID,
-		GroupName:                  t.GroupName,
-		InheritQuota:               t.InheritQuota,
-		InheritChannels:            t.InheritChannels,
-		InheritModels:              t.InheritModels,
-		EffectiveCostLimitUSD:      t.EffectiveCostLimitUSDValue(),
-		EffectiveDailyCostLimitUSD: t.EffectiveDailyCostLimitUSDValue(),
-		EffectiveAllowedModels:     effectiveStringSlice(t.EffectiveSet, t.EffectiveAllowedModels, t.AllowedModels),
-		EffectiveAllowedChannelIDs: effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
-		EffectiveMaxConcurrency:    effectiveInt(t.EffectiveSet, t.EffectiveMaxConcurrency, t.MaxConcurrency),
+		ID:                              t.ID,
+		Token:                           t.Token,
+		PlainToken:                      t.PlainToken,
+		Description:                     t.Description,
+		CreatedAt:                       t.CreatedAt,
+		ExpiresAt:                       t.ExpiresAt,
+		LastUsedAt:                      t.LastUsedAt,
+		IsActive:                        t.IsActive,
+		CodexGuardEnabled:               t.CodexGuardEnabled,
+		SuccessCount:                    t.SuccessCount,
+		FailureCount:                    t.FailureCount,
+		StreamAvgTTFB:                   t.StreamAvgTTFB,
+		NonStreamAvgRT:                  t.NonStreamAvgRT,
+		StreamCount:                     t.StreamCount,
+		NonStreamCount:                  t.NonStreamCount,
+		PromptTokensTotal:               t.PromptTokensTotal,
+		CompletionTokensTotal:           t.CompletionTokensTotal,
+		CacheReadTokensTotal:            t.CacheReadTokensTotal,
+		CacheCreationTokensTotal:        t.CacheCreationTokensTotal,
+		TotalCostUSD:                    t.TotalCostUSD,
+		EffectiveCostUSD:                t.EffectiveCostUSD,
+		CostUsedUSD:                     t.CostUsedUSD(),
+		CostLimitUSD:                    t.CostLimitUSD(),
+		DailyCostUsedUSD:                t.DailyCostUsedUSD(),
+		DailyCostLimitUSD:               t.DailyCostLimitUSD(),
+		DailyLimitDoubleEnabled:         t.IsDailyLimitDoubledToday(),
+		PeakRPM:                         t.PeakRPM,
+		AvgRPM:                          t.AvgRPM,
+		RecentRPM:                       t.RecentRPM,
+		AllowedModels:                   t.AllowedModels,
+		AllowedChannelIDs:               t.AllowedChannelIDs,
+		ChannelRestrictionMode:          channelRestrictionMode,
+		MaxConcurrency:                  t.MaxConcurrency,
+		GroupID:                         t.GroupID,
+		GroupName:                       t.GroupName,
+		InheritQuota:                    t.InheritQuota,
+		InheritChannels:                 t.InheritChannels,
+		InheritModels:                   t.InheritModels,
+		EffectiveCostLimitUSD:           t.EffectiveCostLimitUSDValue(),
+		EffectiveDailyCostLimitUSD:      t.EffectiveDailyCostLimitUSDValue(),
+		EffectiveAllowedModels:          effectiveStringSlice(t.EffectiveSet, t.EffectiveAllowedModels, t.AllowedModels),
+		EffectiveAllowedChannelIDs:      effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
+		EffectiveChannelRestrictionMode: effectiveChannelRestrictionMode,
+		EffectiveMaxConcurrency:         effectiveInt(t.EffectiveSet, t.EffectiveMaxConcurrency, t.MaxConcurrency),
 	})
 }
 
@@ -562,34 +673,40 @@ func effectiveInt(effectiveSet bool, effectiveValue, rawValue int) int {
 }
 
 type authTokenGroupJSON struct {
-	ID                int64     `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Color             string    `json:"color"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	CostLimitUSD      float64   `json:"cost_limit_usd"`
-	DailyCostLimitUSD float64   `json:"daily_cost_limit_usd"`
-	MaxConcurrency    int       `json:"max_concurrency"`
-	AllowedModels     []string  `json:"allowed_models,omitempty"`
-	AllowedChannelIDs []int64   `json:"allowed_channel_ids,omitempty"`
-	TokenCount        int       `json:"token_count,omitempty"`
+	ID                     int64     `json:"id"`
+	Name                   string    `json:"name"`
+	Description            string    `json:"description"`
+	Color                  string    `json:"color"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+	CostLimitUSD           float64   `json:"cost_limit_usd"`
+	DailyCostLimitUSD      float64   `json:"daily_cost_limit_usd"`
+	MaxConcurrency         int       `json:"max_concurrency"`
+	AllowedModels          []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs      []int64   `json:"allowed_channel_ids,omitempty"`
+	ChannelRestrictionMode string    `json:"channel_restriction_mode"`
+	TokenCount             int       `json:"token_count,omitempty"`
 }
 
 // MarshalJSON 自定义分组JSON序列化，将MicroUSD转换为USD浮点数。
 func (g AuthTokenGroup) MarshalJSON() ([]byte, error) {
+	channelRestrictionMode, err := NormalizeChannelRestrictionMode(g.ChannelRestrictionMode)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(authTokenGroupJSON{
-		ID:                g.ID,
-		Name:              g.Name,
-		Description:       g.Description,
-		Color:             CanonicalAuthTokenGroupColor(g.Color),
-		CreatedAt:         g.CreatedAt,
-		UpdatedAt:         g.UpdatedAt,
-		CostLimitUSD:      g.CostLimitUSD(),
-		DailyCostLimitUSD: g.DailyCostLimitUSD(),
-		MaxConcurrency:    g.MaxConcurrency,
-		AllowedModels:     g.AllowedModels,
-		AllowedChannelIDs: g.AllowedChannelIDs,
-		TokenCount:        g.TokenCount,
+		ID:                     g.ID,
+		Name:                   g.Name,
+		Description:            g.Description,
+		Color:                  CanonicalAuthTokenGroupColor(g.Color),
+		CreatedAt:              g.CreatedAt,
+		UpdatedAt:              g.UpdatedAt,
+		CostLimitUSD:           g.CostLimitUSD(),
+		DailyCostLimitUSD:      g.DailyCostLimitUSD(),
+		MaxConcurrency:         g.MaxConcurrency,
+		AllowedModels:          g.AllowedModels,
+		AllowedChannelIDs:      g.AllowedChannelIDs,
+		ChannelRestrictionMode: channelRestrictionMode,
+		TokenCount:             g.TokenCount,
 	})
 }

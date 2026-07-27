@@ -32,6 +32,7 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 			"claude-3-5-sonnet-latest",
 		},
 		AllowedChannelIDs:      []int64{7, 9},
+		ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
 		CostUsedMicroUSD:       10,
 		CostLimitMicroUSD:      100,
 		DailyCostUsedMicroUSD:  5,
@@ -61,5 +62,8 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 	}
 	if len(got.AllowedChannelIDs) != 2 || got.AllowedChannelIDs[0] != 7 || got.AllowedChannelIDs[1] != 9 {
 		t.Fatalf("unexpected allowed_channel_ids: %+v", got.AllowedChannelIDs)
+	}
+	if got.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("unexpected channel_restriction_mode: %q", got.ChannelRestrictionMode)
 	}
 }

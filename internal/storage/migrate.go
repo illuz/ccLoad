@@ -203,6 +203,12 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := validateAuthTokensAllowedChannelIDsJSON(ctx, db); err != nil {
 				return fmt.Errorf("validate auth_tokens allowed_channel_ids: %w", err)
 			}
+			if err := ensureAuthTokensChannelRestrictionMode(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_tokens channel_restriction_mode: %w", err)
+			}
+			if err := validateAuthTokensChannelRestrictionMode(ctx, db); err != nil {
+				return fmt.Errorf("validate auth_tokens channel_restriction_mode: %w", err)
+			}
 			if err := ensureAuthTokensPlainToken(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens plain_token: %w", err)
 			}
@@ -235,6 +241,12 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := ensureAuthTokenGroupsDailyCostLimit(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_token_groups daily cost limit: %w", err)
+			}
+			if err := ensureAuthTokenGroupsChannelRestrictionMode(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_token_groups channel_restriction_mode: %w", err)
+			}
+			if err := validateAuthTokenGroupsChannelRestrictionMode(ctx, db); err != nil {
+				return fmt.Errorf("validate auth_token_groups channel_restriction_mode: %w", err)
 			}
 		}
 

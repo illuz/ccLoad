@@ -16,8 +16,10 @@ func TestAdminAPI_CreateAuthTokenGroup_WithColor(t *testing.T) {
 	server := newInMemoryServer(t)
 
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-token-groups", map[string]any{
-		"name":  "Premium",
-		"color": "#3b82f6",
+		"name":                     "Premium",
+		"color":                    "#3b82f6",
+		"allowed_channel_ids":      []int64{3},
+		"channel_restriction_mode": "deny",
 	}))
 
 	server.HandleCreateAuthTokenGroup(c)
@@ -29,6 +31,21 @@ func TestAdminAPI_CreateAuthTokenGroup_WithColor(t *testing.T) {
 	resp := mustParseAPIResponse[model.AuthTokenGroup](t, w.Body.Bytes())
 	if resp.Data.Color != "#3b82f6" {
 		t.Fatalf("color=%q, want %q", resp.Data.Color, "#3b82f6")
+	}
+	if resp.Data.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("channel_restriction_mode=%q, want deny", resp.Data.ChannelRestrictionMode)
+	}
+}
+
+func TestAdminAPI_AuthTokenGroup_InvalidChannelRestrictionMode(t *testing.T) {
+	server := newInMemoryServer(t)
+	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-token-groups", map[string]any{
+		"name":                     "Invalid",
+		"channel_restriction_mode": "denyy",
+	}))
+	server.HandleCreateAuthTokenGroup(c)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400, body=%s", w.Code, w.Body.String())
 	}
 }
 

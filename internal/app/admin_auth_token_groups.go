@@ -32,14 +32,15 @@ func (s *Server) HandleListAuthTokenGroups(c *gin.Context) {
 }
 
 type authTokenGroupRequest struct {
-	Name              *string  `json:"name"`
-	Description       *string  `json:"description"`
-	Color             *string  `json:"color"`
-	AllowedModels     []string `json:"allowed_models"`
-	AllowedChannelIDs []int64  `json:"allowed_channel_ids"`
-	CostLimitUSD      *float64 `json:"cost_limit_usd"`
-	DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"`
-	MaxConcurrency    *int     `json:"max_concurrency"`
+	Name                   *string  `json:"name"`
+	Description            *string  `json:"description"`
+	Color                  *string  `json:"color"`
+	AllowedModels          []string `json:"allowed_models"`
+	AllowedChannelIDs      []int64  `json:"allowed_channel_ids"`
+	ChannelRestrictionMode *string  `json:"channel_restriction_mode"`
+	CostLimitUSD           *float64 `json:"cost_limit_usd"`
+	DailyCostLimitUSD      *float64 `json:"daily_cost_limit_usd"`
+	MaxConcurrency         *int     `json:"max_concurrency"`
 }
 
 func buildAuthTokenGroupFromRequest(req authTokenGroupRequest, existing *model.AuthTokenGroup) (*model.AuthTokenGroup, error) {
@@ -73,6 +74,13 @@ func buildAuthTokenGroupFromRequest(req authTokenGroupRequest, existing *model.A
 	}
 	if req.AllowedChannelIDs != nil {
 		group.AllowedChannelIDs = req.AllowedChannelIDs
+	}
+	if req.ChannelRestrictionMode != nil {
+		mode, err := model.NormalizeChannelRestrictionMode(*req.ChannelRestrictionMode)
+		if err != nil {
+			return nil, err
+		}
+		group.ChannelRestrictionMode = mode
 	}
 	if req.CostLimitUSD != nil {
 		group.SetCostLimitUSD(*req.CostLimitUSD)

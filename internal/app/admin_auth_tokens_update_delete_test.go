@@ -102,6 +102,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			"expires_at":                 expiresAt,
 			"allowed_models":             []string{"m1", "m2"},
 			"allowed_channel_ids":        []int64{11, 22},
+			"channel_restriction_mode":   "deny",
 			"cost_limit_usd":             1.5,
 			"daily_cost_limit_usd":       0.8,
 			"daily_limit_double_enabled": true,
@@ -127,6 +128,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			DailyCostLimitUSD       float64 `json:"daily_cost_limit_usd"`
 			DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
 			AllowedChannelIDs       []int64 `json:"allowed_channel_ids"`
+			ChannelRestrictionMode  string  `json:"channel_restriction_mode"`
 			MaxConcurrency          int     `json:"max_concurrency"`
 		}
 		resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
@@ -163,6 +165,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if len(resp.Data.AllowedChannelIDs) != 2 || resp.Data.AllowedChannelIDs[0] != 11 || resp.Data.AllowedChannelIDs[1] != 22 {
 			t.Fatalf("allowed_channel_ids=%v, want [11 22]", resp.Data.AllowedChannelIDs)
 		}
+		if resp.Data.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+			t.Fatalf("channel_restriction_mode=%q, want deny", resp.Data.ChannelRestrictionMode)
+		}
 		if resp.Data.MaxConcurrency != 0 {
 			t.Fatalf("max_concurrency=%d, want 0", resp.Data.MaxConcurrency)
 		}
@@ -194,6 +199,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if len(updated.AllowedChannelIDs) != 2 || updated.AllowedChannelIDs[0] != 11 || updated.AllowedChannelIDs[1] != 22 {
 			t.Fatalf("AllowedChannelIDs=%v, want [11 22]", updated.AllowedChannelIDs)
+		}
+		if updated.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+			t.Fatalf("stored channel_restriction_mode=%q, want deny", updated.ChannelRestrictionMode)
 		}
 		if updated.MaxConcurrency != 0 {
 			t.Fatalf("MaxConcurrency=%d, want 0", updated.MaxConcurrency)
@@ -231,12 +239,13 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 
 	t.Run("preserve allowed models and channels when fields omitted", func(t *testing.T) {
 		token2 := &model.AuthToken{
-			Token:             model.HashToken("plain-token-2"),
-			Description:       "keep-models",
-			ExpiresAt:         &expiresAt,
-			IsActive:          true,
-			AllowedModels:     []string{"keep-a", "keep-b"},
-			AllowedChannelIDs: []int64{101, 202},
+			Token:                  model.HashToken("plain-token-2"),
+			Description:            "keep-models",
+			ExpiresAt:              &expiresAt,
+			IsActive:               true,
+			AllowedModels:          []string{"keep-a", "keep-b"},
+			AllowedChannelIDs:      []int64{101, 202},
+			ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
 		}
 		if err := store.CreateAuthToken(ctx, token2); err != nil {
 			t.Fatalf("CreateAuthToken token2 failed: %v", err)
@@ -269,6 +278,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if len(updated.AllowedChannelIDs) != 2 || updated.AllowedChannelIDs[0] != 101 || updated.AllowedChannelIDs[1] != 202 {
 			t.Fatalf("AllowedChannelIDs=%v, want preserved values", updated.AllowedChannelIDs)
+		}
+		if updated.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+			t.Fatalf("ChannelRestrictionMode=%q, want preserved deny", updated.ChannelRestrictionMode)
 		}
 	})
 

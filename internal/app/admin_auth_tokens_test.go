@@ -44,10 +44,11 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	server := newInMemoryServer(t)
 
 	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
-		"description":         "Test Token",
-		"allowed_channel_ids": []int64{3, 5},
-		"max_concurrency":     4,
-		"codex_guard_enabled": true,
+		"description":              "Test Token",
+		"allowed_channel_ids":      []int64{3, 5},
+		"channel_restriction_mode": "deny",
+		"max_concurrency":          4,
+		"codex_guard_enabled":      true,
 	}))
 
 	server.HandleCreateAuthToken(c)
@@ -59,11 +60,12 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	var response struct {
 		Success bool `json:"success"`
 		Data    struct {
-			ID                int64   `json:"id"`
-			Token             string  `json:"token"`
-			CodexGuardEnabled bool    `json:"codex_guard_enabled"`
-			AllowedChannelIDs []int64 `json:"allowed_channel_ids"`
-			MaxConcurrency    int     `json:"max_concurrency"`
+			ID                     int64   `json:"id"`
+			Token                  string  `json:"token"`
+			CodexGuardEnabled      bool    `json:"codex_guard_enabled"`
+			AllowedChannelIDs      []int64 `json:"allowed_channel_ids"`
+			ChannelRestrictionMode string  `json:"channel_restriction_mode"`
+			MaxConcurrency         int     `json:"max_concurrency"`
 		} `json:"data"`
 	}
 	mustUnmarshalJSON(t, w.Body.Bytes(), &response)
@@ -76,6 +78,9 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	}
 	if len(response.Data.AllowedChannelIDs) != 2 || response.Data.AllowedChannelIDs[0] != 3 || response.Data.AllowedChannelIDs[1] != 5 {
 		t.Fatalf("allowed_channel_ids=%v, want [3 5]", response.Data.AllowedChannelIDs)
+	}
+	if response.Data.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("channel_restriction_mode=%q, want deny", response.Data.ChannelRestrictionMode)
 	}
 	if response.Data.MaxConcurrency != 4 {
 		t.Fatalf("max_concurrency=%d, want 4", response.Data.MaxConcurrency)
@@ -105,6 +110,21 @@ func TestAdminAPI_CreateAuthToken_Basic(t *testing.T) {
 	}
 	if !stored.CodexGuardEnabled {
 		t.Fatalf("stored codex_guard_enabled=false, want true")
+	}
+	if stored.ChannelRestrictionMode != model.ChannelRestrictionModeDeny {
+		t.Fatalf("stored channel_restriction_mode=%q, want deny", stored.ChannelRestrictionMode)
+	}
+}
+
+func TestAdminAPI_CreateAuthToken_InvalidChannelRestrictionMode(t *testing.T) {
+	server := newInMemoryServer(t)
+	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
+		"description":              "bad mode",
+		"channel_restriction_mode": "denyy",
+	}))
+	server.HandleCreateAuthToken(c)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400, body=%s", w.Code, w.Body.String())
 	}
 }
 

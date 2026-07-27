@@ -98,6 +98,8 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
   assert.match(html, /id="editDailyLimitDoubleEnabled"/);
   assert.match(html, /id="editAllowedChannelsCount"/);
   assert.match(html, /id="allowedChannelsTableBody"/);
+  assert.match(html, /id="editChannelRestrictionMode"[^>]*data-change-action="change-channel-restriction-mode"/);
+  assert.match(html, /id="tokenGroupChannelRestrictionMode"[^>]*data-change-action="change-token-group-channel-restriction-mode"/);
   assert.match(html, /data-action="show-channel-select-modal"/);
   assert.match(html, /data-action="batch-delete-allowed-channels"/);
   assert.match(css, /\.modal-content--wide\s*\{[\s\S]*?width:\s*90%;[\s\S]*?max-width:\s*none;/);
@@ -105,6 +107,7 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
   assert.match(css, /\.token-edit-main\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/);
   assert.match(css, /\.token-edit-section--channels\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;/);
   assert.match(css, /\.token-edit-channels-table\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/);
+  assert.match(css, /\.token-edit-channels-mode\s*\{[\s\S]*?min-width:\s*96px;[\s\S]*?font-size:\s*12px;/);
 });
 
 test('tokens 移动端编辑弹窗退化为纵向 B 方案', () => {
@@ -115,10 +118,14 @@ test('tokens 移动端编辑弹窗退化为纵向 B 方案', () => {
 test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /let editAllowedChannelIDs = \[\];/);
   assert.match(script, /let selectedAllowedChannelIDs = new Set\(\);/);
+  assert.match(script, /let editChannelRestrictionMode = 'allow';/);
+  assert.match(script, /let tokenGroupChannelRestrictionMode = 'allow';/);
   assert.match(script, /function renderAllowedChannelsTable\(\)/);
   assert.match(script, /editAllowedChannelIDs = \(token\.allowed_channel_ids \|\| \[\]\)\.slice\(\);/);
   assert.match(script, /editDailyLimitDoubleEnabled = !!token\.daily_limit_double_enabled;/);
-  assert.match(script, /allowed_channel_ids:\s*editAllowedChannelIDs,/);
+  assert.match(script, /allowed_channel_ids:\s*editInheritChannels\s*\?\s*editRawAllowedChannelIDs\s*:\s*editAllowedChannelIDs,/);
+  assert.match(script, /channel_restriction_mode:\s*editInheritChannels/);
+  assert.match(script, /channel_restriction_mode:\s*tokenGroupChannelRestrictionMode/);
   assert.match(script, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
   assert.match(script, /'show-channel-select-modal':\s*\(\)\s*=> showChannelSelectModal\(\)/);
   assert.match(script, /'confirm-channel-selection':\s*\(\)\s*=> confirmChannelSelection\(\)/);
@@ -240,16 +247,64 @@ test('tokens 渠道类型显示名首次加载失败后可再次重试', async (
 test('tokens 模型选择按当前渠道限制聚合可选模型', () => {
   assert.match(script, /function getAvailableModelsForCurrentChannelRestriction\(\)/);
   assert.match(script, /if \(editAllowedChannelIDs\.length === 0\) \{[\s\S]*?return availableModelsCache;/);
-  assert.match(script, /const allowedChannelIDs = new Set\(editAllowedChannelIDs\);/);
-  assert.match(script, /allChannels\.forEach\(ch => \{[\s\S]*?if \(!allowedChannelIDs\.has\(normalizeChannelID\(ch\.id\)\)\) return;/);
+  assert.match(script, /const restrictedChannelIDs = new Set\(editAllowedChannelIDs\);/);
+  assert.match(script, /const deny = editChannelRestrictionMode === 'deny';/);
+  assert.match(script, /if \(\(deny && listed\) \|\| \(!deny && !listed\)\) return;/);
   assert.match(script, /const sourceModels = getAvailableModelsForCurrentChannelRestriction\(\);[\s\S]*?let models = sourceModels\.filter/);
   assert.match(script, /const isEmptyCache = sourceModels\.length === 0;/);
+});
+
+test('tokens allow/deny 模式使用相反渠道集合且空列表始终不限制', () => {
+  const functionNames = [
+    'normalizeChannelID',
+    'normalizeChannelRestrictionMode',
+    'getAvailableModelsForCurrentChannelRestriction'
+  ];
+  const context = {
+    Array,
+    Number,
+    Set,
+    String,
+    allChannels: [
+      { id: 1, models: [{ model: 'alpha' }, { model: 'shared' }] },
+      { id: 2, models: [{ model: 'beta' }, { model: 'shared' }] }
+    ],
+    availableModelsCache: ['alpha', 'beta', 'shared'],
+    editAllowedChannelIDs: [1],
+    editChannelRestrictionMode: 'allow'
+  };
+  const source = functionNames.map(name => extractFunctionSource(script, name)).join('\n\n');
+  vm.createContext(context);
+  vm.runInContext(`${source}\nthis.__exports = { ${functionNames.join(', ')} };`, context);
+
+  assert.equal(context.__exports.normalizeChannelRestrictionMode('DENY'), 'deny');
+  assert.equal(context.__exports.normalizeChannelRestrictionMode('invalid'), 'allow');
+  assert.deepEqual(
+    Array.from(context.__exports.getAvailableModelsForCurrentChannelRestriction()),
+    ['alpha', 'shared']
+  );
+
+  context.editChannelRestrictionMode = 'deny';
+  assert.deepEqual(
+    Array.from(context.__exports.getAvailableModelsForCurrentChannelRestriction()),
+    ['beta', 'shared']
+  );
+
+  context.editAllowedChannelIDs = [];
+  assert.deepEqual(
+    Array.from(context.__exports.getAvailableModelsForCurrentChannelRestriction()),
+    ['alpha', 'beta', 'shared']
+  );
 });
 
 test('tokens 渠道限制文案已本地化', () => {
   for (const locale of [zh, en]) {
     assert.match(locale, /'tokens\.channelRestriction':/);
     assert.match(locale, /'tokens\.channelCountSuffix':/);
+    assert.match(locale, /'tokens\.channelCountSuffixAllow':/);
+    assert.match(locale, /'tokens\.channelCountSuffixDeny':/);
+    assert.match(locale, /'tokens\.channelModeAllow':/);
+    assert.match(locale, /'tokens\.channelModeDeny':/);
     assert.match(locale, /'tokens\.selectChannelTitle':/);
     assert.match(locale, /'tokens\.channelTypeAll':/);
     assert.match(locale, /'tokens\.channelTypeFilterTitle':/);

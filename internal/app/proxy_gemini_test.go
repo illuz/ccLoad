@@ -134,7 +134,7 @@ func TestProxyGemini_ListModelsHandlers(t *testing.T) {
 	t.Run("handleListOpenAIModels filters by token allowed channels", func(t *testing.T) {
 		server.authService = newTestAuthService(t)
 
-		allowed, err := store.CreateConfig(ctx, &model.Config{
+		_, err := store.CreateConfig(ctx, &model.Config{
 			Name:        "allowed-model-list-channel",
 			URL:         "https://example.com",
 			Priority:    3,
@@ -147,7 +147,7 @@ func TestProxyGemini_ListModelsHandlers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateConfig allowed channel failed: %v", err)
 		}
-		_, err = store.CreateConfig(ctx, &model.Config{
+		denied, err := store.CreateConfig(ctx, &model.Config{
 			Name:        "disallowed-model-list-channel",
 			URL:         "https://example.com",
 			Priority:    4,
@@ -163,7 +163,7 @@ func TestProxyGemini_ListModelsHandlers(t *testing.T) {
 
 		tokenHash := model.HashToken("channel-restricted-openai-token")
 		server.authService.authTokensMux.Lock()
-		server.authService.authTokenChannels[tokenHash] = []int64{allowed.ID}
+		server.authService.authTokenChannels[tokenHash] = mustChannelRestriction(t, model.ChannelRestrictionModeDeny, denied.ID)
 		server.authService.authTokensMux.Unlock()
 
 		c, w := newTestContext(t, newRequest(http.MethodGet, "/v1/models", nil))

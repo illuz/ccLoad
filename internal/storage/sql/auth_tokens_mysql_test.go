@@ -97,8 +97,8 @@ func (r *foundRowsRows) Columns() []string {
 		"id", "token", "plain_token", "description", "created_at", "expires_at", "last_used_at", "is_active",
 		"codex_guard_enabled",
 		"success_count", "failure_count", "stream_avg_ttfb", "non_stream_avg_rt", "stream_count", "non_stream_count",
-		"prompt_tokens_total", "completion_tokens_total", "cache_read_tokens_total", "cache_creation_tokens_total", "total_cost_usd",
-		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "allowed_models", "allowed_channel_ids", "max_concurrency",
+		"prompt_tokens_total", "completion_tokens_total", "cache_read_tokens_total", "cache_creation_tokens_total", "total_cost_usd", "effective_cost_usd",
+		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "allowed_models", "allowed_channel_ids", "channel_restriction_mode", "max_concurrency",
 		"group_id", "inherit_quota", "inherit_channels", "inherit_models",
 	}
 }
@@ -138,6 +138,7 @@ func authTokenDriverValues(token *model.AuthToken) []driver.Value {
 		token.CacheReadTokensTotal,
 		token.CacheCreationTokensTotal,
 		token.TotalCostUSD,
+		token.EffectiveCostUSD,
 		token.CostUsedMicroUSD,
 		token.CostLimitMicroUSD,
 		token.DailyCostUsedMicroUSD,
@@ -146,6 +147,7 @@ func authTokenDriverValues(token *model.AuthToken) []driver.Value {
 		token.DailyLimitDoubleDayKey,
 		`["gpt-4o"]`,
 		`[42]`,
+		token.ChannelRestrictionMode,
 		token.MaxConcurrency,
 		token.GroupID,
 		int64(0),
@@ -190,17 +192,18 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 	ctx := context.Background()
 	tokenHash := model.HashToken("client-found-rows-token")
 	existing := &model.AuthToken{
-		ID:                77,
-		Token:             tokenHash,
-		PlainToken:        "client-found-rows-token",
-		Description:       "existing restricted token",
-		CreatedAt:         time.Unix(1700000000, 0),
-		IsActive:          true,
-		SuccessCount:      3,
-		CostLimitMicroUSD: 5000,
-		AllowedModels:     []string{"gpt-4o"},
-		AllowedChannelIDs: []int64{42},
-		MaxConcurrency:    2,
+		ID:                     77,
+		Token:                  tokenHash,
+		PlainToken:             "client-found-rows-token",
+		Description:            "existing restricted token",
+		CreatedAt:              time.Unix(1700000000, 0),
+		IsActive:               true,
+		SuccessCount:           3,
+		CostLimitMicroUSD:      5000,
+		AllowedModels:          []string{"gpt-4o"},
+		AllowedChannelIDs:      []int64{42},
+		ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
+		MaxConcurrency:         2,
 	}
 	store := newFoundRowsTestStore(t, &foundRowsState{
 		tokenHash: tokenHash,
@@ -226,6 +229,7 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 		token.PlainToken != existing.PlainToken ||
 		token.CostLimitMicroUSD != existing.CostLimitMicroUSD ||
 		token.MaxConcurrency != existing.MaxConcurrency ||
+		token.ChannelRestrictionMode != model.ChannelRestrictionModeDeny ||
 		len(token.AllowedModels) != 1 || token.AllowedModels[0] != "gpt-4o" ||
 		len(token.AllowedChannelIDs) != 1 || token.AllowedChannelIDs[0] != 42 {
 		t.Fatalf("token was not backfilled from existing row: %+v", token)

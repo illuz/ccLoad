@@ -378,9 +378,13 @@
             <div class="token-edit-section-header token-edit-channels-header">
               <h3 class="token-edit-section-title token-edit-channels-title">
                 <span data-i18n="tokens.channelRestriction">渠道限制</span>
-                <span class="token-edit-channels-meta"><span data-i18n="tokens.channelCountPrefix">共</span> <span id="editAllowedChannelsCount">0</span> <span data-i18n="tokens.channelCountSuffix">个渠道（空表示允许所有）</span></span>
+                <span class="token-edit-channels-meta"><span data-i18n="tokens.channelCountPrefix">共</span> <span id="editAllowedChannelsCount">0</span> <span id="editChannelCountSuffix" data-i18n="tokens.channelCountSuffixAllow">个渠道（空表示允许所有）</span></span>
               </h3>
               <div class="token-edit-channels-actions">
+                <select id="editChannelRestrictionMode" class="form-input token-edit-channels-mode" data-change-action="change-channel-restriction-mode" data-i18n-aria-label="tokens.channelRestrictionMode" aria-label="渠道限制模式">
+                  <option value="allow" data-i18n="tokens.channelModeAllow">允许列表</option>
+                  <option value="deny" data-i18n="tokens.channelModeDeny">拒绝列表</option>
+                </select>
                 <label class="token-inherit-label">
                   <input type="checkbox" id="editInheritChannels" class="control-checkbox" data-change-action="toggle-inherit-channels">
                   <span data-i18n="tokens.inheritFromGroup">继承分组</span>
@@ -634,9 +638,15 @@
             <section class="token-edit-section token-edit-section--channels token-group-restrictions token-group-restrictions--channels">
               <div class="token-group-restrictions__header">
                 <h4 class="token-edit-section-title" data-i18n="tokens.channelRestriction">渠道限制</h4>
-                <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-channel-select" data-i18n="tokens.selectChannel">
-                  + 选择渠道
-                </button>
+                <div class="token-group-restrictions__actions">
+                  <select id="tokenGroupChannelRestrictionMode" class="form-input token-edit-channels-mode" data-change-action="change-token-group-channel-restriction-mode" data-i18n-aria-label="tokens.channelRestrictionMode" aria-label="渠道限制模式">
+                    <option value="allow" data-i18n="tokens.channelModeAllow">允许列表</option>
+                    <option value="deny" data-i18n="tokens.channelModeDeny">拒绝列表</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-channel-select" data-i18n="tokens.selectChannel">
+                    + 选择渠道
+                  </button>
+                </div>
               </div>
               <div class="token-group-restrictions__list" id="tokenGroupAllowedChannelsSummary"></div>
             </section>

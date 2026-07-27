@@ -284,21 +284,22 @@ func isDuplicateAuthTokenError(err error) bool {
 // POST /admin/auth-tokens
 func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	var req struct {
-		Description       string   `json:"description" binding:"required"`
-		PlainToken        *string  `json:"plain_token"`
-		ExpiresAt         *int64   `json:"expires_at"`           // Unix毫秒时间戳，nil表示永不过期
-		IsActive          *bool    `json:"is_active"`            // nil表示默认启用
-		AllowedModels     []string `json:"allowed_models"`       // 允许的模型列表，空表示无限制
-		AllowedChannelIDs []int64  `json:"allowed_channel_ids"`  // 允许的渠道ID列表，空表示无限制
-		CostLimitUSD      *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
-		DailyCostLimitUSD *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
-		DailyLimitDouble  *bool    `json:"daily_limit_double_enabled"`
-		MaxConcurrency    *int     `json:"max_concurrency"` // 最大并发请求数（0=无限制）
-		CodexGuardEnabled *bool    `json:"codex_guard_enabled"`
-		GroupID           *int64   `json:"group_id"` // 分组ID，0/空表示未分组
-		InheritQuota      *bool    `json:"inherit_quota"`
-		InheritChannels   *bool    `json:"inherit_channels"`
-		InheritModels     *bool    `json:"inherit_models"`
+		Description            string   `json:"description" binding:"required"`
+		PlainToken             *string  `json:"plain_token"`
+		ExpiresAt              *int64   `json:"expires_at"`          // Unix毫秒时间戳，nil表示永不过期
+		IsActive               *bool    `json:"is_active"`           // nil表示默认启用
+		AllowedModels          []string `json:"allowed_models"`      // 允许的模型列表，空表示无限制
+		AllowedChannelIDs      []int64  `json:"allowed_channel_ids"` // 渠道限制列表，空表示无限制
+		ChannelRestrictionMode string   `json:"channel_restriction_mode"`
+		CostLimitUSD           *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
+		DailyCostLimitUSD      *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		DailyLimitDouble       *bool    `json:"daily_limit_double_enabled"`
+		MaxConcurrency         *int     `json:"max_concurrency"` // 最大并发请求数（0=无限制）
+		CodexGuardEnabled      *bool    `json:"codex_guard_enabled"`
+		GroupID                *int64   `json:"group_id"` // 分组ID，0/空表示未分组
+		InheritQuota           *bool    `json:"inherit_quota"`
+		InheritChannels        *bool    `json:"inherit_channels"`
+		InheritModels          *bool    `json:"inherit_models"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -319,6 +320,11 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 	if req.GroupID != nil && *req.GroupID < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
+		return
+	}
+	channelRestrictionMode, err := model.NormalizeChannelRestrictionMode(req.ChannelRestrictionMode)
+	if err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -345,14 +351,15 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 
 	authToken := &model.AuthToken{
-		Token:             tokenHash,
-		PlainToken:        tokenPlain,
-		Description:       req.Description,
-		ExpiresAt:         req.ExpiresAt,
-		IsActive:          isActive,
-		CodexGuardEnabled: req.CodexGuardEnabled != nil && *req.CodexGuardEnabled,
-		AllowedModels:     req.AllowedModels,
-		AllowedChannelIDs: req.AllowedChannelIDs,
+		Token:                  tokenHash,
+		PlainToken:             tokenPlain,
+		Description:            req.Description,
+		ExpiresAt:              req.ExpiresAt,
+		IsActive:               isActive,
+		CodexGuardEnabled:      req.CodexGuardEnabled != nil && *req.CodexGuardEnabled,
+		AllowedModels:          req.AllowedModels,
+		AllowedChannelIDs:      req.AllowedChannelIDs,
+		ChannelRestrictionMode: channelRestrictionMode,
 	}
 	if req.GroupID != nil {
 		authToken.GroupID = *req.GroupID
@@ -436,6 +443,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"codex_guard_enabled":        authToken.CodexGuardEnabled,
 		"allowed_models":             authToken.AllowedModels,
 		"allowed_channel_ids":        authToken.AllowedChannelIDs,
+		"channel_restriction_mode":   authToken.ChannelRestrictionMode,
 		"daily_cost_limit_usd":       authToken.DailyCostLimitUSD(),
 		"daily_limit_double_enabled": authToken.IsDailyLimitDoubledToday(),
 		"max_concurrency":            authToken.MaxConcurrency,
@@ -456,21 +464,22 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 
 	var req struct {
-		PlainToken        *string           `json:"plain_token"`
-		Description       *string           `json:"description"`
-		IsActive          *bool             `json:"is_active"`
-		ExpiresAt         optionalInt64JSON `json:"expires_at"`
-		AllowedModels     *[]string         `json:"allowed_models"`       // nil=不更新，空数组=清除限制
-		AllowedChannelIDs *[]int64          `json:"allowed_channel_ids"`  // nil=不更新，空数组=清除限制
-		CostLimitUSD      *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
-		DailyCostLimitUSD *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
-		DailyLimitDouble  *bool             `json:"daily_limit_double_enabled"`
-		MaxConcurrency    *int              `json:"max_concurrency"` // 最大并发请求数（0=无限制）
-		CodexGuardEnabled *bool             `json:"codex_guard_enabled"`
-		GroupID           *int64            `json:"group_id"` // 分组ID，0表示未分组
-		InheritQuota      *bool             `json:"inherit_quota"`
-		InheritChannels   *bool             `json:"inherit_channels"`
-		InheritModels     *bool             `json:"inherit_models"`
+		PlainToken             *string           `json:"plain_token"`
+		Description            *string           `json:"description"`
+		IsActive               *bool             `json:"is_active"`
+		ExpiresAt              optionalInt64JSON `json:"expires_at"`
+		AllowedModels          *[]string         `json:"allowed_models"`      // nil=不更新，空数组=清除限制
+		AllowedChannelIDs      *[]int64          `json:"allowed_channel_ids"` // nil=不更新，空数组=清除限制
+		ChannelRestrictionMode *string           `json:"channel_restriction_mode"`
+		CostLimitUSD           *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
+		DailyCostLimitUSD      *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		DailyLimitDouble       *bool             `json:"daily_limit_double_enabled"`
+		MaxConcurrency         *int              `json:"max_concurrency"` // 最大并发请求数（0=无限制）
+		CodexGuardEnabled      *bool             `json:"codex_guard_enabled"`
+		GroupID                *int64            `json:"group_id"` // 分组ID，0表示未分组
+		InheritQuota           *bool             `json:"inherit_quota"`
+		InheritChannels        *bool             `json:"inherit_channels"`
+		InheritModels          *bool             `json:"inherit_models"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -492,6 +501,14 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	if req.GroupID != nil && *req.GroupID < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
 		return
+	}
+	var channelRestrictionMode string
+	if req.ChannelRestrictionMode != nil {
+		channelRestrictionMode, err = model.NormalizeChannelRestrictionMode(*req.ChannelRestrictionMode)
+		if err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
@@ -529,6 +546,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.AllowedChannelIDs != nil {
 		token.AllowedChannelIDs = *req.AllowedChannelIDs
+	}
+	if req.ChannelRestrictionMode != nil {
+		token.ChannelRestrictionMode = channelRestrictionMode
 	}
 	if req.GroupID != nil {
 		token.GroupID = *req.GroupID

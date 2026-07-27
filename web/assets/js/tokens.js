@@ -34,6 +34,7 @@
     let selectedModelsForAdd = new Set();    // 模型选择对话框中已选的模型
     let currentVisibleModels = [];            // 当前可见的模型列表（用于全选功能）
     let editAllowedChannelIDs = [];           // 编辑模态框中当前的渠道限制列表
+    let editChannelRestrictionMode = 'allow'; // 当前生效的渠道限制模式
     let selectedAllowedChannelIDs = new Set(); // 已选中的渠道ID（批量删除用）
     let selectedChannelsForAdd = new Set();   // 渠道选择对话框中已选的渠道ID
     let currentVisibleChannels = [];          // 当前可见的渠道列表（用于全选功能）
@@ -44,10 +45,12 @@
     let editRawMaxConcurrency = 0;
     let editRawAllowedModels = [];
     let editRawAllowedChannelIDs = [];
+    let editRawChannelRestrictionMode = 'allow';
     let editInheritQuota = false;
     let editInheritChannels = false;
     let editInheritModels = false;
     let tokenGroupAllowedChannelIDs = [];
+    let tokenGroupChannelRestrictionMode = 'allow';
     let tokenGroupAllowedModels = [];
     let tokenGroupRestrictionEditMode = null;
     let tokenGroupRestrictionEditSnapshot = null;
@@ -227,6 +230,17 @@
           'toggle-inherit-quota': (actionTarget) => setEditInheritQuota(actionTarget.checked),
           'toggle-inherit-channels': (actionTarget) => setEditInheritChannels(actionTarget.checked),
           'toggle-inherit-models': (actionTarget) => setEditInheritModels(actionTarget.checked),
+          'change-channel-restriction-mode': (actionTarget) => {
+            editChannelRestrictionMode = normalizeChannelRestrictionMode(actionTarget.value);
+            if (!editInheritChannels) editRawChannelRestrictionMode = editChannelRestrictionMode;
+            actionTarget.value = editChannelRestrictionMode;
+            updateChannelRestrictionModeUI();
+          },
+          'change-token-group-channel-restriction-mode': (actionTarget) => {
+            tokenGroupChannelRestrictionMode = normalizeChannelRestrictionMode(actionTarget.value);
+            actionTarget.value = tokenGroupChannelRestrictionMode;
+            renderTokenGroupRestrictionSummaries();
+          },
           'toggle-select-all-allowed-channels': (actionTarget) => toggleSelectAllAllowedChannels(actionTarget.checked),
           'toggle-select-all-channels': (actionTarget) => toggleSelectAllChannels(actionTarget.checked),
           'filter-available-channel-type': () => filterAvailableChannels(document.getElementById('channelSearchInput')?.value || ''),
@@ -1685,6 +1699,8 @@
       // 初始化渠道限制状态（2026-04新增）
       editAllowedChannelIDs = (token.allowed_channel_ids || []).slice();
       editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
+      editRawChannelRestrictionMode = normalizeChannelRestrictionMode(token.channel_restriction_mode);
+      editChannelRestrictionMode = editRawChannelRestrictionMode;
       selectedAllowedChannelIDs.clear();
       editInheritQuota = !!token.inherit_quota && !!token.group_id;
       editInheritChannels = !!token.inherit_channels && !!token.group_id;
@@ -1710,6 +1726,8 @@
       selectedAllowedModelIndices.clear();
       editAllowedChannelIDs = [];
       editRawAllowedChannelIDs = [];
+      editChannelRestrictionMode = 'allow';
+      editRawChannelRestrictionMode = 'allow';
       selectedAllowedChannelIDs.clear();
       editRawDailyCostLimitUSD = 0;
       editDailyLimitDoubleEnabled = false;
@@ -1743,6 +1761,9 @@
       }
       if (!editInheritChannels) {
         editRawAllowedChannelIDs = editAllowedChannelIDs.slice();
+        editRawChannelRestrictionMode = normalizeChannelRestrictionMode(
+          document.getElementById('editChannelRestrictionMode')?.value || editChannelRestrictionMode
+        );
       }
       if (!editInheritModels) {
         editRawAllowedModels = editAllowedModels.slice();
@@ -1821,6 +1842,15 @@
       editAllowedChannelIDs = (editInheritChannels && group)
         ? (group.allowed_channel_ids || []).slice()
         : editRawAllowedChannelIDs.slice();
+      editChannelRestrictionMode = (editInheritChannels && group)
+        ? normalizeChannelRestrictionMode(group.channel_restriction_mode)
+        : normalizeChannelRestrictionMode(editRawChannelRestrictionMode);
+      const channelModeSelect = document.getElementById('editChannelRestrictionMode');
+      if (channelModeSelect) {
+        channelModeSelect.value = editChannelRestrictionMode;
+        channelModeSelect.disabled = editInheritChannels && hasGroup;
+      }
+      updateChannelRestrictionModeUI();
       editAllowedModels = (editInheritModels && group)
         ? (group.allowed_models || []).slice()
         : editRawAllowedModels.slice();
@@ -1896,8 +1926,10 @@
             inherit_quota: groupID > 0 && editInheritQuota,
             inherit_channels: groupID > 0 && editInheritChannels,
             inherit_models: groupID > 0 && editInheritModels,
-            // legacy test marker: allowed_channel_ids: editAllowedChannelIDs,
             allowed_channel_ids: editInheritChannels ? editRawAllowedChannelIDs : editAllowedChannelIDs,
+            channel_restriction_mode: editInheritChannels
+              ? editRawChannelRestrictionMode
+              : editChannelRestrictionMode,
             allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,  // 2026-01新增：模型限制
             cost_limit_usd: costLimitUSD,        // 2026-01新增：费用上限
             daily_cost_limit_usd: dailyCostLimitUSD,
@@ -2024,12 +2056,16 @@
         editRawAllowedModels: editRawAllowedModels.slice(),
         editAllowedChannelIDs: editAllowedChannelIDs.slice(),
         editRawAllowedChannelIDs: editRawAllowedChannelIDs.slice(),
+        editChannelRestrictionMode,
+        editRawChannelRestrictionMode,
         editInheritModels,
         editInheritChannels
       };
 
       editAllowedChannelIDs = tokenGroupAllowedChannelIDs.slice();
       editRawAllowedChannelIDs = tokenGroupAllowedChannelIDs.slice();
+      editChannelRestrictionMode = tokenGroupChannelRestrictionMode;
+      editRawChannelRestrictionMode = tokenGroupChannelRestrictionMode;
       editAllowedModels = tokenGroupAllowedModels.slice();
       editRawAllowedModels = tokenGroupAllowedModels.slice();
       editInheritChannels = false;
@@ -2041,6 +2077,7 @@
 
       if (commit) {
         tokenGroupAllowedChannelIDs = editAllowedChannelIDs.slice();
+        tokenGroupChannelRestrictionMode = normalizeChannelRestrictionMode(editChannelRestrictionMode);
         tokenGroupAllowedModels = editAllowedModels.slice();
         renderTokenGroupRestrictionSummaries();
       }
@@ -2049,6 +2086,8 @@
       editRawAllowedModels = tokenGroupRestrictionEditSnapshot.editRawAllowedModels;
       editAllowedChannelIDs = tokenGroupRestrictionEditSnapshot.editAllowedChannelIDs;
       editRawAllowedChannelIDs = tokenGroupRestrictionEditSnapshot.editRawAllowedChannelIDs;
+      editChannelRestrictionMode = tokenGroupRestrictionEditSnapshot.editChannelRestrictionMode;
+      editRawChannelRestrictionMode = tokenGroupRestrictionEditSnapshot.editRawChannelRestrictionMode;
       editInheritModels = tokenGroupRestrictionEditSnapshot.editInheritModels;
       editInheritChannels = tokenGroupRestrictionEditSnapshot.editInheritChannels;
       tokenGroupRestrictionEditMode = null;
@@ -2110,10 +2149,15 @@
       if (!group) return;
 
       group.allowed_channel_ids = tokenGroupAllowedChannelIDs.slice();
+      group.channel_restriction_mode = tokenGroupChannelRestrictionMode;
       group.allowed_models = tokenGroupAllowedModels.slice();
 
       if (editInheritChannels) {
         editAllowedChannelIDs = tokenGroupAllowedChannelIDs.slice();
+        editChannelRestrictionMode = tokenGroupChannelRestrictionMode;
+        const modeSelect = document.getElementById('editChannelRestrictionMode');
+        if (modeSelect) modeSelect.value = editChannelRestrictionMode;
+        updateChannelRestrictionModeUI();
         renderAllowedChannelsTable();
       }
       if (editInheritModels) {
@@ -2137,6 +2181,9 @@
       });
       setTokenGroupColorValue(getDefaultTokenGroupColor());
       tokenGroupAllowedChannelIDs = [];
+      tokenGroupChannelRestrictionMode = 'allow';
+      const modeSelect = document.getElementById('tokenGroupChannelRestrictionMode');
+      if (modeSelect) modeSelect.value = tokenGroupChannelRestrictionMode;
       tokenGroupAllowedModels = [];
       renderTokenGroupRestrictionSummaries();
     }
@@ -2274,6 +2321,9 @@
       document.getElementById('tokenGroupMaxConcurrency').value = group.max_concurrency || 0;
       setTokenGroupColorValue(group.color);
       tokenGroupAllowedChannelIDs = (group.allowed_channel_ids || []).map((id) => Number(id)).filter((id) => id > 0);
+      tokenGroupChannelRestrictionMode = normalizeChannelRestrictionMode(group.channel_restriction_mode);
+      const modeSelect = document.getElementById('tokenGroupChannelRestrictionMode');
+      if (modeSelect) modeSelect.value = tokenGroupChannelRestrictionMode;
       tokenGroupAllowedModels = (group.allowed_models || []).slice();
       renderTokenGroupRestrictionSummaries();
     }
@@ -2303,6 +2353,7 @@
             daily_cost_limit_usd: 0,
             max_concurrency: 0,
             allowed_channel_ids: [],
+            channel_restriction_mode: 'allow',
             allowed_models: []
           })
         });
@@ -2315,6 +2366,7 @@
           daily_cost_limit_usd: 0,
           max_concurrency: 0,
           allowed_channel_ids: [],
+          channel_restriction_mode: 'allow',
           allowed_models: [],
           token_count: 0,
           ...savedGroup,
@@ -2369,6 +2421,7 @@
             daily_cost_limit_usd: dailyCostLimitUSD,
             max_concurrency: maxConcurrencyResult.value,
             allowed_channel_ids: tokenGroupAllowedChannelIDs,
+            channel_restriction_mode: tokenGroupChannelRestrictionMode,
             allowed_models: tokenGroupAllowedModels
           })
         });
@@ -2382,6 +2435,7 @@
           daily_cost_limit_usd: dailyCostLimitUSD,
           max_concurrency: maxConcurrencyResult.value,
           allowed_channel_ids: tokenGroupAllowedChannelIDs.slice(),
+          channel_restriction_mode: tokenGroupChannelRestrictionMode,
           allowed_models: tokenGroupAllowedModels.slice(),
           ...savedGroup
         });
@@ -2508,15 +2562,31 @@
         return availableModelsCache;
       }
 
-      const allowedChannelIDs = new Set(editAllowedChannelIDs);
+      const restrictedChannelIDs = new Set(editAllowedChannelIDs);
+      const deny = editChannelRestrictionMode === 'deny';
       const modelSet = new Set();
       allChannels.forEach(ch => {
-        if (!allowedChannelIDs.has(normalizeChannelID(ch.id))) return;
+        const listed = restrictedChannelIDs.has(normalizeChannelID(ch.id));
+        if ((deny && listed) || (!deny && !listed)) return;
         (ch.models || []).forEach(m => {
           if (m.model) modelSet.add(m.model);
         });
       });
       return Array.from(modelSet).sort();
+    }
+
+    function normalizeChannelRestrictionMode(mode) {
+      return String(mode || '').toLowerCase() === 'deny' ? 'deny' : 'allow';
+    }
+
+    function updateChannelRestrictionModeUI() {
+      const suffix = document.getElementById('editChannelCountSuffix');
+      if (!suffix) return;
+      const key = editChannelRestrictionMode === 'deny'
+        ? 'tokens.channelCountSuffixDeny'
+        : 'tokens.channelCountSuffixAllow';
+      suffix.setAttribute('data-i18n', key);
+      suffix.textContent = t(key);
     }
 
     function normalizeChannelID(value) {

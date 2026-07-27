@@ -151,6 +151,7 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("daily_limit_double_day_key INT NOT NULL DEFAULT 0").
 		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
+		Column("channel_restriction_mode VARCHAR(16) NOT NULL DEFAULT 'allow'").
 		Column("max_concurrency INT NOT NULL DEFAULT 0").
 		Column("group_id BIGINT NOT NULL DEFAULT 0").
 		Column("inherit_quota TINYINT NOT NULL DEFAULT 0").
@@ -174,6 +175,7 @@ func DefineAuthTokenGroupsTable() *TableBuilder {
 		Column("daily_cost_limit_microusd BIGINT NOT NULL DEFAULT 0").
 		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
+		Column("channel_restriction_mode VARCHAR(16) NOT NULL DEFAULT 'allow'").
 		Column("max_concurrency INT NOT NULL DEFAULT 0").
 		Index("idx_auth_token_groups_name", "name")
 }

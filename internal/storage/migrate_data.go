@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"ccLoad/internal/model"
 )
 
 // backfillLogsMinuteBucketSQLite 分批回填 logs.minute_bucket（SQLite）
@@ -446,6 +448,41 @@ func validateAuthTokensAllowedChannelIDsJSON(ctx context.Context, db *sql.DB) er
 		var channelIDs []int64
 		return json.Unmarshal([]byte(raw), &channelIDs)
 	})
+}
+
+func validateAuthTokensChannelRestrictionMode(ctx context.Context, db *sql.DB) error {
+	return validateChannelRestrictionModeColumn(ctx, db, "auth_tokens")
+}
+
+func validateAuthTokenGroupsChannelRestrictionMode(ctx context.Context, db *sql.DB) error {
+	return validateChannelRestrictionModeColumn(ctx, db, "auth_token_groups")
+}
+
+func validateChannelRestrictionModeColumn(ctx context.Context, db *sql.DB, table string) error {
+	//nolint:gosec // G201: table is an internal hard-coded table name.
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT id, channel_restriction_mode FROM %s", table))
+	if err != nil {
+		return fmt.Errorf("query %s.channel_restriction_mode: %w", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id int64
+		var mode string
+		if err := rows.Scan(&id, &mode); err != nil {
+			return fmt.Errorf("scan %s.channel_restriction_mode: %w", table, err)
+		}
+		if _, err := model.NormalizeChannelRestrictionMode(mode); err != nil {
+			return fmt.Errorf(
+				"%s.channel_restriction_mode invalid: id=%d value=%q: %w (fix: UPDATE %s SET channel_restriction_mode='allow' WHERE id=%d)",
+				table, id, mode, err, table, id,
+			)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate %s.channel_restriction_mode: %w", table, err)
+	}
+	return nil
 }
 
 // validateJSONColumn 校验给定字符串列的非空行均为合法 JSON。
