@@ -113,6 +113,9 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
 test('tokens 移动端编辑弹窗退化为纵向 B 方案', () => {
   assert.match(css, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.modal-content--wide\s*\{[\s\S]*?width:\s*min\(720px,\s*calc\(100vw - 24px\)\);/);
   assert.match(css, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.token-edit-layout\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+  assert.match(css, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.token-edit-channels-actions,[\s\S]*?\.token-edit-models-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?overflow-x:\s*visible;/);
+  assert.match(css, /#editModal \.token-edit-channels-meta,[\s\S]*?#editModal \.token-edit-models-meta\s*\{[\s\S]*?white-space:\s*normal;[\s\S]*?overflow-wrap:\s*anywhere;/);
+  assert.match(css, /#editModal \.token-edit-section--quota \.token-limit-input-line\s*\{[\s\S]*?grid-template-columns:\s*14px minmax\(0,\s*1fr\);/);
 });
 
 test('tokens.js 保存并渲染 allowed_channel_ids', () => {

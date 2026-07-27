@@ -192,7 +192,8 @@ test('tokens 编辑令牌弹窗按基础信息、配额信息、模型限制三�
   assert.match(tokensCss, /\.token-limit-meta\s*\{[\s\S]*?justify-content:\s*space-between;[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(tokensCss, /\.token-edit-cost-meta\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*14px\s+minmax\(0,\s*1fr\)\s+max-content;/);
   assert.match(tokensCss, /\.token-edit-cost-used\s*\{[\s\S]*?grid-column:\s*2;/);
-  assert.match(tokensCss, /\.token-edit-channels-actions,\s*[\r\n\s]*\.token-edit-models-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/);
+  assert.match(tokensCss, /#editModal \.token-edit-section--quota \.token-limit-hint\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?white-space:\s*normal;[\s\S]*?overflow-wrap:\s*anywhere;/);
+  assert.match(tokensCss, /\.token-edit-channels-actions,\s*[\r\n\s]*\.token-edit-models-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?overflow-x:\s*visible;/);
   assert.match(tokensCss, /\.token-edit-channels-actions\s+\.btn,\s*[\r\n\s]*\.token-edit-models-actions\s+\.btn\s*\{[\s\S]*?flex:\s*0\s+0\s+auto;/);
 });
 

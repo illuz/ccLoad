@@ -1049,6 +1049,11 @@
       min-width: 0;
       background: var(--surface-bg);
     }
+    #editModal .token-edit-section--quota .token-limit-hint {
+      min-width: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
     .token-edit-section-header {
       display: flex;
       align-items: flex-start;
@@ -2148,17 +2153,28 @@
       .token-edit-models-actions {
         display: flex;
         align-items: center;
-        flex-wrap: nowrap;
-        overflow-x: auto;
+        flex-wrap: wrap;
+        overflow-x: visible;
         scrollbar-width: none;
       }
       .token-edit-channels-actions::-webkit-scrollbar,
       .token-edit-models-actions::-webkit-scrollbar {
         display: none;
       }
-      .token-limit-input-line .field-grow {
-        min-width: 120px;
+      #editModal .token-limit-input-line .field-grow {
+        min-width: 0;
         width: 100%;
+      }
+      #editModal .token-edit-section--quota .token-limit-input-line {
+        grid-template-columns: 14px minmax(0, 1fr);
+      }
+      #editModal .token-edit-section--quota .token-limit-input-line .token-limit-hint {
+        grid-column: 2;
+      }
+      #editModal .token-edit-channels-meta,
+      #editModal .token-edit-models-meta {
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       .token-edit-field--token .token-edit-token-line .field-grow {
         min-width: 0;
