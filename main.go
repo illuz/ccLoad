@@ -58,6 +58,30 @@ var defaultTrustedProxies = []string{
 	"::1/128",        // IPv6 Loopback
 }
 
+type serverTLSConfig struct {
+	enabled  bool
+	certFile string
+	keyFile  string
+}
+
+func getServerTLSConfig() serverTLSConfig {
+	return serverTLSConfig{
+		enabled:  util.ParseBoolDefault(os.Getenv("CCLOAD_TLS_ENABLED"), false),
+		certFile: strings.TrimSpace(os.Getenv("CCLOAD_TLS_CERT_FILE")),
+		keyFile:  strings.TrimSpace(os.Getenv("CCLOAD_TLS_KEY_FILE")),
+	}
+}
+
+func (c serverTLSConfig) validate() error {
+	if !c.enabled {
+		return nil
+	}
+	if c.certFile == "" || c.keyFile == "" {
+		return errors.New("CCLOAD_TLS_ENABLED requires both CCLOAD_TLS_CERT_FILE and CCLOAD_TLS_KEY_FILE")
+	}
+	return nil
+}
+
 // getTrustedProxies 获取可信代理配置
 // 环境变量 TRUSTED_PROXIES: 逗号分隔的 CIDR，"none" 表示不信任任何代理
 // 未设置时返回私有网段默认值
@@ -91,6 +115,11 @@ func main() {
 	// 优先读取.env文件
 	if err := godotenv.Load(); err != nil {
 		log.Printf("未找到 .env 文件: %v", err)
+	}
+
+	tlsConfig := getServerTLSConfig()
+	if err := tlsConfig.validate(); err != nil {
+		log.Fatalf("[FATAL] TLS 配置无效: %v", err)
 	}
 
 	// 设置Gin运行模式
@@ -200,8 +229,15 @@ func main() {
 
 	// 启动HTTP服务器（在goroutine中）
 	go func() {
-		log.Printf("[INFO] HTTP 监听地址: %s", addr)
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if tlsConfig.enabled {
+			log.Printf("[INFO] HTTPS/TLS 监听地址: %s", addr)
+			err = httpServer.ListenAndServeTLS(tlsConfig.certFile, tlsConfig.keyFile)
+		} else {
+			log.Printf("[INFO] HTTP 监听地址: %s", addr)
+			err = httpServer.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP服务器启动失败: %v", err)
 		}
 	}()
