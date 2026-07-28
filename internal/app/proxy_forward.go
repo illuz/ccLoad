@@ -1734,6 +1734,12 @@ func (s *Server) forwardAttempt(
 		}
 		forceReturnClient = true
 	}
+	// Codex 请求用 service_tier=priority 明确开启 Fast 模式。计费不能依赖上游
+	// 是否在响应里回显该字段，否则同一请求会因上游响应形状不同而少扣 credits。
+	if res != nil && reqCtx.clientProtocol == protocol.Codex &&
+		requestServiceTier(reqCtx.body) == "priority" {
+		res.ServiceTier = "priority"
+	}
 
 	// 处理网络错误或异常响应（如空响应）
 	// [INFO] 修复：handleResponse可能返回err即使StatusCode=200（例如Content-Length=0）
@@ -1767,6 +1773,16 @@ func (s *Server) forwardAttempt(
 		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown, forceReturnClient,
 	)
 	return result, action, nil
+}
+
+func requestServiceTier(body []byte) string {
+	var request struct {
+		ServiceTier string `json:"service_tier"`
+	}
+	if err := sonic.Unmarshal(body, &request); err != nil {
+		return ""
+	}
+	return request.ServiceTier
 }
 
 func shouldRetryCodexInvalidEncryptedContent(upstreamProtocol protocol.Protocol, plan protocol.TransformPlan, res *fwResult) bool {

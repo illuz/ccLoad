@@ -117,8 +117,8 @@ type fwResult struct {
 	// false 表示本次尝试仍可在同一请求内切换到其他Key/渠道
 	ResponseCommitted bool
 
-	// OpenAI service_tier（2026-03新增）
-	// 响应中的 service_tier 字段决定计费倍率：priority=2x, flex=0.5x, default=1x
+	// OpenAI service_tier（2026-03新增）。Codex 请求中的 priority 是 Fast 模式标记；
+	// 其他情况由上游响应中的 service_tier 决定。
 	ServiceTier string
 
 	// ThinkingEffort 记录请求或上游响应声明的思考等级；上游响应非空时覆盖请求值。
