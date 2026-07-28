@@ -288,7 +288,7 @@ window.I18N_LOCALES['en'] = {
   'channels.modelNoSamples': 'No samples',
   'channels.modelStatsUnavailable': 'Stats unavailable',
   'channels.enableChannel': 'Enable',
-  'channels.channelCooldownFixedEnabled': 'Fixed Cooldown',
+  'channels.channelCooldownFixedEnabled': 'Fixed Model/Channel Cooldown',
   'channels.channelCooldownFixedSeconds': 'Fixed Cooldown Seconds',
   'channels.channelCooldownFixedSecondsPlaceholder': '10',
   'channels.enableScheduledCheck': 'Scheduled Checks',

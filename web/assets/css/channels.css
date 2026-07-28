@@ -3537,6 +3537,7 @@
         align-items: center;
         justify-content: stretch;
         gap: 8px;
+        min-width: 0;
       }
 
       .channel-editor-scheduled-model-control {
@@ -3561,10 +3562,14 @@
         margin-left: 0;
       }
 
-      .channel-editor-inline-field > .form-input,
-      .channel-editor-inline-field-input .form-input {
+      #channelModal .channel-editor-footer-fields .channel-editor-inline-field > .form-input,
+      #channelModal .channel-editor-footer-fields .channel-editor-inline-field-input .form-input,
+      #channelModal .channel-editor-footer-fields .filter-combobox-wrapper,
+      #channelModal .channel-editor-footer-fields .filter-combobox {
         width: 100% !important;
-        min-width: 0;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
       }
 
       #channelModal .channel-editor-footer-actions {

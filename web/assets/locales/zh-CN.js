@@ -288,7 +288,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.modelNoSamples': '暂无样本',
   'channels.modelStatsUnavailable': '统计不可用',
   'channels.enableChannel': '启用',
-  'channels.channelCooldownFixedEnabled': '固定冷却',
+  'channels.channelCooldownFixedEnabled': '固定模型/渠道冷却',
   'channels.channelCooldownFixedSeconds': '固定冷却秒数',
   'channels.channelCooldownFixedSecondsPlaceholder': '10',
   'channels.enableScheduledCheck': '定时检测',

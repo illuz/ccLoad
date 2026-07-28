@@ -36,6 +36,7 @@ type testChannel struct {
 	models                string // 逗号分隔的模型列表
 	apiKey                string
 	priority              int
+	fixedCooldownSeconds  int
 }
 
 // proxyTestEnv 集成测试环境
@@ -82,15 +83,17 @@ func setupProxyTestEnv(t testing.TB, channels []testChannel, upstreamURLs map[in
 		}
 
 		cfg := &model.Config{
-			Name:                  ch.name,
-			URL:                   upURL,
-			ChannelType:           chType,
-			ProtocolTransformMode: ch.protocolTransformMode,
-			ProtocolTransforms:    ch.protocolTransforms,
-			CustomRequestRules:    ch.customRequestRules,
-			Priority:              priority,
-			Enabled:               true,
-			ModelEntries:          modelEntries,
+			Name:                        ch.name,
+			URL:                         upURL,
+			ChannelType:                 chType,
+			ProtocolTransformMode:       ch.protocolTransformMode,
+			ProtocolTransforms:          ch.protocolTransforms,
+			CustomRequestRules:          ch.customRequestRules,
+			Priority:                    priority,
+			Enabled:                     true,
+			ChannelCooldownFixedEnabled: ch.fixedCooldownSeconds > 0,
+			ChannelCooldownFixedSeconds: ch.fixedCooldownSeconds,
+			ModelEntries:                modelEntries,
 		}
 		created, err := store.CreateConfig(ctx, cfg)
 		if err != nil {
@@ -305,6 +308,90 @@ func TestProxy_ModelCooldownUsesCustomRuleFinalModelKey(t *testing.T) {
 	request("external-model-b")
 	if got := primaryHits.Load(); got != 1 {
 		t.Fatalf("primary hits=%d, want 1 after shared final model cooldown", got)
+	}
+}
+
+func TestProxy_FixedChannelCooldownAppliesToModelScopedFailure(t *testing.T) {
+	var primaryHits atomic.Int64
+	primary := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		primaryHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"upstream failure"}`))
+	}))
+	defer primary.Close()
+
+	secondary := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-fallback","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer secondary.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{
+			name:                 "fixed-cooldown-primary",
+			models:               "model-a,model-b",
+			priority:             100,
+			fixedCooldownSeconds: 30,
+		},
+		{
+			name:     "fixed-cooldown-fallback",
+			models:   "model-a,model-b",
+			priority: 50,
+		},
+	}, map[int]string{0: primary.URL, 1: secondary.URL})
+
+	request := func(modelName string) {
+		t.Helper()
+		w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+			"model":    modelName,
+			"messages": []map[string]string{{"role": "user", "content": "hello"}},
+		}, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("model=%s status=%d, want 200; body=%s", modelName, w.Code, w.Body.String())
+		}
+	}
+
+	before := time.Now()
+	request("model-a")
+	after := time.Now()
+
+	configs, err := env.store.ListConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("list configs: %v", err)
+	}
+	var primaryConfig *model.Config
+	for _, cfg := range configs {
+		if cfg.Name == "fixed-cooldown-primary" {
+			primaryConfig = cfg
+			break
+		}
+	}
+	if primaryConfig == nil {
+		t.Fatal("primary channel not found")
+	}
+	channelUntil := time.Unix(primaryConfig.CooldownUntil, 0)
+	minUntil := before.Add(28 * time.Second)
+	maxUntil := after.Add(32 * time.Second)
+	if channelUntil.Before(minUntil) || channelUntil.After(maxUntil) {
+		t.Fatalf("channel cooldown until=%s, want fixed 30s", channelUntil)
+	}
+
+	modelCooldowns, err := env.store.GetAllModelCooldowns(context.Background())
+	if err != nil {
+		t.Fatalf("get model cooldowns: %v", err)
+	}
+	modelUntil := modelCooldowns[primaryConfig.ID]["model-a"]
+	if modelUntil.Before(minUntil) || modelUntil.After(maxUntil) {
+		t.Fatalf("model-a cooldown=%s, want fixed 30s", modelUntil.Format(time.RFC3339))
+	}
+	if !modelUntil.Equal(channelUntil) {
+		t.Fatalf("model cooldown=%s, channel cooldown=%s; want identical deadlines", modelUntil, channelUntil)
+	}
+
+	request("model-b")
+	if got := primaryHits.Load(); got != 1 {
+		t.Fatalf("primary hits=%d, want 1 while channel fixed cooldown is active", got)
 	}
 }
 

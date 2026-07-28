@@ -220,8 +220,15 @@ func (m *Manager) HandleError(ctx context.Context, in ErrorInput) Action {
 		return ActionRetryKey
 
 	case ActionRetryModel:
+		fixedUntil, fixedCooldown := m.applyFixedChannelCooldown(ctx, channelID, "model_scoped")
+		if fixedCooldown {
+			decision.modelCooldownUntil = fixedUntil
+		}
 		if decision.model == "" {
 			log.Printf("[WARN] 收到 model_cooldown 但缺少模型名，跳过持久化 (channel=%d)", channelID)
+			if fixedCooldown {
+				return ActionRetryChannel
+			}
 			return ActionRetryModel
 		}
 		if err := m.store.SetModelCooldown(ctx, channelID, decision.model, decision.modelCooldownUntil); err != nil {
@@ -233,6 +240,9 @@ func (m *Manager) HandleError(ctx context.Context, in ErrorInput) Action {
 				channelID, decision.model,
 				decision.modelCooldownUntil.Format("2006-01-02 15:04:05"), duration.Minutes())
 		}
+		if fixedCooldown {
+			return ActionRetryChannel
+		}
 		if m.promoteExhaustedResources(ctx, in) {
 			return ActionRetryChannel
 		}
@@ -240,6 +250,9 @@ func (m *Manager) HandleError(ctx context.Context, in ErrorInput) Action {
 
 	case ActionRetryChannel:
 		// 渠道级错误:冷却整个渠道,切换到其他渠道
+		if _, applied := m.applyFixedChannelCooldown(ctx, channelID, "channel_error"); applied {
+			return ActionRetryChannel
+		}
 		if decision.hasChannelCooldownUntil {
 			if err := m.store.SetChannelCooldown(ctx, channelID, decision.channelCooldownUntil); err != nil {
 				log.Printf("[WARN] 按重置时间设置渠道冷却失败 (channel=%d, until=%v): %v",
@@ -269,12 +282,44 @@ func (m *Manager) HandleError(ctx context.Context, in ErrorInput) Action {
 	}
 }
 
+func (m *Manager) applyFixedChannelCooldown(
+	ctx context.Context,
+	channelID int64,
+	reason string,
+) (time.Time, bool) {
+	cfg, err := m.store.GetConfig(ctx, channelID)
+	if err != nil {
+		log.Printf("[WARN] 查询渠道固定冷却配置失败 (channel=%d): %v", channelID, err)
+		return time.Time{}, false
+	}
+	if cfg == nil || !cfg.ChannelCooldownFixedEnabled {
+		return time.Time{}, false
+	}
+
+	seconds := cfg.ChannelCooldownFixedSeconds
+	if seconds <= 0 {
+		seconds = 10
+	}
+	duration := time.Duration(seconds) * time.Second
+	until := time.Now().Add(duration)
+	if err := m.store.SetChannelCooldown(ctx, channelID, until); err != nil {
+		log.Printf("[WARN] 设置渠道固定冷却失败 (channel=%d, reason=%s): %v", channelID, reason, err)
+		return until, true
+	}
+	log.Printf("[COOLDOWN] 渠道固定冷却(%s): 渠道=%d 禁用至 %s (%.1f秒)",
+		reason, channelID, until.Format("2006-01-02 15:04:05"), duration.Seconds())
+	return until, true
+}
+
 func (m *Manager) promoteExhaustedResources(ctx context.Context, in ErrorInput) bool {
 	now := time.Now()
 	keyUntil, allKeysCooled := m.allEnabledKeysCooldownUntil(ctx, in.ChannelID, now)
 	modelUntil, allModelsCooled := m.allConfiguredModelsCooldownUntil(ctx, in, now)
 	if !allKeysCooled && !allModelsCooled {
 		return false
+	}
+	if _, applied := m.applyFixedChannelCooldown(ctx, in.ChannelID, "resources_exhausted"); applied {
+		return true
 	}
 
 	channelUntil := keyUntil

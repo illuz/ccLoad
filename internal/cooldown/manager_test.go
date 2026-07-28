@@ -180,6 +180,46 @@ func TestHandleError_ChannelLevelError(t *testing.T) {
 	}
 }
 
+func TestHandleError_ChannelLevelErrorHonorsFixedCooldown(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+	manager := NewManager(store, nil)
+	ctx := context.Background()
+
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:                        "test-fixed-channel-error",
+		URL:                         "https://api.example.com",
+		Priority:                    10,
+		Enabled:                     true,
+		ChannelCooldownFixedEnabled: true,
+		ChannelCooldownFixedSeconds: 7,
+	})
+	if err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+
+	before := time.Now()
+	action := manager.HandleError(ctx, ErrorInput{
+		ChannelID:  cfg.ID,
+		KeyIndex:   NoKeyIndex,
+		StatusCode: 405,
+		ErrorBody:  []byte(`{"error":"method not allowed"}`),
+	})
+	after := time.Now()
+
+	if action != ActionRetryChannel {
+		t.Fatalf("action=%v, want ActionRetryChannel", action)
+	}
+	channelCfg, err := store.GetConfig(ctx, cfg.ID)
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	channelUntil := time.Unix(channelCfg.CooldownUntil, 0)
+	if !cooldownWithinDuration(channelUntil, before, after, 7*time.Second) {
+		t.Fatalf("channel cooldown until=%s, want fixed 7s", channelUntil)
+	}
+}
+
 func TestHandleError_HTTP404ModelAvailabilityScope(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -557,6 +597,83 @@ func TestHandleError_HTTP5xxCoolsOnlyCurrentModel(t *testing.T) {
 	}
 }
 
+func TestHandleError_ModelScopedFailureHonorsFixedChannelCooldown(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		errorBody  []byte
+	}{
+		{
+			name:       "default model cooldown",
+			statusCode: 500,
+			errorBody:  []byte(`{"error":"upstream failure"}`),
+		},
+		{
+			name:       "override upstream reset deadline",
+			statusCode: 429,
+			errorBody:  []byte(`{"error":{"code":"model_cooldown","message":"model temporarily unavailable","model":"model-a","reset_seconds":600}}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, cleanup := setupTestStore(t)
+			defer cleanup()
+			manager := NewManager(store, nil)
+			ctx := context.Background()
+
+			cfg, err := store.CreateConfig(ctx, &model.Config{
+				Name:                        "test-fixed-model-cooldown-" + tt.name,
+				URL:                         "https://api.example.com",
+				Priority:                    10,
+				Enabled:                     true,
+				ChannelCooldownFixedEnabled: true,
+				ChannelCooldownFixedSeconds: 7,
+				ModelEntries: []model.ModelEntry{
+					{Model: "model-a"},
+					{Model: "model-b"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("create config: %v", err)
+			}
+
+			before := time.Now()
+			action := manager.HandleError(ctx, ErrorInput{
+				ChannelID:  cfg.ID,
+				Model:      "model-a",
+				KeyIndex:   0,
+				StatusCode: tt.statusCode,
+				ErrorBody:  tt.errorBody,
+			})
+			after := time.Now()
+
+			if action != ActionRetryChannel {
+				t.Fatalf("action=%v, want ActionRetryChannel", action)
+			}
+			modelUntil, exists := getModelCooldownUntil(ctx, store, cfg.ID, "model-a")
+			if !exists {
+				t.Fatal("model-a should have a fixed model cooldown")
+			}
+			if !cooldownWithinDuration(modelUntil, before, after, 7*time.Second) {
+				t.Fatalf("model cooldown until=%s, want fixed 7s", modelUntil)
+			}
+
+			channelCfg, err := store.GetConfig(ctx, cfg.ID)
+			if err != nil {
+				t.Fatalf("get config: %v", err)
+			}
+			channelUntil := time.Unix(channelCfg.CooldownUntil, 0)
+			if !cooldownWithinDuration(channelUntil, before, after, 7*time.Second) {
+				t.Fatalf("channel cooldown until=%s, want fixed 7s", channelUntil)
+			}
+			if !modelUntil.Equal(channelUntil) {
+				t.Fatalf("model cooldown until=%s, channel cooldown until=%s; want identical deadlines", modelUntil, channelUntil)
+			}
+		})
+	}
+}
+
 func TestHandleError_LastModelCooldownPromotesChannel(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -640,6 +757,55 @@ func TestHandleError_LastKeyCooldownPromotesChannel(t *testing.T) {
 	}
 	if !channelCfg.IsCoolingDown(time.Now()) {
 		t.Fatal("channel should be cooled after all enabled keys are cooled")
+	}
+}
+
+func TestHandleError_LastKeyCooldownPromotionHonorsFixedChannelCooldown(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+	manager := NewManager(store, nil)
+	ctx := context.Background()
+
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:                        "test-fixed-all-keys-cooled",
+		URL:                         "https://api.example.com",
+		Priority:                    10,
+		Enabled:                     true,
+		ChannelCooldownFixedEnabled: true,
+		ChannelCooldownFixedSeconds: 7,
+	})
+	if err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	if err := store.CreateAPIKeysBatch(ctx, []*model.APIKey{
+		{ChannelID: cfg.ID, KeyIndex: 0, APIKey: "sk-0"},
+		{ChannelID: cfg.ID, KeyIndex: 1, APIKey: "sk-1"},
+	}); err != nil {
+		t.Fatalf("create keys: %v", err)
+	}
+	if err := store.SetKeyCooldown(ctx, cfg.ID, 0, time.Now().Add(10*time.Minute)); err != nil {
+		t.Fatalf("set key-0 cooldown: %v", err)
+	}
+
+	before := time.Now()
+	action := manager.HandleError(ctx, ErrorInput{
+		ChannelID:  cfg.ID,
+		KeyIndex:   1,
+		StatusCode: 401,
+		ErrorBody:  []byte(`{"error":{"type":"authentication_error"}}`),
+	})
+	after := time.Now()
+
+	if action != ActionRetryChannel {
+		t.Fatalf("action=%v, want ActionRetryChannel", action)
+	}
+	channelCfg, err := store.GetConfig(ctx, cfg.ID)
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	channelUntil := time.Unix(channelCfg.CooldownUntil, 0)
+	if !cooldownWithinDuration(channelUntil, before, after, 7*time.Second) {
+		t.Fatalf("channel cooldown until=%s, want fixed 7s", channelUntil)
 	}
 }
 
