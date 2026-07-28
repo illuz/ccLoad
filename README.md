@@ -891,6 +891,9 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_ENABLE_SQLITE_REPLICA` | `0` | Hybrid storage mode switch (`1`=enable, see below) |
 | `CCLOAD_SQLITE_LOG_DAYS` | `7` | Days of logs to restore from MySQL on startup in hybrid mode (-1=all, 0=no logs) |
 | `CCLOAD_ALLOW_INSECURE_TLS` | `0` | Disable upstream TLS cert validation (`1`=enable; ⚠️for troubleshooting/controlled intranet only) |
+| `CCLOAD_TLS_ENABLED` | `false` | Enables TLS for the ccLoad HTTP server; requires both certificate path variables below |
+| `CCLOAD_TLS_CERT_FILE` | none | PEM certificate file path for the ccLoad HTTPS server |
+| `CCLOAD_TLS_KEY_FILE` | none | PEM private key file path for the ccLoad HTTPS server |
 | `PORT` | `8080` | Service port |
 | `GIN_MODE` | `release` | Run mode (`debug`/`release`) |
 | `GIN_LOG` | `true` | Gin access log switch (`false`/`0`/`no`/`off` to disable) |
@@ -910,6 +913,8 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_COOLDOWN_MIN_SEC` | `10` | Exponential backoff cooldown min (seconds) |
 
 > If the service sits behind a reverse proxy or load balancer, set `TRUSTED_PROXIES` explicitly so spoofed `X-Forwarded-For` values cannot affect client IP detection or login rate limiting.
+
+> To serve HTTPS directly, set `CCLOAD_TLS_ENABLED=true`, `CCLOAD_TLS_CERT_FILE`, and `CCLOAD_TLS_KEY_FILE`. The process refuses to start if TLS is enabled without both file paths.
 
 #### Hybrid Storage Mode (MySQL Primary + SQLite Cache)
 

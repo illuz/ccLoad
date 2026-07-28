@@ -927,6 +927,9 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_ENABLE_SQLITE_REPLICA` | `0` | 混合存储模式开关（`1`=启用，见下方说明） |
 | `CCLOAD_SQLITE_LOG_DAYS` | `7` | 混合模式启动时从 MySQL 恢复日志的天数（-1=全量，0=不恢复日志） |
 | `CCLOAD_ALLOW_INSECURE_TLS` | `0` | 禁用上游 TLS 证书校验（`1`=启用；⚠️仅用于临时排障/受控内网环境） |
+| `CCLOAD_TLS_ENABLED` | `false` | 为 ccLoad HTTP 服务器启用 TLS；需要同时设置下方两个证书路径变量 |
+| `CCLOAD_TLS_CERT_FILE` | 无 | ccLoad HTTPS 服务器使用的 PEM 证书文件路径 |
+| `CCLOAD_TLS_KEY_FILE` | 无 | ccLoad HTTPS 服务器使用的 PEM 私钥文件路径 |
 | `PORT` | `8080` | 服务端口 |
 | `GIN_MODE` | `release` | 运行模式（`debug`/`release`） |
 | `GIN_LOG` | `true` | Gin 访问日志开关（`false`/`0`/`no`/`off` 关闭） |
@@ -946,6 +949,8 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_COOLDOWN_MIN_SEC` | `10` | 指数退避冷却下限（秒） |
 
 > 如果你的服务挂在反向代理或负载均衡后面，建议显式设置 `TRUSTED_PROXIES`，避免伪造 `X-Forwarded-For` 干扰客户端 IP 识别和登录限速。
+
+> 要直接提供 HTTPS 服务，请设置 `CCLOAD_TLS_ENABLED=true`、`CCLOAD_TLS_CERT_FILE` 和 `CCLOAD_TLS_KEY_FILE`。启用 TLS 但缺少任一证书路径时，程序会拒绝启动。
 
 #### 混合存储模式（MySQL 主 + SQLite 缓存）
 
