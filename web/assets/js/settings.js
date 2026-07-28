@@ -2,6 +2,7 @@
 const t = window.t;
 
 let originalSettings = {}; // 保存原始值用于比较
+let debugPreserveTokenOptions = [];
 
 function isHotReloadableSetting(setting) {
   return Boolean(setting?.hot_reload);
@@ -117,8 +118,12 @@ function renderGroupNav(groups) {
 
 async function loadSettings() {
   try {
-    const data = await fetchDataWithAuth('/admin/settings');
+    const [data, tokenData] = await Promise.all([
+      fetchDataWithAuth('/admin/settings'),
+      fetchDataWithAuth('/admin/auth-tokens').catch(() => ({ tokens: [] }))
+    ]);
     if (!Array.isArray(data)) throw new Error(t('settings.msg.invalidResponse'));
+    debugPreserveTokenOptions = Array.isArray(tokenData?.tokens) ? tokenData.tokens : [];
     renderSettings(data);
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -180,7 +185,7 @@ function initSettingsEventDelegation() {
 
   // 输入变更
   tbody.addEventListener('change', (e) => {
-    const input = e.target.closest('input, textarea');
+    const input = e.target.closest('input, textarea, select');
     if (input) markChanged(input);
   });
 }
@@ -191,6 +196,23 @@ function renderInput(setting) {
 
   if (setting.key === 'soft_error_text_prefixes') {
     return `<textarea id="${safeKey}" class="settings-input settings-input--textarea">${safeValue}</textarea>`;
+  }
+
+  if (setting.value_type === 'auth_token_id') {
+    const options = [`<option value="0" ${String(setting.value) === '0' ? 'selected' : ''}>${escapeHtml(t('settings.debugPreserveNone'))}</option>`];
+    let hasCurrent = String(setting.value) === '0';
+    for (const token of debugPreserveTokenOptions) {
+      const id = String(token?.id ?? '');
+      if (!/^\d+$/.test(id) || id === '0') continue;
+      const selected = id === String(setting.value);
+      if (selected) hasCurrent = true;
+      const label = formatDebugPreserveTokenLabel(token);
+      options.push(`<option value="${escapeHtml(id)}" ${selected ? 'selected' : ''}>${escapeHtml(label)}</option>`);
+    }
+    if (!hasCurrent) {
+      options.push(`<option value="${safeValue}" selected>${escapeHtml(t('settings.debugPreserveUnknown', { id: setting.value }))}</option>`);
+    }
+    return `<select id="${safeKey}" class="settings-input settings-input--text">${options.join('')}</select>`;
   }
 
   switch (setting.value_type) {
@@ -213,6 +235,16 @@ function renderInput(setting) {
     default:
       return `<input type="text" id="${safeKey}" value="${safeValue}" class="settings-input settings-input--text">`;
   }
+}
+
+function formatDebugPreserveTokenLabel(token) {
+  const id = String(token?.id ?? '');
+  const description = String(token?.description || '').trim();
+  const value = String(token?.plain_token || '').trim();
+  let masked = '';
+  if (value.length > 12) masked = `${value.slice(0, 6)}...${value.slice(-4)}`;
+  else if (value) masked = `${value.slice(0, Math.min(4, value.length))}...`;
+  return [description || `Token #${id}`, masked].filter(Boolean).join(' - ');
 }
 
 function markChanged(input) {

@@ -83,7 +83,7 @@ func TestLog_AddAndListPersistsReasoningTokens(t *testing.T) {
 	}
 }
 
-func TestLog_AddLogPersistsDebugData(t *testing.T) {
+func TestLog_AddLogWithDebugDataAssignsIDWithoutPersistingBody(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t, "add_log_debug.db")
@@ -91,7 +91,7 @@ func TestLog_AddLogPersistsDebugData(t *testing.T) {
 	channelID := createTestChannel(t, ctx, store, "add-log-debug-channel")
 
 	now := time.Now()
-	if err := store.AddLog(ctx, &model.LogEntry{
+	entry := &model.LogEntry{
 		Time:       newJSONTime(now),
 		Model:      "gpt-4",
 		ChannelID:  channelID,
@@ -107,8 +107,12 @@ func TestLog_AddLogPersistsDebugData(t *testing.T) {
 			RespHeaders: `{"Content-Type":"application/json"}`,
 			RespBody:    []byte(`{"ok":true}`),
 		},
-	}); err != nil {
+	}
+	if err := store.AddLog(ctx, entry); err != nil {
 		t.Fatalf("add log with debug data: %v", err)
+	}
+	if entry.ID <= 0 {
+		t.Fatalf("entry.ID=%d, want assigned database ID", entry.ID)
 	}
 
 	logs, err := store.ListLogsRange(ctx, now.Add(-time.Minute), now.Add(time.Minute), 10, 0, nil)
@@ -118,18 +122,8 @@ func TestLog_AddLogPersistsDebugData(t *testing.T) {
 	if len(logs) != 1 {
 		t.Fatalf("len(logs)=%d, want 1", len(logs))
 	}
-	debugLog, err := store.GetDebugLogByLogID(ctx, logs[0].ID)
-	if err != nil {
-		t.Fatalf("get debug log: %v", err)
-	}
-	if debugLog == nil {
-		t.Fatal("debug log should be persisted for AddLog")
-	}
-	if debugLog.RespStatus != http.StatusOK {
-		t.Fatalf("debug resp status=%d, want 200", debugLog.RespStatus)
-	}
-	if string(debugLog.RespBody) != `{"ok":true}` {
-		t.Fatalf("debug resp body=%q", string(debugLog.RespBody))
+	if logs[0].ID != entry.ID {
+		t.Fatalf("stored log ID=%d, entry ID=%d", logs[0].ID, entry.ID)
 	}
 }
 

@@ -7,11 +7,12 @@ RUNTIME_DIR="${RUNTIME_DIR:-/root/workspace/ccload-runtime}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/ccload}"
 ENV_FILE="${ENV_FILE:-$RUNTIME_DIR/.env}"
 LOG_DIR="${LOG_DIR:-$RUNTIME_DIR/logs}"
+DEBUG_LOG_DIR="${DEBUG_LOG_DIR:-$RUNTIME_DIR/data/debug-logs}"
 DEBUG_ANALYSIS_DIR="${DEBUG_ANALYSIS_DIR:-$RUNTIME_DIR/data/debug-analysis}"
 ANALYZER_ENABLED="${ANALYZER_ENABLED:-1}"
 ANALYZER_NAME="${ANALYZER_NAME:-${APP_NAME}-debug-analyzer}"
-ANALYZER_SCRIPT_SOURCE="${ANALYZER_SCRIPT_SOURCE:-$SOURCE_DIR/scripts/analyze_debug_logs.py}"
-ANALYZER_RUNTIME_SCRIPT="${ANALYZER_RUNTIME_SCRIPT:-$RUNTIME_DIR/scripts/analyze_debug_logs.py}"
+ANALYZER_BIN_SOURCE="${ANALYZER_BIN_SOURCE:-$SOURCE_DIR/ccload-debug-analyzer}"
+ANALYZER_BIN_PATH="${ANALYZER_BIN_PATH:-/usr/local/bin/ccload-debug-analyzer}"
 DB_MAINTENANCE_SCRIPT_SOURCE="${DB_MAINTENANCE_SCRIPT_SOURCE:-$SOURCE_DIR/scripts/maintain_sqlite_offline.py}"
 DB_MAINTENANCE_RUNTIME_SCRIPT="${DB_MAINTENANCE_RUNTIME_SCRIPT:-$RUNTIME_DIR/scripts/maintain_sqlite_offline.py}"
 DB_MAINTENANCE_ON_RESTART="${DB_MAINTENANCE_ON_RESTART:-0}"
@@ -140,8 +141,22 @@ HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:${PORT}/health}"
 HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
 HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
 HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
+DEBUG_LOG_DIR="${CCLOAD_DEBUG_LOG_DIR:-$DEBUG_LOG_DIR}"
+DEBUG_ANALYSIS_DIR="${CCLOAD_DEBUG_ANALYSIS_DIR:-$DEBUG_ANALYSIS_DIR}"
 
-mkdir -p "$LOG_DIR" "$DEBUG_ANALYSIS_DIR" "$(dirname "$ANALYZER_RUNTIME_SCRIPT")" "$(dirname "$DB_MAINTENANCE_RUNTIME_SCRIPT")"
+# Relative Debug paths are resolved against the PM2 runtime directory.  The
+# deploy script may be invoked from any working directory, while PM2 starts
+# both processes with --cwd "$RUNTIME_DIR".
+if [[ "$DEBUG_LOG_DIR" != /* ]]; then
+  DEBUG_LOG_DIR="$RUNTIME_DIR/$DEBUG_LOG_DIR"
+fi
+if [[ "$DEBUG_ANALYSIS_DIR" != /* ]]; then
+  DEBUG_ANALYSIS_DIR="$RUNTIME_DIR/$DEBUG_ANALYSIS_DIR"
+fi
+
+mkdir -p "$LOG_DIR" "$DEBUG_LOG_DIR" "$DEBUG_ANALYSIS_DIR" "$(dirname "$DB_MAINTENANCE_RUNTIME_SCRIPT")"
+chmod 700 "$DEBUG_LOG_DIR" "$DEBUG_ANALYSIS_DIR"
+export CCLOAD_DEBUG_LOG_DIR="$DEBUG_LOG_DIR"
 export CCLOAD_DEBUG_ANALYSIS_DIR="$DEBUG_ANALYSIS_DIR"
 
 cd "$SOURCE_DIR"
@@ -163,16 +178,12 @@ install_binary_atomically "$SOURCE_DIR/ccload" "$BIN_PATH"
 DEPLOYED_BINARY=1
 
 if [[ "$ANALYZER_ENABLED" == "1" ]]; then
-  if [[ -z "$PYTHON_BIN" ]]; then
-    echo "ERROR: python3 not found in PATH. Set PYTHON_BIN=/path/to/python3 or disable with ANALYZER_ENABLED=0." >&2
+  if [[ ! -f "$ANALYZER_BIN_SOURCE" ]]; then
+    echo "ERROR: analyzer binary not found: $ANALYZER_BIN_SOURCE" >&2
     exit 1
   fi
-  if [[ ! -f "$ANALYZER_SCRIPT_SOURCE" ]]; then
-    echo "ERROR: analyzer script not found: $ANALYZER_SCRIPT_SOURCE" >&2
-    exit 1
-  fi
-  echo "==> Installing debug analyzer to $ANALYZER_RUNTIME_SCRIPT"
-  install -m 0755 "$ANALYZER_SCRIPT_SOURCE" "$ANALYZER_RUNTIME_SCRIPT"
+  echo "==> Installing Go debug analyzer to $ANALYZER_BIN_PATH"
+  install_binary_atomically "$ANALYZER_BIN_SOURCE" "$ANALYZER_BIN_PATH"
 fi
 
 if [[ -f "$DB_MAINTENANCE_SCRIPT_SOURCE" ]]; then
@@ -215,19 +226,21 @@ else
 fi
 
 if [[ "$ANALYZER_ENABLED" == "1" ]]; then
-  echo "==> Starting PM2 debug analyzer: $ANALYZER_NAME"
+  echo "==> Starting PM2 Go debug analyzer: $ANALYZER_NAME"
   "$PM2_BIN" delete "$ANALYZER_NAME" >/dev/null 2>&1 || true
-  pm2_with_clean_proxy_env start "$ANALYZER_RUNTIME_SCRIPT" \
+  pm2_with_clean_proxy_env start "$ANALYZER_BIN_PATH" \
     --name "$ANALYZER_NAME" \
     --cwd "$RUNTIME_DIR" \
-    --interpreter "$PYTHON_BIN" \
+    --interpreter none \
     --time \
     --output "$LOG_DIR/ccload-debug-analyzer.log" \
     --error "$LOG_DIR/ccload-debug-analyzer.error.log" \
     -- \
-    --db "$SQLITE_PATH" \
+    --input-dir "$DEBUG_LOG_DIR" \
     --out-dir "$DEBUG_ANALYSIS_DIR" \
     --follow
+else
+  "$PM2_BIN" delete "$ANALYZER_NAME" >/dev/null 2>&1 || true
 fi
 
 echo "==> Running health check"

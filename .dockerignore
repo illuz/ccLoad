@@ -19,6 +19,7 @@ data/
 
 # 构建产物
 ccload
+ccload-debug-analyzer
 /tmp/
 
 # macOS LaunchAgent 相关

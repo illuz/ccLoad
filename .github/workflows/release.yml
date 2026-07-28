@@ -24,20 +24,30 @@ jobs:
           - goos: darwin
             goarch: amd64
             output: ccload-darwin-amd64
+            suffix: darwin-amd64
+            ext: ''
           - goos: darwin
             goarch: arm64
             output: ccload-darwin-arm64
+            suffix: darwin-arm64
+            ext: ''
           # Linux
           - goos: linux
             goarch: amd64
             output: ccload-linux-amd64
+            suffix: linux-amd64
+            ext: ''
           - goos: linux
             goarch: arm64
             output: ccload-linux-arm64
+            suffix: linux-arm64
+            ext: ''
           # Windows
           - goos: windows
             goarch: amd64
             output: ccload-windows-amd64.exe
+            suffix: windows-amd64
+            ext: '.exe'
 
     steps:
       - name: Checkout code
@@ -80,12 +90,16 @@ jobs:
               -X 'ccLoad/internal/version.BuildTime=${{ steps.version.outputs.build_time }}' \
               -X ccLoad/internal/version.BuiltBy=${{ steps.version.outputs.built_by }}" \
             -o dist/${{ matrix.output }} .
+          go build -trimpath -ldflags "-s -w" \
+            -o dist/ccload-debug-analyzer-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/debug-analyzer
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
+          path: |
+            dist/${{ matrix.output }}
+            dist/ccload-debug-analyzer-${{ matrix.suffix }}${{ matrix.ext }}
           retention-days: 1
 
   release:
@@ -182,6 +196,8 @@ jobs:
           | Linux | x86_64 | [ccload-linux-amd64](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ccload-linux-amd64) |
           | Linux | ARM64 | [ccload-linux-arm64](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ccload-linux-arm64) |
           | Windows | x86_64 | [ccload-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ccload-windows-amd64.exe) |
+
+          同一 Release 还包含各平台的 `ccload-debug-analyzer-*`。
 
           **校验和**: [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/checksums.txt)
 

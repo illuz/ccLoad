@@ -942,7 +942,7 @@ window.I18N_LOCALES['en'] = {
   'logs.debugRefreshing': 'Refreshing…',
   'logs.debugRequestFinished': 'Request finished',
   'logs.debugAnalysisLoading': 'Loading analysis…',
-  'logs.debugAnalysisNotFound': 'No analysis yet. Run scripts/analyze_debug_logs.py first.',
+  'logs.debugAnalysisNotFound': 'No analysis yet. Start ccload-debug-analyzer first.',
   'logs.debugAnalysisUnavailableActive': 'Analysis is unavailable for active requests. Wait until the request finishes and run the analyzer.',
   'logs.debugAnalysisQuestions': 'User Questions',
   'logs.debugAnalysisAIText': 'AI Response Text',
@@ -1158,6 +1158,9 @@ window.I18N_LOCALES['en'] = {
   'settings.desc.soft_error_text_prefixes': 'Short plain-text soft-error prefixes (one per line; matched responses trigger failover)',
   'settings.desc.debug_log_enabled': 'Enable debug logging (record raw upstream request/response data)',
   'settings.desc.debug_log_retention_minutes': 'Debug log retention duration (minutes, 1-1440)',
+  'settings.desc.debug_log_preserve_auth_token_id': 'Keep Debug logs for the selected API token permanently, regardless of retention or the Debug switch',
+  'settings.debugPreserveNone': 'Do not preserve any token permanently',
+  'settings.debugPreserveUnknown': 'Token #{id} (deleted or unavailable)',
   'settings.desc.auto_refresh_interval_seconds': 'Page auto-refresh interval (seconds, 0 = disabled, recommended ≥30; skipped while a modal is open)',
   // Messages
   'settings.msg.saveSuccess': 'Settings saved successfully',

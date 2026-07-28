@@ -42,6 +42,14 @@ func migrateMySQL(ctx context.Context, db *sql.DB) error {
 
 // migrate 统一迁移逻辑
 func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	// Debug 原始日志已完全迁移到压缩文件。用户明确选择不保留旧数据，
+	// 因此 SQLite 迁移时直接移除历史 BLOB 表。
+	if dialect == DialectSQLite {
+		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS debug_logs"); err != nil {
+			return fmt.Errorf("drop obsolete debug_logs table: %w", err)
+		}
+	}
+
 	// 表定义（顺序重要：外键依赖）
 	tables := []func() *schema.TableBuilder{
 		schema.DefineSchemaMigrationsTable, // 迁移版本表必须最先创建
@@ -57,7 +65,6 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		schema.DefineSystemSettingsTable,
 		schema.DefineAdminSessionsTable,
 		schema.DefineLogsTable,
-		schema.DefineDebugLogsTable,
 	}
 
 	// 一次性预查全库索引，避免每张表单独 SELECT 网络往返
@@ -69,17 +76,6 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	// 创建表和索引
 	for _, defineTable := range tables {
 		tb := defineTable()
-
-		// Pre-create hook: debug_logs 表改用 log_id 作为主键（2026-04 重构）
-		if tb.Name() == "debug_logs" {
-			if err := rebuildDebugLogsPrimaryKey(ctx, db, dialect); err != nil {
-				return fmt.Errorf("rebuild debug_logs primary key: %w", err)
-			}
-			if err := relaxDebugLogsRespBodyNullable(ctx, db, dialect); err != nil {
-				return fmt.Errorf("relax debug_logs.resp_body nullability: %w", err)
-			}
-			delete(allIndexes, "debug_logs")
-		}
 
 		// Pre-create hook: channel_url_states 主键从 (channel_id, url) 重建为 (channel_id, url_hash)
 		// （MySQL utf8mb4 下 VARCHAR(500) 超过 InnoDB 索引列 767 字节上限）
@@ -425,6 +421,7 @@ func initDefaultSettings(ctx context.Context, db *sql.DB, dialect Dialect) error
 		{"cooldown_fallback_enabled", "true", "bool", "所有渠道冷却时选最优渠道兜底(关闭则直接拒绝请求)", "true"},
 		// Debug日志配置
 		{"debug_log_enabled", "false", "bool", "启用Debug日志(记录上游请求/响应原始数据)", "false"},
+		{"debug_log_preserve_auth_token_id", "0", "auth_token_id", "永久保留指定API令牌的Debug日志(0=不保留)", "0"},
 		{"soft_error_text_prefixes", "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用", "string", "短纯文本软错误前缀(一行一个,匹配则触发失败重试)", "当前模型负载过高\nCurrent model load too high\n本公益key仅支持在AI编程客户端使用"},
 		{"debug_log_retention_minutes", "2", "int", "Debug日志保留时长(分钟,1-1440)", "2"},
 		// 前端自动刷新

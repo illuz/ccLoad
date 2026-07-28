@@ -19,7 +19,6 @@ var sqliteMigratableTables = map[string]bool{
 	"channel_protocol_transforms": true,
 	"api_keys":                    true,
 	"channels":                    true,
-	"debug_logs":                  true,
 	"schema_migrations":           true,
 }
 

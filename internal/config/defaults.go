@@ -116,11 +116,10 @@ const (
 const (
 	// LogCleanupInterval 日志清理间隔
 	LogCleanupInterval = 1 * time.Hour
-	// DebugLogCleanupStartupDelay 调试日志慢速清理启动延迟。
-	// 设计原则：服务先完成启动和健康检查，再开始后台低优先级清理，避免重启时争抢 SQLite 写锁。
+	// DebugLogCleanupStartupDelay 调试日志文件清理启动延迟。
+	// 设计原则：服务先完成启动和健康检查，再开始后台低优先级目录清理。
 	DebugLogCleanupStartupDelay = 30 * time.Second
-	// DebugLogCleanupInterval 调试日志慢速清理间隔。
-	// 每次只删很小一批，持续追赶过期数据，不再按保留时长动态放大间隔。
+	// DebugLogCleanupInterval 调试日志文件清理间隔。
 	DebugLogCleanupInterval = 30 * time.Second
 )
 

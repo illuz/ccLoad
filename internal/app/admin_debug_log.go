@@ -48,6 +48,7 @@ type debugLogUnavailableInfo struct {
 	Reason                   string               `json:"reason"`
 	DebugLogEnabled          *model.SystemSetting `json:"debug_log_enabled,omitempty"`
 	DebugLogRetentionMinutes *model.SystemSetting `json:"debug_log_retention_minutes,omitempty"`
+	DebugLogPreserveToken    *model.SystemSetting `json:"debug_log_preserve_auth_token_id,omitempty"`
 }
 
 func (s *Server) buildDebugLogUnavailableInfo(ctx context.Context) debugLogUnavailableInfo {
@@ -60,6 +61,9 @@ func (s *Server) buildDebugLogUnavailableInfo(ctx context.Context) debugLogUnava
 	}
 	if setting, err := s.configService.GetSettingFresh(ctx, "debug_log_retention_minutes"); err == nil {
 		info.DebugLogRetentionMinutes = setting
+	}
+	if setting, err := s.configService.GetSettingFresh(ctx, "debug_log_preserve_auth_token_id"); err == nil {
+		info.DebugLogPreserveToken = setting
 	}
 
 	return info
@@ -103,10 +107,13 @@ func (s *Server) HandleGetDebugLog(c *gin.Context) {
 		return
 	}
 
-	entry, err := s.store.GetDebugLogByLogID(c.Request.Context(), logID)
-	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
-		return
+	var entry *model.DebugLogEntry
+	if s != nil && s.debugLogs != nil {
+		entry, err = s.debugLogs.Get(c.Request.Context(), logID)
+		if err != nil {
+			RespondError(c, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	if entry == nil {
 		RespondErrorWithData(c, http.StatusNotFound, "debug log unavailable", s.buildDebugLogUnavailableInfo(c.Request.Context()))

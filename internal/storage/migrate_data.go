@@ -557,67 +557,6 @@ func backfillAuthTokensCostLimitMaxConcurrency(ctx context.Context, db *sql.DB) 
 	return nil
 }
 
-// rebuildDebugLogsPrimaryKey 将 debug_logs 旧结构（id 自增主键 + log_id 列）
-// 迁移为新结构（log_id 作为主键）。因调试日志保留期极短（默认5分钟），
-// 直接 DROP 旧表由后续 CREATE TABLE IF NOT EXISTS 重建即可
-const debugLogsPKRebuildVersion = "v1_debug_logs_pk_log_id"
-
-func rebuildDebugLogsPrimaryKey(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	if hasMigration(ctx, db, debugLogsPKRebuildVersion) {
-		return nil
-	}
-
-	// 检查旧表是否存在且包含 id 列（新部署首次创建时跳过 DROP）
-	hasLegacy, err := debugLogsHasLegacyIDColumn(ctx, db, dialect)
-	if err != nil {
-		return err
-	}
-	if hasLegacy {
-		if _, err := db.ExecContext(ctx, "DROP TABLE debug_logs"); err != nil {
-			return fmt.Errorf("drop legacy debug_logs: %w", err)
-		}
-		log.Printf("[MIGRATE] 已删除旧版 debug_logs 表（id 主键），等待重建")
-	}
-
-	return recordMigration(ctx, db, debugLogsPKRebuildVersion, dialect)
-}
-
-// relaxDebugLogsRespBodyNullable 将 debug_logs.resp_body 从 NOT NULL 放宽为可空
-// （部分请求尚未拿到响应体就写入，NOT NULL 约束会导致批量写入失败）。
-// 调试日志保留期极短，直接 DROP 重建，不迁移旧数据。
-const debugLogsRespBodyNullableVersion = "v2_debug_logs_resp_body_nullable"
-
-func relaxDebugLogsRespBodyNullable(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	if hasMigration(ctx, db, debugLogsRespBodyNullableVersion) {
-		return nil
-	}
-	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS debug_logs"); err != nil {
-		return fmt.Errorf("drop debug_logs for resp_body relax: %w", err)
-	}
-	log.Printf("[MIGRATE] 已删除 debug_logs 表以放宽 resp_body NOT NULL 约束")
-	return recordMigration(ctx, db, debugLogsRespBodyNullableVersion, dialect)
-}
-
-func debugLogsHasLegacyIDColumn(ctx context.Context, db *sql.DB, dialect Dialect) (bool, error) {
-	if dialect == DialectMySQL {
-		var count int
-		err := db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='debug_logs' AND COLUMN_NAME='id'",
-		).Scan(&count)
-		if err != nil {
-			return false, fmt.Errorf("check debug_logs.id existence: %w", err)
-		}
-		return count > 0, nil
-	}
-
-	// SQLite: 表不存在时 PRAGMA 返回空结果集，视为无旧列
-	existing, err := sqliteExistingColumns(ctx, db, "debug_logs")
-	if err != nil {
-		return false, nil
-	}
-	return existing["id"], nil
-}
-
 // rebuildChannelURLStatesPrimaryKey 将 channel_url_states 旧结构
 // （PRIMARY KEY (channel_id, url) — 在 MySQL utf8mb4 下因 url VARCHAR(500)*4=2000 字节
 // 超过 InnoDB 索引列 767 字节上限会建表失败；SQLite 已建出的旧结构需重建为新主键

@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -165,9 +166,9 @@ const logRowParams = 27
 // BatchAddLogs 批量写入日志（单事务，多值 INSERT 提升刷盘吞吐）
 // 设计：
 //   - 无 debug 数据：单条多值 INSERT 一次提交，节省 N-1 个 RTT
-//   - 含 debug 数据：单独走逐条 prepared 路径，因为需要 LastInsertId 关联 debug_logs
+//   - 含 debug 数据：单独逐条插入并回填 logs.id，供上层按 ID 写入文件
 //
-// 两路径仍处于同一事务内，保持原子性。
+// Debug 原始内容不进入数据库。
 func (s *SQLStore) BatchAddLogs(ctx context.Context, logs []*model.LogEntry) error {
 	logs = s.filterDeletedChannelLogs(logs)
 	if len(logs) == 0 {
@@ -197,7 +198,7 @@ func (s *SQLStore) BatchAddLogs(ctx context.Context, logs []*model.LogEntry) err
 	}
 
 	if len(withDebug) > 0 {
-		if err := insertLogsWithDebug(ctx, tx, withDebug); err != nil {
+		if err := insertLogsReturningIDs(ctx, tx, withDebug); err != nil {
 			return err
 		}
 	}
@@ -242,8 +243,8 @@ func batchInsertPlainLogs(ctx context.Context, tx *sql.Tx, logs []*model.LogEntr
 	return nil
 }
 
-// insertLogsWithDebug 逐条插入需要 LastInsertId 关联 debug_logs 的日志。
-func insertLogsWithDebug(ctx context.Context, tx *sql.Tx, logs []*model.LogEntry) error {
+// insertLogsReturningIDs 逐条插入并回填 ID；Debug 内容由应用层写入文件。
+func insertLogsReturningIDs(ctx context.Context, tx *sql.Tx, logs []*model.LogEntry) error {
 	stmt, err := tx.PrepareContext(ctx, logsInsertColumns+logRowPlaceholders)
 	if err != nil {
 		return err
@@ -255,16 +256,11 @@ func insertLogsWithDebug(ctx context.Context, tx *sql.Tx, logs []*model.LogEntry
 		if err != nil {
 			return err
 		}
-		logID, _ := result.LastInsertId()
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO debug_logs (log_id, created_at, req_method, req_url, req_headers, req_body, resp_status, resp_headers, resp_body)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			logID, e.DebugData.CreatedAt, e.DebugData.ReqMethod, e.DebugData.ReqURL,
-			e.DebugData.ReqHeaders, e.DebugData.ReqBody, e.DebugData.RespStatus,
-			e.DebugData.RespHeaders, e.DebugData.RespBody,
-		); err != nil {
-			return err
+		logID, err := result.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("get inserted log ID: %w", err)
 		}
+		e.ID = logID
 	}
 	return nil
 }

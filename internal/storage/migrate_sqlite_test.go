@@ -1069,11 +1069,6 @@ func TestLoadAllExistingIndexes_SQLite(t *testing.T) {
 		}
 	}
 
-	// debug_logs 表的索引也应该被包含
-	if !afterMigrate["debug_logs"]["idx_debug_logs_created_at"] {
-		t.Errorf("debug_logs index idx_debug_logs_created_at missing after migrate")
-	}
-
 	// 不存在的表读取得到 nil map（map[nil][key] 安全返回零值）
 	if afterMigrate["no_such_table_xyz"] != nil {
 		t.Errorf("expected nil for missing table, got %v", afterMigrate["no_such_table_xyz"])
@@ -1239,5 +1234,29 @@ func TestIsMigrationApplied_NotApplied(t *testing.T) {
 	}
 	if applied {
 		t.Fatal("never_applied_migration should not be applied")
+	}
+}
+
+func TestMigrateDropsDebugLogsTable(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	if _, err := db.ExecContext(t.Context(), `
+		CREATE TABLE debug_logs (log_id INTEGER PRIMARY KEY, resp_body BLOB);
+		INSERT INTO debug_logs (log_id, resp_body) VALUES (1, zeroblob(1024));
+	`); err != nil {
+		t.Fatalf("seed debug_logs: %v", err)
+	}
+	if err := migrate(t.Context(), db, DialectSQLite); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(t.Context(),
+		"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='debug_logs'",
+	).Scan(&count); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("debug_logs table count=%d, want 0", count)
 	}
 }

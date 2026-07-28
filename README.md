@@ -898,6 +898,10 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_THEME_COLOR_DARK` | auto | Optional SVG logo gradient end color (hex/name); defaults to a darker shade of `CCLOAD_THEME_COLOR` |
 | `TRUSTED_PROXIES` | Private ranges + Loopback + `100.64.0.0/10` | Trusted proxy CIDRs (comma-separated); `none` = trust no proxies |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite database file path (SQLite mode only) |
+| `CCLOAD_DEBUG_LOG_DIR` | `data/debug-logs` | Token-keyed directory for gzip-compressed raw Debug logs; content never enters SQLite |
+| `CCLOAD_DEBUG_ANALYSIS_DIR` | `data/debug-analysis` | Token-keyed directory for gzip-compressed analysis results |
+| `DEBUG_ANALYSIS_RETENTION_DAYS` | `5` | Analysis output retention in days; <= 0 disables cleanup |
+| `DEBUG_ANALYSIS_INTERVAL` | `5` | Go analyzer follow-mode scan interval in seconds |
 | `CCLOAD_MODEL_CATALOG_CACHE` | `data/model-catalog.json` | Normalized model catalog cache path; this does not enable network synchronization |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal mode (WAL/TRUNCATE/DELETE, recommend TRUNCATE for containers) |
 | `CCLOAD_MAX_CONCURRENCY` | `1000` | Max concurrent requests (limits simultaneous proxy requests) |
@@ -910,6 +914,16 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_COOLDOWN_MIN_SEC` | `10` | Exponential backoff cooldown min (seconds) |
 
 > If the service sits behind a reverse proxy or load balancer, set `TRUSTED_PROXIES` explicitly so spoofed `X-Forwarded-For` values cannot affect client IP detection or login rate limiting.
+
+#### Debug Files and Analyzer
+
+Normal request logs and statistics remain in the `logs` table. Raw Debug headers and bodies never enter the database; they are stored as `meta.json.gz`, `request.body.gz`, and `response.body.gz` under `data/debug-logs/<token-key>/<log_id>/`. The token key is the client's original API token key. Requests without a token use `_no-token`. The admin detail API locates and expands these files by `log_id`, and the Go analyzer writes compressed results to `data/debug-analysis/<token-key>/<log_id>/analysis.json.gz`.
+
+```bash
+./ccload-debug-analyzer --input-dir data/debug-logs --out-dir data/debug-analysis --follow
+```
+
+`debug_log_retention_minutes` controls normal Debug file retention. The background cleanup runs every 30 seconds and removes at most 500 expired entries per pass. In Settings, `debug_log_preserve_auth_token_id` selects one API token whose Debug files are kept permanently, regardless of retention or the Debug switch. The obsolete SQLite `debug_logs` table is dropped during startup migration; historical Debug BLOBs are not migrated.
 
 #### Hybrid Storage Mode (MySQL Primary + SQLite Cache)
 
@@ -1091,7 +1105,6 @@ storage/
 - `api_keys` - API keys (key-level cooldown inline, multi-key strategies)
 - `channel_model_cooldowns` - Model-level runtime cooldown keyed by channel and actual upstream model
 - `logs` - Request logs (with base_url upstream URL tracking)
-- `debug_logs` - Debug logs (upstream request/response raw data, independent cleanup policy)
 - `key_rr` - Round-robin pointers (channel_id → idx)
 - `auth_token_groups` - Reusable token limit templates, including model and channel allow/deny policies
 - `auth_tokens` - Auth tokens (with cost limits, model/channel restrictions, first byte time tracking)
@@ -1114,7 +1127,7 @@ storage/
 - ✅ **Tiered pricing engine**: GPT-5.4/Qwen-Plus/Gemini long-context step billing
 - ✅ **Log UX improvements**: Cost column formats to 3 decimal places (empty for zero), IP column shows full address on hover
 - ✅ **Protocol transform system**: Anthropic/OpenAI/Gemini/Codex four-protocol cross-conversion, upstream/local modes
-- ✅ **Debug logs**: Upstream request/response raw data capture, sensitive header masking, independent cleanup policy
+- ✅ **Debug logs**: Raw content is file-backed instead of stored in SQLite; details load by `log_id` with sensitive header masking
 - ✅ **Scheduled channel checks**: Background periodic channel availability probing, configurable check model per channel
 - ✅ **Channel RPM limits**: Per-channel rolling 60-second request caps, `0` means unlimited, over-limit channels are skipped
 - ✅ **Channel concurrency limits**: Per-channel in-flight request caps, `0` means unlimited, over-limit channels are skipped

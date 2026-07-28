@@ -295,7 +295,7 @@ func TestConfig_DeleteConfig(t *testing.T) {
 	}
 }
 
-func TestConfig_DeleteConfig_RemovesLogsAndDebugLogs(t *testing.T) {
+func TestConfig_DeleteConfig_RemovesLogs(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -321,18 +321,8 @@ func TestConfig_DeleteConfig_RemovesLogsAndDebugLogs(t *testing.T) {
 		Model:      "model-1",
 		ChannelID:  created.ID,
 		StatusCode: 200,
-		DebugData: &model.DebugLogEntry{
-			CreatedAt:   now.Unix(),
-			ReqMethod:   "POST",
-			ReqURL:      "https://api.example.com/v1/messages",
-			ReqHeaders:  "{}",
-			ReqBody:     []byte(`{"model":"model-1"}`),
-			RespStatus:  200,
-			RespHeaders: "{}",
-			RespBody:    []byte(`{"ok":true}`),
-		},
 	}}); err != nil {
-		t.Fatalf("add log with debug data: %v", err)
+		t.Fatalf("add log: %v", err)
 	}
 
 	logs, err := store.ListLogsRange(ctx, now.Add(-time.Minute), now.Add(time.Minute), 10, 0, nil)
@@ -342,15 +332,6 @@ func TestConfig_DeleteConfig_RemovesLogsAndDebugLogs(t *testing.T) {
 	if len(logs) != 1 {
 		t.Fatalf("expected 1 log before delete, got %d", len(logs))
 	}
-	logID := logs[0].ID
-	debugLog, err := store.GetDebugLogByLogID(ctx, logID)
-	if err != nil {
-		t.Fatalf("get debug log before delete: %v", err)
-	}
-	if debugLog == nil {
-		t.Fatalf("expected debug log before delete")
-	}
-
 	if err := store.DeleteConfig(ctx, created.ID); err != nil {
 		t.Fatalf("delete config: %v", err)
 	}
@@ -362,13 +343,6 @@ func TestConfig_DeleteConfig_RemovesLogsAndDebugLogs(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected channel logs removed, got %d", count)
-	}
-	debugLog, err = store.GetDebugLogByLogID(ctx, logID)
-	if err != nil {
-		t.Fatalf("get debug log after delete: %v", err)
-	}
-	if debugLog != nil {
-		t.Fatalf("expected debug log removed after deleting channel")
 	}
 }
 

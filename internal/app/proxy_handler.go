@@ -338,6 +338,10 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	if v, ok := c.Get("token_hash"); ok {
 		tokenHashStr, _ = v.(string)
 	}
+	tokenKeyStr := ""
+	if v, ok := c.Get("token_key"); ok {
+		tokenKeyStr, _ = v.(string)
+	}
 
 	// 从context提取tokenID（用于统计和日志，2025-12新增tokenID）
 	tokenID, _ := c.Get("token_id")
@@ -424,6 +428,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		header:            c.Request.Header,
 		isStreaming:       isStreaming,
 		tokenHash:         tokenHashStr,
+		tokenKey:          tokenKeyStr,
 		tokenID:           tokenIDInt64,
 		codexGuardEnabled: codexGuardEnabled,
 		clientIP:          c.ClientIP(),

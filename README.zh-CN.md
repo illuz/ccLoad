@@ -934,6 +934,10 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_THEME_COLOR_DARK` | 自动 | 可选 SVG Logo 渐变结束色（十六进制/名称），默认按 `CCLOAD_THEME_COLOR` 自动加深 |
 | `TRUSTED_PROXIES` | 私有网段 + Loopback + `100.64.0.0/10` | 可信代理 CIDR 列表（逗号分隔）；`none`=不信任任何代理 |
 | `SQLITE_PATH` | `data/ccload.db` | SQLite 数据库文件路径（仅 SQLite 模式） |
+| `CCLOAD_DEBUG_LOG_DIR` | `data/debug-logs` | 按令牌 Key 分层保存的 gzip Debug 原始日志目录；内容不写入 SQLite |
+| `CCLOAD_DEBUG_ANALYSIS_DIR` | `data/debug-analysis` | 按令牌 Key 分层保存的 gzip 分析结果目录 |
+| `DEBUG_ANALYSIS_RETENTION_DAYS` | `5` | 分析结果文件保留天数；小于等于 0 表示不清理 |
+| `DEBUG_ANALYSIS_INTERVAL` | `5` | Go 分析器跟随模式扫描间隔（秒） |
 | `CCLOAD_MODEL_CATALOG_CACHE` | `data/model-catalog.json` | 归一化模型目录缓存路径；设置此路径不会开启网络同步 |
 | `SQLITE_JOURNAL_MODE` | `WAL` | SQLite Journal 模式（WAL/TRUNCATE/DELETE 等，容器环境建议 TRUNCATE） |
 | `CCLOAD_MAX_CONCURRENCY` | `1000` | 最大并发请求数（限制同时处理的代理请求数量） |
@@ -946,6 +950,16 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_COOLDOWN_MIN_SEC` | `10` | 指数退避冷却下限（秒） |
 
 > 如果你的服务挂在反向代理或负载均衡后面，建议显式设置 `TRUSTED_PROXIES`，避免伪造 `X-Forwarded-For` 干扰客户端 IP 识别和登录限速。
+
+#### Debug 文件与分析器
+
+普通请求日志和统计仍写入 `logs` 表；Debug 原始 header/body 不进入数据库，而是按 `data/debug-logs/<token-key>/<log_id>/` 保存为 `meta.json.gz`、`request.body.gz`、`response.body.gz`。`token-key` 就是客户端 API 令牌的原始 Key；无令牌的测试任务归入 `_no-token`。管理后台点击详情时按 `log_id` 定位并解压文件，Go 分析器将压缩结果写到 `data/debug-analysis/<token-key>/<log_id>/analysis.json.gz`。
+
+```bash
+./ccload-debug-analyzer --input-dir data/debug-logs --out-dir data/debug-analysis --follow
+```
+
+`debug_log_retention_minutes` 控制普通 Debug 文件的保留时间，后台每 30 秒最多分批删除 500 条过期日志。设置页的 `debug_log_preserve_auth_token_id` 可选择一个永久保留的 API 令牌；该令牌的文件不受保留时间和 Debug 开关影响。旧 SQLite `debug_logs` 表会在启动迁移时直接删除，不做历史数据迁移。
 
 #### 混合存储模式（MySQL 主 + SQLite 缓存）
 
@@ -1141,7 +1155,6 @@ storage/
 - `api_keys` - API 密钥（Key 级冷却内联，支持多 Key 策略）
 - `channel_model_cooldowns` - 模型级运行时冷却，主键为渠道和实际上游模型
 - `logs` - 请求日志（含base_url上游URL追踪）
-- `debug_logs` - 调试日志（上游请求/响应原始数据，独立清理策略）
 - `key_rr` - 轮询指针（channel_id → idx）
 - `auth_token_groups` - 可复用的令牌限制模板（包含模型限制和渠道 allow/deny 策略）
 - `auth_tokens` - 认证令牌（支持费用限额、模型/渠道限制、首字节时间记录）
@@ -1164,7 +1177,7 @@ storage/
 - ✅ **分层定价引擎**：GPT-5.4/Qwen-Plus/Gemini 长上下文阶梯计价
 - ✅ **日志体验优化**：成本格式化精度提升（3位小数/空值空串），IP列悬停显示完整地址
 - ✅ **协议转换系统**：Anthropic/OpenAI/Gemini/Codex四协议互转，upstream/local两种模式
-- ✅ **调试日志**：上游请求/响应原始数据捕获，敏感头脱敏，独立清理策略
+- ✅ **调试日志**：原始内容按文件保存，不进入 SQLite；查看时按 `log_id` 读取，敏感头脱敏
 - ✅ **渠道定时检测**：后台定时探测渠道可用性，支持指定检测模型
 - ✅ **渠道RPM限制**：每渠道滚动60秒请求数上限，`0` 表示无限制，超限自动跳过该渠道
 - ✅ **渠道并发限制**：每渠道同时在飞请求数上限，`0` 表示无限制，超限自动跳过该渠道

@@ -22,3 +22,19 @@ services:
       retries: 3
       start_period: 40s
 
+  debug-analyzer:
+    image: ghcr.io/caidaoli/ccload:latest
+    container_name: ccload-debug-analyzer
+    user: root
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command:
+      - ./ccload-debug-analyzer
+      - --input-dir
+      - /app/data/debug-logs
+      - --out-dir
+      - /app/data/debug-analysis
+      - --follow

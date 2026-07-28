@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"ccLoad/internal/debuglog"
 	"ccLoad/internal/model"
 	"ccLoad/internal/storage"
 	"ccLoad/internal/testutil"
@@ -358,7 +359,7 @@ func newInMemoryServer(t testing.TB) *Server {
 		t.Fatalf("CreateSQLiteStore failed: %v", err)
 	}
 
-	srv := NewServer(store)
+	srv := NewServerWithDebugLogStore(store, debuglog.NewFileStore(t.TempDir()))
 	srv.client = newTestHTTPClient()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

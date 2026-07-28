@@ -3,12 +3,12 @@ package app
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"ccLoad/internal/debuganalysis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,10 +22,6 @@ func debugAnalysisDir() string {
 	return defaultDebugAnalysisDir
 }
 
-func debugAnalysisPath(logID int64) string {
-	return filepath.Join(debugAnalysisDir(), fmt.Sprintf("%d.json", logID))
-}
-
 // HandleGetDebugLogAnalysis 获取独立分析器生成的 Debug 日志分析结果。
 // GET /admin/debug-log-analysis/:log_id
 func (s *Server) HandleGetDebugLogAnalysis(c *gin.Context) {
@@ -36,16 +32,20 @@ func (s *Server) HandleGetDebugLogAnalysis(c *gin.Context) {
 		return
 	}
 
-	path := debugAnalysisPath(logID)
-	data, err := os.ReadFile(path) //nolint:gosec // path is constrained to numeric log_id under configured analysis dir
+	path, err := debuganalysis.FindOutputPath(debugAnalysisDir(), logID)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			RespondErrorWithData(c, http.StatusNotFound, "analysis not found", gin.H{
 				"log_id": logID,
-				"path":   path,
+				"path":   debugAnalysisDir(),
 			})
 			return
 		}
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	data, err := debuganalysis.ReadOutput(c.Request.Context(), path)
+	if err != nil {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}

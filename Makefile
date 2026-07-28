@@ -7,6 +7,7 @@ PLIST_FILE = $(SERVICE_NAME).plist
 LAUNCH_AGENTS_DIR = $(HOME)/Library/LaunchAgents
 TARGET_PLIST = $(LAUNCH_AGENTS_DIR)/$(PLIST_FILE)
 BINARY_NAME = ccload
+ANALYZER_BINARY_NAME = ccload-debug-analyzer
 LOG_DIR = logs
 PROJECT_DIR = $(shell pwd)
 GOTAGS ?= sonic
@@ -23,14 +24,16 @@ LDFLAGS = -s -w \
 	-X '$(VERSION_PKG).BuildTime=$(BUILD_TIME)' \
 	-X $(VERSION_PKG).BuiltBy=$(BUILT_BY)
 
-.PHONY: help build docker-build web-test verify-web www-setup www-run www-release generate-plist inject-env-vars install-service uninstall-service start stop restart status logs clean
+.PHONY: help build build-server build-analyzer docker-build web-test verify-web www-setup www-run www-release generate-plist inject-env-vars install-service uninstall-service start stop restart status logs clean
 
 # 默认目标
 help:
 	@echo "ccLoad 服务管理 Makefile"
 	@echo ""
 	@echo "可用命令:"
-	@echo "  build             - 构建二进制文件"
+	@echo "  build             - 构建服务和 Debug 分析器"
+	@echo "  build-server      - 仅构建 ccLoad 服务"
+	@echo "  build-analyzer    - 仅构建 Go Debug 分析器"
 	@echo "  docker-build      - 构建 Docker 镜像（自动注入版本信息）"
 	@echo "  web-test          - 运行 web 前端 node:test 测试"
 	@echo "  verify-web        - 执行 web 前端验证"
@@ -48,10 +51,17 @@ help:
 	@echo "  clean            - 清理构建文件和日志"
 
 # 构建二进制文件（纯Go静态编译 + trimpath）
-build:
+build: build-server build-analyzer
+
+build-server:
 	@echo "构建 $(BINARY_NAME) ($(VERSION))..."
 	@CGO_ENABLED=0 go build -tags "$(GOTAGS)" -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) .
 	@echo "构建完成: $(BINARY_NAME)"
+
+build-analyzer:
+	@echo "构建 $(ANALYZER_BINARY_NAME)..."
+	@CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o $(ANALYZER_BINARY_NAME) ./cmd/debug-analyzer
+	@echo "构建完成: $(ANALYZER_BINARY_NAME)"
 
 # 构建 Docker 镜像（自动注入版本信息）
 DOCKER_IMAGE ?= ccload
@@ -211,6 +221,7 @@ error-logs:
 clean:
 	@echo "清理构建文件和日志..."
 	@rm -f $(BINARY_NAME)
+	@rm -f $(ANALYZER_BINARY_NAME)
 	@rm -f $(PLIST_FILE)
 	@rm -rf $(LOG_DIR)
 	@echo "清理完成"

@@ -942,7 +942,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.debugRefreshing': '正在更新…',
   'logs.debugRequestFinished': '请求已结束',
   'logs.debugAnalysisLoading': '正在加载分析结果…',
-  'logs.debugAnalysisNotFound': '暂无分析结果，请先运行 scripts/analyze_debug_logs.py。',
+  'logs.debugAnalysisNotFound': '暂无分析结果，请先启动 ccload-debug-analyzer。',
   'logs.debugAnalysisUnavailableActive': '活跃请求暂不支持分析结果，请等待请求完成并运行分析器。',
   'logs.debugAnalysisQuestions': '用户问题',
   'logs.debugAnalysisAIText': 'AI 回复文本',
@@ -1158,6 +1158,9 @@ window.I18N_LOCALES['zh-CN'] = {
   'settings.desc.soft_error_text_prefixes': '短纯文本软错误前缀(一行一个,匹配则触发失败重试)',
   'settings.desc.debug_log_enabled': '启用Debug日志(记录上游请求/响应原始数据)',
   'settings.desc.debug_log_retention_minutes': 'Debug日志保留时长(分钟,1-1440)',
+  'settings.desc.debug_log_preserve_auth_token_id': '永久保留所选API令牌的Debug日志，不受保留时长和Debug开关影响',
+  'settings.debugPreserveNone': '不永久保留任何令牌',
+  'settings.debugPreserveUnknown': '令牌 #{id}（已删除或不可用）',
   'settings.desc.auto_refresh_interval_seconds': '页面自动刷新间隔(秒,0=禁用,建议≥30;有对话框打开时跳过本次刷新)',
   // 消息
   'settings.msg.saveSuccess': '设置保存成功',

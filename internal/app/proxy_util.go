@@ -155,6 +155,7 @@ type proxyRequestContext struct {
 	header                  http.Header
 	isStreaming             bool
 	tokenHash               string               // Token哈希值（用于统计）
+	tokenKey                string               // 客户端传入的原始 Token Key（用于 Debug 文件目录）
 	tokenID                 int64                // Token ID（用于日志记录，0表示未使用token）
 	codexGuardEnabled       bool                 // 当前访问令牌是否启用 Codex reasoning guard
 	codexGuardRetries       int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
@@ -804,6 +805,7 @@ type logEntryParams struct {
 	IsStreaming             bool
 	APIKeyUsed              string
 	AuthTokenID             int64
+	AuthTokenKey            string
 	ClientIP                string
 	BaseURL                 string // 请求使用的上游URL
 	Result                  *fwResult
@@ -830,17 +832,18 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		logTime = time.Now() // 兜底：未传入开始时间时使用当前时间
 	}
 	entry := &model.LogEntry{
-		Time:        model.JSONTime{Time: logTime},
-		Model:       p.RequestModel,
-		LogSource:   model.LogSourceProxy,
-		ChannelID:   p.ChannelID,
-		StatusCode:  p.StatusCode,
-		Duration:    p.Duration,
-		IsStreaming: p.IsStreaming,
-		APIKeyUsed:  p.APIKeyUsed,
-		AuthTokenID: p.AuthTokenID,
-		ClientIP:    p.ClientIP,
-		BaseURL:     p.BaseURL,
+		Time:         model.JSONTime{Time: logTime},
+		Model:        p.RequestModel,
+		LogSource:    model.LogSourceProxy,
+		ChannelID:    p.ChannelID,
+		StatusCode:   p.StatusCode,
+		Duration:     p.Duration,
+		IsStreaming:  p.IsStreaming,
+		APIKeyUsed:   p.APIKeyUsed,
+		AuthTokenID:  p.AuthTokenID,
+		AuthTokenKey: p.AuthTokenKey,
+		ClientIP:     p.ClientIP,
+		BaseURL:      p.BaseURL,
 	}
 	entry.ThinkingEffort = normalizeThinkingEffort(p.ThinkingEffort)
 

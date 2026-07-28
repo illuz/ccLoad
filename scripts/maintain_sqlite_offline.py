@@ -2,9 +2,9 @@
 """Offline maintenance for ccLoad's SQLite database.
 
 This script is intentionally designed for *offline* use: stop ccLoad and the
-debug analyzer first, then run it from a shell/nohup/tmux.  It can delete
-expired debug_logs in small batches and optionally compact the database via
-VACUUM INTO + atomic file swap.
+debug analyzer first, then run it from a shell/nohup/tmux. It drops the obsolete
+debug_logs BLOB table and compacts the database via VACUUM INTO + atomic file
+swap. New Debug logs are compressed files and never enter SQLite.
 
 Default mode is dry-run.  Add --apply to change data.
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 DEFAULT_DB = os.environ.get("SQLITE_PATH", "data/ccload.db")
 APP_PATTERNS = (
     "/usr/local/bin/ccload",
-    "analyze_debug_logs.py",
+    "ccload-debug-analyzer",
 )
 
 
@@ -79,68 +79,12 @@ def find_running_ccload_processes() -> list[str]:
     return out
 
 
-def read_retention_minutes(conn: sqlite3.Connection, default: int) -> int:
-    try:
-        row = conn.execute(
-            "SELECT value FROM system_settings WHERE key = 'debug_log_retention_minutes'"
-        ).fetchone()
-    except sqlite3.Error:
-        return default
-    if not row:
-        return default
-    try:
-        value = int(str(row[0]).strip())
-        return value if value > 0 else default
-    except Exception:
-        return default
-
-
 def checkpoint_truncate(conn: sqlite3.Connection, label: str) -> None:
     try:
         rows = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
         log(f"{label}: wal_checkpoint(TRUNCATE)={rows}")
     except sqlite3.Error as exc:
         log(f"{label}: wal_checkpoint(TRUNCATE) failed: {exc!r}")
-
-
-def delete_expired_debug_logs(
-    conn: sqlite3.Connection,
-    cutoff: int,
-    batch_size: int,
-    sleep_seconds: float,
-) -> int:
-    deleted = 0
-    started = time.time()
-    while True:
-        conn.execute(
-            """
-            DELETE FROM debug_logs
-            WHERE log_id IN (
-                SELECT log_id FROM debug_logs
-                WHERE created_at < ?
-                ORDER BY created_at
-                LIMIT ?
-            )
-            """,
-            (cutoff, batch_size),
-        )
-        n = int(conn.execute("SELECT changes()").fetchone()[0])
-        if n <= 0:
-            break
-        deleted += n
-        if deleted % max(batch_size * 20, 1) == 0 or n < batch_size:
-            freelist = conn.execute("PRAGMA freelist_count").fetchone()[0]
-            page_size = conn.execute("PRAGMA page_size").fetchone()[0]
-            log(
-                "delete progress: "
-                f"deleted={deleted}, elapsed={time.time() - started:.1f}s, "
-                f"freelist={freelist} pages ({human_bytes(freelist * page_size)})"
-            )
-        if n < batch_size:
-            break
-        if sleep_seconds > 0:
-            time.sleep(sleep_seconds)
-    return deleted
 
 
 def quick_check(path: Path) -> None:
@@ -213,13 +157,6 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Offline SQLite maintenance for ccLoad")
     parser.add_argument("--db", default=DEFAULT_DB, help="SQLite DB path")
     parser.add_argument(
-        "--retention-minutes",
-        type=int,
-        help="debug_logs retention. Defaults to DB setting debug_log_retention_minutes, fallback 1440",
-    )
-    parser.add_argument("--batch-size", type=int, default=100, help="Rows per delete batch")
-    parser.add_argument("--sleep", type=float, default=0.02, help="Sleep seconds between delete batches")
-    parser.add_argument(
         "--mode",
         choices=("delete-only", "compact-copy"),
         default="compact-copy",
@@ -265,30 +202,29 @@ def main(argv: list[str]) -> int:
             f"freelist={freelist} ({human_bytes(freelist * page_size)})"
         )
 
-        retention = args.retention_minutes or read_retention_minutes(conn, 1440)
-        cutoff = int(time.time() - retention * 60)
-        cutoff_text = dt.datetime.fromtimestamp(cutoff).isoformat(timespec="seconds")
-        expired = conn.execute(
-            "SELECT count(*), min(created_at), max(created_at) FROM debug_logs WHERE created_at < ?",
-            (cutoff,),
-        ).fetchone()
-        total = conn.execute(
-            "SELECT count(*), min(created_at), max(created_at) FROM debug_logs"
-        ).fetchone()
-        log(f"retention_minutes={retention}, cutoff={cutoff_text}")
-        log(f"debug_logs total={tuple(total)}, expired={tuple(expired)}")
+        has_debug_logs = bool(conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='debug_logs'"
+        ).fetchone())
+        if has_debug_logs:
+            total = conn.execute(
+                "SELECT count(*) FROM debug_logs"
+            ).fetchone()
+            log(f"obsolete debug_logs rows={int(total[0])}; table will be dropped")
+        else:
+            log("obsolete debug_logs table not found")
 
         if not args.apply:
             log("dry-run only. Re-run with --apply to modify the database.")
             return 0
 
-        checkpoint_truncate(conn, "before delete")
-        deleted = delete_expired_debug_logs(conn, cutoff, args.batch_size, args.sleep)
-        log(f"delete done: deleted={deleted}")
-        checkpoint_truncate(conn, "after delete")
+        checkpoint_truncate(conn, "before drop")
+        if has_debug_logs:
+            conn.execute("DROP TABLE debug_logs")
+            log("obsolete debug_logs table dropped")
+        checkpoint_truncate(conn, "after drop")
 
         freelist = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
-        log(f"post-delete freelist={freelist} ({human_bytes(freelist * page_size)})")
+        log(f"post-drop freelist={freelist} ({human_bytes(freelist * page_size)})")
 
         if args.mode == "delete-only":
             log("mode=delete-only; skip compaction")

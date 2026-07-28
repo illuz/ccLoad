@@ -3185,7 +3185,7 @@ async function loadDebugLogAnalysis(logId) {
     const { res, payload } = await fetchAPIWithAuthRaw(`/admin/debug-log-analysis/${logId}`);
     if (!payload.success) {
       const msg = res.status === 404
-        ? (t('logs.debugAnalysisNotFound') || '暂无分析结果，请先运行 scripts/analyze_debug_logs.py。')
+        ? (t('logs.debugAnalysisNotFound') || '暂无分析结果，请先启动 ccload-debug-analyzer。')
         : (payload.error || t('error.requestFailed') || '加载分析结果失败');
       setDebugAnalysisMessage(targetId, msg);
       return;

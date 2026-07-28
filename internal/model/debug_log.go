@@ -1,15 +1,17 @@
 package model
 
-// DebugLogEntry 调试日志条目（记录上游请求/响应原始数据）
-// LogID 与 logs.id 1:1 对应，直接作为 debug_logs 主键
+// DebugLogEntry 调试日志条目（记录上游请求/响应原始数据）。
+// LogID 与 logs.id 1:1 对应，内容仅写入 Debug 文件目录。
 type DebugLogEntry struct {
-	LogID       int64  `json:"log_id"`
-	CreatedAt   int64  `json:"created_at"`
-	ReqMethod   string `json:"req_method"`
-	ReqURL      string `json:"req_url"`
-	ReqHeaders  string `json:"req_headers"` // JSON string
-	ReqBody     []byte `json:"req_body"`
-	RespStatus  int    `json:"resp_status"`
-	RespHeaders string `json:"resp_headers"` // JSON string
-	RespBody    []byte `json:"resp_body"`
+	LogID        int64  `json:"log_id"`
+	AuthTokenID  int64  `json:"auth_token_id"`
+	AuthTokenKey string `json:"auth_token_key"` // Plain API token key used as the first-level directory
+	CreatedAt    int64  `json:"created_at"`
+	ReqMethod    string `json:"req_method"`
+	ReqURL       string `json:"req_url"`
+	ReqHeaders   string `json:"req_headers"` // JSON string
+	ReqBody      []byte `json:"req_body"`
+	RespStatus   int    `json:"resp_status"`
+	RespHeaders  string `json:"resp_headers"` // JSON string
+	RespBody     []byte `json:"resp_body"`
 }

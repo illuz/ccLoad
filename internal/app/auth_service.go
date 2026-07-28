@@ -359,6 +359,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 
 		// 已识别的令牌即使随后因过期或并发限制被拒绝，也应能在请求日志中关联到令牌。
 		c.Set("token_hash", tokenHash)
+		c.Set("token_key", token)
 		if hasTokenID {
 			c.Set("token_id", tokenID)
 		}

@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"ccLoad/internal/debuglog"
 	"ccLoad/internal/model"
 	"ccLoad/internal/storage"
 )
@@ -15,6 +17,122 @@ import (
 type retryTrackingStore struct {
 	storage.Store
 	attempts int
+}
+
+func TestLogServiceAddLogPersistsDebugFile(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("CreateSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	debugFiles := debuglog.NewFileStore(t.TempDir())
+	shutdownCh := make(chan struct{})
+	var wg sync.WaitGroup
+	svc := NewLogService(store, debugFiles, 1, 0, 3, shutdownCh, &atomic.Bool{}, &wg)
+	entry := &model.LogEntry{
+		Time:         model.JSONTime{Time: time.Now()},
+		Model:        "test-model",
+		StatusCode:   200,
+		AuthTokenID:  17,
+		AuthTokenKey: "sk-client-token",
+		DebugData: &model.DebugLogEntry{
+			ReqMethod:  "POST",
+			ReqBody:    []byte(`{"hello":"world"}`),
+			RespStatus: 200,
+			RespBody:   []byte(`{"ok":true}`),
+		},
+	}
+	if err := svc.AddLog(t.Context(), entry); err != nil {
+		t.Fatalf("AddLog: %v", err)
+	}
+	if entry.ID <= 0 {
+		t.Fatalf("entry.ID=%d, want assigned ID", entry.ID)
+	}
+	debugEntry, err := debugFiles.Get(t.Context(), entry.ID)
+	if err != nil {
+		t.Fatalf("read debug file: %v", err)
+	}
+	if debugEntry == nil || string(debugEntry.RespBody) != `{"ok":true}` {
+		t.Fatalf("debug entry=%+v", debugEntry)
+	}
+	if debugEntry.AuthTokenID != entry.AuthTokenID || debugEntry.AuthTokenKey != entry.AuthTokenKey {
+		t.Fatalf("debug token identity=%+v, log entry=%+v", debugEntry, entry)
+	}
+}
+
+func TestCleanupDebugLogsPreservesConfiguredAuthToken(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("CreateSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.UpdateSetting(t.Context(), "debug_log_enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateSetting(t.Context(), "debug_log_retention_minutes", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateSetting(t.Context(), "debug_log_preserve_auth_token_id", "77"); err != nil {
+		t.Fatal(err)
+	}
+
+	debugFiles := debuglog.NewFileStore(t.TempDir())
+	old := time.Now().Add(-time.Hour).Unix()
+	for _, entry := range []*model.DebugLogEntry{
+		{LogID: 1, AuthTokenID: 77, AuthTokenKey: strings.Repeat("b", 64), CreatedAt: old},
+		{LogID: 2, AuthTokenID: 88, AuthTokenKey: strings.Repeat("c", 64), CreatedAt: old},
+	} {
+		if err := debugFiles.Put(t.Context(), entry); err != nil {
+			t.Fatalf("Put(%d): %v", entry.LogID, err)
+		}
+	}
+
+	shutdownCh := make(chan struct{})
+	var wg sync.WaitGroup
+	svc := NewLogService(store, debugFiles, 1, 0, 3, shutdownCh, &atomic.Bool{}, &wg)
+	svc.cleanupDebugLogsIncremental()
+	if exists, _ := debugFiles.Exists(1); !exists {
+		t.Fatal("configured token log was removed")
+	}
+	if exists, _ := debugFiles.Exists(2); exists {
+		t.Fatal("expired unprotected token log was retained")
+	}
+}
+
+func TestLogServiceFlushLogsPersistsDebugFile(t *testing.T) {
+	store, err := storage.CreateSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("CreateSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	debugFiles := debuglog.NewFileStore(t.TempDir())
+	shutdownCh := make(chan struct{})
+	var wg sync.WaitGroup
+	svc := NewLogService(store, debugFiles, 1, 0, 3, shutdownCh, &atomic.Bool{}, &wg)
+	entry := &model.LogEntry{
+		Time:       model.JSONTime{Time: time.Now()},
+		Model:      "async-model",
+		StatusCode: 200,
+		DebugData: &model.DebugLogEntry{
+			ReqMethod:  "POST",
+			ReqBody:    []byte(`{"stream":true}`),
+			RespStatus: 200,
+			RespBody:   []byte("data: [DONE]\n\n"),
+		},
+	}
+	svc.flushLogs([]*model.LogEntry{entry})
+	if entry.ID <= 0 {
+		t.Fatalf("entry.ID=%d, want assigned ID", entry.ID)
+	}
+	debugEntry, err := debugFiles.Get(t.Context(), entry.ID)
+	if err != nil {
+		t.Fatalf("read debug file: %v", err)
+	}
+	if debugEntry == nil || string(debugEntry.RespBody) != "data: [DONE]\n\n" {
+		t.Fatalf("debug entry=%+v", debugEntry)
+	}
 }
 
 func (s *retryTrackingStore) BatchAddLogs(_ context.Context, _ []*model.LogEntry) error {
@@ -28,7 +146,7 @@ func TestAddLogAsync_NormalDelivery(t *testing.T) {
 	isShuttingDown := &atomic.Bool{}
 	var wg sync.WaitGroup
 
-	svc := NewLogService(nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(nil, nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},
@@ -57,7 +175,7 @@ func TestAddLogAsync_ChannelFull_Drops(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// buffer size = 1，只能容纳1条
-	svc := NewLogService(nil, 1, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(nil, nil, 1, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},
@@ -84,7 +202,7 @@ func TestAddLogAsync_AfterShutdown_Noop(t *testing.T) {
 	isShuttingDown := &atomic.Bool{}
 	var wg sync.WaitGroup
 
-	svc := NewLogService(nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(nil, nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	// 标记为关闭状态
 	isShuttingDown.Store(true)
@@ -113,7 +231,7 @@ func TestAddLogAsync_DropCountAccumulates(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// buffer size = 0，所有日志都会被 drop
-	svc := NewLogService(nil, 0, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(nil, nil, 0, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},
@@ -138,7 +256,7 @@ func TestFlushLogs_ShutdownDisablesRetries(t *testing.T) {
 	var wg sync.WaitGroup
 
 	store := &retryTrackingStore{}
-	svc := NewLogService(store, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(store, nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},
@@ -173,7 +291,7 @@ func TestFlushLogs_RetrySucceeds(t *testing.T) {
 	var wg sync.WaitGroup
 
 	store := &failThenSucceedStore{failN: 1}
-	svc := NewLogService(store, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(store, nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},
@@ -195,7 +313,7 @@ func TestFlushLogs_ShutdownInterruptsBackoff(t *testing.T) {
 	store := &retryTrackingStore{}
 	// MaxRetries=2 在 config 中，但正常路径会重试。
 	// 我们在退避等待期间触发 shutdown，期望只尝试 1 次。
-	svc := NewLogService(store, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
+	svc := NewLogService(store, nil, 10, 0, 3, shutdownCh, isShuttingDown, &wg)
 
 	entry := &model.LogEntry{
 		Time:       model.JSONTime{Time: time.Now()},

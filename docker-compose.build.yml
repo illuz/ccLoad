@@ -30,6 +30,22 @@ services:
       retries: 3
       start_period: 40s
 
+  debug-analyzer:
+    image: ccload:local
+    container_name: ccload-debug-analyzer
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ccload_data:/app/data
+    command:
+      - ./ccload-debug-analyzer
+      - --input-dir
+      - /app/data/debug-logs
+      - --out-dir
+      - /app/data/debug-analysis
+      - --follow
+
 volumes:
   ccload_data:
     driver: local

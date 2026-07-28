@@ -260,6 +260,12 @@ func validateSettingValue(key, valueType, value string) error {
 			return fmt.Errorf("duration must be >= 0 (0 = disabled)")
 		}
 
+	case "auth_token_id":
+		intVal, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || intVal < 0 {
+			return fmt.Errorf("auth token ID must be a non-negative integer")
+		}
+
 	case "string":
 		switch key {
 		case "log_channel_click_action":

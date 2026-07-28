@@ -17,6 +17,7 @@ import (
 
 	"ccLoad/internal/config"
 	"ccLoad/internal/cooldown"
+	"ccLoad/internal/debuglog"
 	"ccLoad/internal/model"
 	"ccLoad/internal/protocol"
 	protocolbuiltin "ccLoad/internal/protocol/builtin"
@@ -40,6 +41,7 @@ type Server struct {
 	// 核心字段
 	// ============================================================================
 	store                         storage.Store
+	debugLogs                     *debuglog.FileStore
 	channelCache                  *storage.ChannelCache      // 高性能渠道缓存层
 	keySelector                   *KeySelector               // Key选择器（多Key支持）
 	cooldownManager               *cooldown.Manager          // 统一冷却管理器
@@ -99,6 +101,14 @@ type Server struct {
 
 // NewServer 创建并初始化一个新的 Server 实例
 func NewServer(store storage.Store) *Server {
+	return NewServerWithDebugLogStore(store, debuglog.NewFileStore(debuglog.DirFromEnv()))
+}
+
+// NewServerWithDebugLogStore allows tests and alternate runtimes to isolate debug files.
+func NewServerWithDebugLogStore(store storage.Store, debugLogs *debuglog.FileStore) *Server {
+	if debugLogs == nil {
+		debugLogs = debuglog.NewFileStore(debuglog.DirFromEnv())
+	}
 	// 初始化ConfigService（优先从数据库加载配置,环境变量作Fallback）
 	configService := NewConfigService(store)
 	loadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -153,6 +163,7 @@ func NewServer(store storage.Store) *Server {
 
 	s := &Server{
 		store:            store,
+		debugLogs:        debugLogs,
 		configService:    configService,
 		loginRateLimiter: util.NewLoginRateLimiter(),
 
@@ -234,6 +245,7 @@ func NewServer(store storage.Store) *Server {
 	// 1. LogService（负责日志管理）
 	s.logService = NewLogService(
 		store,
+		debugLogs,
 		config.DefaultLogBufferSize,
 		config.DefaultLogWorkers,
 		runtimeCfg.LogRetentionDays, // 启动时读取，修改后重启生效
@@ -386,7 +398,7 @@ func isHotReloadableSetting(key string) bool {
 		return true
 	}
 	switch key {
-	case "channel_test_content", "debug_log_enabled", "soft_error_text_prefixes", "cooldown_fallback_enabled":
+	case "channel_test_content", "debug_log_enabled", "debug_log_retention_minutes", "debug_log_preserve_auth_token_id", "soft_error_text_prefixes", "cooldown_fallback_enabled":
 		return true
 	default:
 		return false

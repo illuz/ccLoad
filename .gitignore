@@ -15,6 +15,7 @@ data/
 # Build artifacts
 ccLoad
 ccload
+ccload-debug-analyzer
 /tmp/ccload*
 *.exe
 *.dll

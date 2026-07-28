@@ -27,7 +27,8 @@ golangci-lint run ./...   # 提交前必须零警告
 ```
 internal/app/        HTTP+业务:proxy_* / admin_* / selector_* / *_cache / *_service
 internal/protocol/   协议转换(Anthropic/OpenAI/Gemini/Codex,builtin/)
-internal/storage/    存储(factory/hybrid_store/sync_manager/migrate;sql/ sqlite/)
+internal/storage/    业务存储(factory/hybrid_store/sync_manager/migrate;sql/ sqlite/)
+internal/debuglog/   Debug原始文件仓库   internal/debuganalysis/ Go分析器
 internal/cooldown/   冷却决策   internal/util/  classifier/cost_calculator/money/...
 internal/{model,config,version,testutil}/   web/  前端(HTML+assets/{css,js,locales})
 ```
@@ -81,6 +82,7 @@ internal/{model,config,version,testutil}/   web/  前端(HTML+assets/{css,js,loc
 - 混合数据流:写 MySQL 主→同步 SQLite,读 SQLite,日志先 SQLite 后异步 MySQL;`CCLOAD_SQLITE_LOG_DAYS` 默认 7
 - 模型冷却状态:`channel_model_cooldowns(channel_id, model, cooldown_until)`;写主库后同步 SQLite,启动自动建表/恢复,渠道删除时级联清理
 - URL 禁用状态(`channel_url_states` 表)双写,重启 `URLSelector.LoadDisabled` 回填
+- Debug 原始内容不进数据库:`data/debug-logs/<token-key>/<log_id>/{meta.json.gz,request.body.gz,response.body.gz}`;分析器入口 `cmd/debug-analyzer`;旧 `debug_logs` 表启动时直接删除
 
 ## 前端(Playwright MCP)
 

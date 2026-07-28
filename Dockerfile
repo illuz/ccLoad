@@ -58,7 +58,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X 'ccLoad/internal/version.BuildTime=${BUILD_TIME}' \
       -X ccLoad/internal/version.BuiltBy=docker" \
     -o ccload . && \
-    xx-verify ccload
+    xx-verify ccload && \
+    xx-go build -tags sonic -buildvcs=false -trimpath -ldflags="-s -w" \
+      -o ccload-debug-analyzer ./cmd/debug-analyzer && \
+    xx-verify ccload-debug-analyzer
 
 # ============================================
 # 阶段4: 运行时镜像 (最小化)
@@ -76,6 +79,7 @@ WORKDIR /app
 
 # 从构建阶段复制（web资源已嵌入二进制）
 COPY --from=builder /app/ccload .
+COPY --from=builder /app/ccload-debug-analyzer .
 
 # 创建数据目录并设置权限
 RUN mkdir -p /app/data && \
@@ -87,6 +91,8 @@ EXPOSE 8080
 
 ENV PORT=8080 \
     SQLITE_PATH=/app/data/ccload.db \
+    CCLOAD_DEBUG_LOG_DIR=/app/data/debug-logs \
+    CCLOAD_DEBUG_ANALYSIS_DIR=/app/data/debug-analysis \
     GIN_MODE=release
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

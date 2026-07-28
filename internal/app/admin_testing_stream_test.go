@@ -434,9 +434,9 @@ func TestHandleChannelChatPersistsDetectionLogWithStreamStatusAndDebugData(t *te
 		t.Fatalf("message=%q, want ok", entry.Message)
 	}
 
-	debugLog, err := srv.store.GetDebugLogByLogID(ctx, entry.ID)
+	debugLog, err := srv.debugLogs.Get(ctx, entry.ID)
 	if err != nil {
-		t.Fatalf("GetDebugLogByLogID failed: %v", err)
+		t.Fatalf("read debug log file: %v", err)
 	}
 	if debugLog == nil {
 		t.Fatal("debug log should be persisted for chat detection log")

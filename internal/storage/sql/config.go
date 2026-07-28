@@ -495,11 +495,6 @@ func (s *SQLStore) DeleteConfig(ctx context.Context, id int64) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM channel_url_states WHERE channel_id = ?`, id); err != nil {
 			return fmt.Errorf("delete channel url states: %w", err)
 		}
-		if result, err := tx.ExecContext(ctx, `DELETE FROM debug_logs WHERE log_id IN (SELECT id FROM logs WHERE channel_id = ?)`, id); err != nil {
-			return fmt.Errorf("delete channel debug logs: %w", err)
-		} else if affected, rowsErr := result.RowsAffected(); rowsErr == nil {
-			deletedRowsForVacuum += affected
-		}
 		if result, err := tx.ExecContext(ctx, `DELETE FROM logs WHERE channel_id = ?`, id); err != nil {
 			return fmt.Errorf("delete channel logs: %w", err)
 		} else if affected, rowsErr := result.RowsAffected(); rowsErr == nil {

@@ -341,3 +341,19 @@ func TestAdminSettingsHandlers(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateDebugLogPreserveAuthTokenID(t *testing.T) {
+	if !isHotReloadableSetting("debug_log_preserve_auth_token_id") {
+		t.Fatal("preserved token setting should take effect without restart")
+	}
+	for _, value := range []string{"0", "1", "9223372036854775807"} {
+		if err := validateSettingValue("debug_log_preserve_auth_token_id", "auth_token_id", value); err != nil {
+			t.Fatalf("value %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"-1", "token", "1.5"} {
+		if err := validateSettingValue("debug_log_preserve_auth_token_id", "auth_token_id", value); err == nil {
+			t.Fatalf("value %q should be rejected", value)
+		}
+	}
+}

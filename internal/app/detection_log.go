@@ -49,6 +49,9 @@ func detectionLogFromResult(cfg *model.Config, logSource, requestModel, actualMo
 		channelType = cfg.GetChannelType()
 	}
 	populateDetectionUsage(entry, result, channelType)
+	if debugData, ok := result["debug_data"].(*model.DebugLogEntry); ok {
+		entry.DebugData = debugData
+	}
 	entry.Message = detectionMessage(result)
 	return entry
 }
@@ -78,10 +81,10 @@ func detectionSkipLog(cfg *model.Config, logSource, modelName, reason string) *m
 }
 
 func (s *Server) persistDetectionLog(ctx context.Context, entry *model.LogEntry) {
-	if s == nil || s.store == nil || entry == nil {
+	if s == nil || s.logService == nil || entry == nil {
 		return
 	}
-	if err := s.store.AddLog(ctx, entry); err != nil {
+	if err := s.logService.AddLog(ctx, entry); err != nil {
 		log.Printf("[WARN] 检测日志写入失败: %v", err)
 	}
 }

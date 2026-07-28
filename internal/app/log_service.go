@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"ccLoad/internal/config"
+	"ccLoad/internal/debuglog"
 	"ccLoad/internal/model"
 	"ccLoad/internal/storage"
 )
@@ -23,7 +25,8 @@ import (
 //
 // 遵循 SRP 原则：仅负责日志管理，不涉及代理、认证、管理 API
 type LogService struct {
-	store storage.Store
+	store     storage.Store
+	debugLogs *debuglog.FileStore
 
 	// 日志队列和 Worker
 	logChan      chan *model.LogEntry
@@ -42,6 +45,7 @@ type LogService struct {
 // NewLogService 创建日志服务实例
 func NewLogService(
 	store storage.Store,
+	debugLogs *debuglog.FileStore,
 	logBufferSize int,
 	logWorkers int,
 	retentionDays int, // 启动时确定，修改后重启生效
@@ -51,6 +55,7 @@ func NewLogService(
 ) *LogService {
 	return &LogService{
 		store:          store,
+		debugLogs:      debugLogs,
 		logChan:        make(chan *model.LogEntry, logBufferSize),
 		logWorkers:     logWorkers,
 		retentionDays:  retentionDays,
@@ -150,6 +155,7 @@ retryLoop:
 		err := s.store.BatchAddLogs(ctx, logs)
 		cancel()
 		if err == nil {
+			s.persistDebugLogs(logs)
 			if attempt > 1 {
 				log.Printf("[WARN] 日志批量写入重试成功 (attempt=%d/%d, batch_size=%d)", attempt, maxRetries, len(logs))
 			}
@@ -181,6 +187,53 @@ retryLoop:
 	}
 
 	log.Printf("[ERROR] 日志批量写入最终失败 (attempts=%d, batch_size=%d): %v", attempts, len(logs), lastErr)
+}
+
+func (s *LogService) persistDebugLogs(logs []*model.LogEntry) {
+	for _, entry := range logs {
+		if entry == nil || entry.DebugData == nil || entry.ID <= 0 {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := s.persistDebugLog(ctx, entry)
+		cancel()
+		if err != nil {
+			log.Printf("[ERROR] Debug 日志文件写入失败 (log_id=%d): %v", entry.ID, err)
+		}
+	}
+}
+
+func (s *LogService) persistDebugLog(ctx context.Context, entry *model.LogEntry) error {
+	if entry == nil || entry.DebugData == nil {
+		return nil
+	}
+	if s.debugLogs == nil {
+		return fmt.Errorf("debug log file store is not configured")
+	}
+	if entry.ID <= 0 {
+		return fmt.Errorf("normal log ID was not assigned")
+	}
+	tokenKey := entry.AuthTokenKey
+	if tokenKey == "" && entry.AuthTokenID > 0 {
+		if token, err := s.store.GetAuthToken(ctx, entry.AuthTokenID); err == nil && token != nil {
+			tokenKey = token.PlainToken
+		}
+	}
+	entry.DebugData.LogID = entry.ID
+	entry.DebugData.AuthTokenID = entry.AuthTokenID
+	entry.DebugData.AuthTokenKey = tokenKey
+	if err := s.debugLogs.Put(ctx, entry.DebugData); err != nil {
+		return fmt.Errorf("persist debug log file: %w", err)
+	}
+	return nil
+}
+
+// AddLog writes a normal log synchronously and publishes its debug files afterwards.
+func (s *LogService) AddLog(ctx context.Context, entry *model.LogEntry) error {
+	if err := s.store.AddLog(ctx, entry); err != nil {
+		return err
+	}
+	return s.persistDebugLog(ctx, entry)
 }
 
 func (s *LogService) isShutdownInProgress() bool {
@@ -224,19 +277,18 @@ func (s *LogService) AddLogAsync(entry *model.LogEntry) {
 // ============================================================================
 
 // StartCleanupLoop 启动日志清理后台协程
-// 普通日志按小时清理；Debug 原始日志启动后延迟进入慢速小批量清理。
+// 普通日志按小时清理；Debug 文件启动后延迟进入分批清理。
 // 支持优雅关闭
 func (s *LogService) StartCleanupLoop() {
 	s.wg.Add(1)
 	go s.cleanupOldLogsLoop()
 }
 
-// cleanupDebugLogsIncremental 增量清理一小批调试日志。
-//
-// debug_logs 保存完整请求/响应体，单条可能达到数 MB 甚至数十 MB。
-// 因此这里绝不能在启动路径或定时任务里做大批量删除；实际删除批量由
-// storage 层限制为很小一批，本函数只负责按当前配置计算 cutoff 并触发一次。
+// cleanupDebugLogsIncremental 增量清理一批过期调试日志文件。
 func (s *LogService) cleanupDebugLogsIncremental() {
+	if s.debugLogs == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -244,13 +296,27 @@ func (s *LogService) cleanupDebugLogsIncremental() {
 	if setting, err := s.store.GetSetting(ctx, "debug_log_enabled"); err == nil && setting != nil {
 		debugEnabled = setting.Value == "true"
 	}
+	preserveAuthTokenID := int64(0)
+	if setting, err := s.store.GetSetting(ctx, "debug_log_preserve_auth_token_id"); err == nil && setting != nil {
+		if value, parseErr := strconv.ParseInt(setting.Value, 10, 64); parseErr == nil && value > 0 {
+			preserveAuthTokenID = value
+		}
+	}
+	preserveTokenKey := ""
+	if preserveAuthTokenID > 0 {
+		if token, err := s.store.GetAuthToken(ctx, preserveAuthTokenID); err == nil && token != nil {
+			preserveTokenKey = token.PlainToken
+		}
+	}
 
 	if !debugEnabled {
-		// 未启用时也不要一次性 Truncate。用“未来一点点”的 cutoff 分批删除
-		// 现有历史数据，让服务启动/运行不被 SQLite 写锁拖住。
+		// 未启用时用未来 cutoff 分批清空残留文件。
 		cutoff := time.Now().Add(time.Second)
-		if err := s.store.CleanupDebugLogsBefore(ctx, cutoff); err != nil {
-			log.Printf("[WARN] 慢速清理调试日志失败: %v", err)
+		if _, err := s.debugLogs.Cleanup(ctx, debuglog.CleanupPolicy{
+			Cutoff: cutoff, MaxDelete: 500,
+			PreserveAuthTokenID: preserveAuthTokenID, PreserveTokenKey: preserveTokenKey,
+		}); err != nil {
+			log.Printf("[WARN] 清理 Debug 日志文件失败: %v", err)
 		}
 		return
 	}
@@ -262,8 +328,11 @@ func (s *LogService) cleanupDebugLogsIncremental() {
 		}
 	}
 	cutoff := time.Now().Add(-time.Duration(debugRetentionMinutes) * time.Minute)
-	if err := s.store.CleanupDebugLogsBefore(ctx, cutoff); err != nil {
-		log.Printf("[WARN] 慢速清理过期调试日志失败: %v", err)
+	if _, err := s.debugLogs.Cleanup(ctx, debuglog.CleanupPolicy{
+		Cutoff: cutoff, MaxDelete: 500,
+		PreserveAuthTokenID: preserveAuthTokenID, PreserveTokenKey: preserveTokenKey,
+	}); err != nil {
+		log.Printf("[WARN] 清理过期 Debug 日志文件失败: %v", err)
 	}
 }
 

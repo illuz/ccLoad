@@ -127,7 +127,8 @@ type LogEntry struct {
 	CostMultiplier           float64 `json:"cost_multiplier"`             // 写日志时快照的渠道倍率，默认1
 
 	// 瞬态字段：不持久化到 logs 表，仅用于传递 debug 数据到写入管道
-	DebugData *DebugLogEntry `json:"-"`
+	DebugData    *DebugLogEntry `json:"-"`
+	AuthTokenKey string         `json:"-"` // 客户端令牌原始 Key，仅用于 Debug 文件目录
 }
 
 // LogFilter 日志查询过滤条件
