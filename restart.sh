@@ -28,6 +28,7 @@ BACKUP_PATH=""
 PM2_EXISTS_BEFORE=0
 DEPLOYED_BINARY=0
 OLD_BIN_PRESENT=0
+APP_START_ATTEMPTED=0
 
 pm2_with_clean_proxy_env() {
   env \
@@ -40,6 +41,48 @@ pm2_with_clean_proxy_env() {
     all_proxy= \
     no_proxy= \
     "$PM2_BIN" "$@"
+}
+
+fail() {
+  echo "ERROR: $*" >&2
+  return 1
+}
+
+pm2_app_pid() {
+  local output
+  output="$(pm2_with_clean_proxy_env pid "$APP_NAME" 2>/dev/null || true)"
+  awk '/^[0-9]+$/ && $1 > 0 { print $1; exit }' <<<"$output"
+}
+
+port_listener_snapshot() {
+  ss -H -ltnp "sport = :$PORT_NUMBER" 2>/dev/null || true
+}
+
+port_owned_by_pid() {
+  local pid="$1"
+  local listeners
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  listeners="$(port_listener_snapshot)"
+  [[ -n "$listeners" ]] && grep -Eq "pid=${pid}," <<<"$listeners"
+}
+
+check_port_before_deploy() {
+  local listeners current_pid
+  listeners="$(port_listener_snapshot)"
+  if [[ -z "$listeners" ]]; then
+    echo "==> HTTP port $PORT_NUMBER is currently free"
+    return 0
+  fi
+
+  current_pid="$(pm2_app_pid)"
+  if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]] && port_owned_by_pid "$current_pid"; then
+    echo "==> HTTP port $PORT_NUMBER is owned by current PM2 app PID $current_pid"
+    return 0
+  fi
+
+  echo "ERROR: HTTP port $PORT_NUMBER is occupied by a process other than PM2 app '$APP_NAME'" >&2
+  echo "$listeners" >&2
+  return 1
 }
 
 install_binary_atomically() {
@@ -62,37 +105,60 @@ rollback() {
     fi
   fi
 
-  if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
+  if [[ "$APP_START_ATTEMPTED" -eq 1 && "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
     echo "==> Restoring previous PM2 process"
-    pm2_with_clean_proxy_env restart "$APP_NAME" --update-env >/dev/null 2>&1 \
+    if pm2_with_clean_proxy_env restart "$APP_NAME" --update-env >/dev/null 2>&1 \
       || pm2_with_clean_proxy_env start "$BIN_PATH" \
         --name "$APP_NAME" \
         --cwd "$RUNTIME_DIR" \
         --interpreter none \
         --time \
         --output "$LOG_DIR/ccload.log" \
-        --error "$LOG_DIR/ccload.error.log" >/dev/null 2>&1 \
-      || true
+        --error "$LOG_DIR/ccload.error.log" >/dev/null 2>&1; then
+      if healthcheck; then
+        echo "==> Rollback health check passed"
+      else
+        echo "ERROR: previous binary was restored, but rollback health check failed" >&2
+      fi
+    else
+      echo "ERROR: previous binary was restored, but PM2 could not restart it" >&2
+    fi
+  elif [[ "$APP_START_ATTEMPTED" -eq 1 ]]; then
+    echo "==> Removing failed new PM2 process"
+    pm2_with_clean_proxy_env delete "$APP_NAME" >/dev/null 2>&1 || true
   fi
 }
 
 healthcheck() {
-  local attempt
+  local attempt app_pid stable_pid
   for ((attempt = 1; attempt <= HEALTHCHECK_RETRIES; attempt++)); do
-    if curl --silent --show-error --fail \
-      --max-time "$HEALTHCHECK_TIMEOUT" \
-      "$HEALTHCHECK_URL" >/dev/null; then
-      echo "==> Health check passed: $HEALTHCHECK_URL"
-      return 0
+    app_pid="$(pm2_app_pid)"
+    if port_owned_by_pid "$app_pid" \
+      && curl --silent --show-error --fail --noproxy '*' \
+        --max-time "$HEALTHCHECK_TIMEOUT" \
+        "$HEALTHCHECK_URL" >/dev/null; then
+      if [[ "$HEALTHCHECK_STABLE_SECONDS" != "0" ]]; then
+        sleep "$HEALTHCHECK_STABLE_SECONDS"
+      fi
+      stable_pid="$(pm2_app_pid)"
+      if [[ "$stable_pid" == "$app_pid" ]] \
+        && port_owned_by_pid "$stable_pid" \
+        && curl --silent --show-error --fail --noproxy '*' \
+          --max-time "$HEALTHCHECK_TIMEOUT" \
+          "$HEALTHCHECK_URL" >/dev/null; then
+        echo "==> Health check passed: $HEALTHCHECK_URL (PM2 PID $stable_pid owns port $PORT_NUMBER)"
+        return 0
+      fi
     fi
 
     if [[ "$attempt" -lt "$HEALTHCHECK_RETRIES" ]]; then
-      echo "==> Health check failed (attempt $attempt/$HEALTHCHECK_RETRIES), retrying in ${HEALTHCHECK_INTERVAL}s..."
+      echo "==> Health/port check failed (attempt $attempt/$HEALTHCHECK_RETRIES, PM2 PID ${app_pid:-none}), retrying in ${HEALTHCHECK_INTERVAL}s..."
       sleep "$HEALTHCHECK_INTERVAL"
     fi
   done
 
-  echo "ERROR: health check failed after $HEALTHCHECK_RETRIES attempts: $HEALTHCHECK_URL" >&2
+  echo "ERROR: health/port check failed after $HEALTHCHECK_RETRIES attempts: $HEALTHCHECK_URL" >&2
+  port_listener_snapshot >&2
   return 1
 }
 
@@ -107,8 +173,7 @@ on_error() {
 trap 'on_error $LINENO $?' ERR
 
 if [[ -z "$PM2_BIN" ]]; then
-  echo "ERROR: pm2 not found in PATH. Set PM2_BIN=/path/to/pm2 or install pm2 first." >&2
-  exit 1
+  fail "pm2 not found in PATH. Set PM2_BIN=/path/to/pm2 or install pm2 first."
 fi
 
 # Make pm2's node runtime available even when this script is run from a minimal shell.
@@ -119,13 +184,11 @@ if [[ "$PM2_REAL" == */lib/node_modules/pm2/bin/pm2 ]]; then
 fi
 
 if [[ ! -d "$RUNTIME_DIR" ]]; then
-  echo "ERROR: runtime dir not found: $RUNTIME_DIR" >&2
-  exit 1
+  fail "runtime dir not found: $RUNTIME_DIR"
 fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERROR: env file not found: $ENV_FILE" >&2
-  exit 1
+  fail "env file not found: $ENV_FILE"
 fi
 
 # Load runtime env so PORT/HEALTHCHECK_URL and other shell-compatible values
@@ -136,13 +199,21 @@ source "$ENV_FILE"
 set +a
 
 PORT="${PORT:-8080}"
+PORT_NUMBER="${PORT#:}"
+if [[ ! "$PORT_NUMBER" =~ ^[0-9]+$ ]] || ((10#$PORT_NUMBER < 1 || 10#$PORT_NUMBER > 65535)); then
+  fail "invalid PORT value: $PORT"
+fi
 SQLITE_PATH="${SQLITE_PATH:-$RUNTIME_DIR/data/ccload.db}"
-HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:${PORT}/health}"
+HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:${PORT_NUMBER}/health}"
 HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-10}"
 HEALTHCHECK_INTERVAL="${HEALTHCHECK_INTERVAL:-2}"
 HEALTHCHECK_TIMEOUT="${HEALTHCHECK_TIMEOUT:-3}"
+HEALTHCHECK_STABLE_SECONDS="${HEALTHCHECK_STABLE_SECONDS:-2}"
 DEBUG_LOG_DIR="${CCLOAD_DEBUG_LOG_DIR:-$DEBUG_LOG_DIR}"
 DEBUG_ANALYSIS_DIR="${CCLOAD_DEBUG_ANALYSIS_DIR:-$DEBUG_ANALYSIS_DIR}"
+
+command -v curl >/dev/null 2>&1 || fail "curl not found in PATH"
+command -v ss >/dev/null 2>&1 || fail "ss not found in PATH (install iproute2)"
 
 # Relative Debug paths are resolved against the PM2 runtime directory.  The
 # deploy script may be invoked from any working directory, while PM2 starts
@@ -159,13 +230,14 @@ chmod 700 "$DEBUG_LOG_DIR" "$DEBUG_ANALYSIS_DIR"
 export CCLOAD_DEBUG_LOG_DIR="$DEBUG_LOG_DIR"
 export CCLOAD_DEBUG_ANALYSIS_DIR="$DEBUG_ANALYSIS_DIR"
 
+if pm2_with_clean_proxy_env describe "$APP_NAME" >/dev/null 2>&1; then
+  PM2_EXISTS_BEFORE=1
+fi
+check_port_before_deploy
+
 cd "$SOURCE_DIR"
 echo "==> Building ccLoad from $SOURCE_DIR"
 GOTAGS="$GOTAGS" make build
-
-if "$PM2_BIN" describe "$APP_NAME" >/dev/null 2>&1; then
-  PM2_EXISTS_BEFORE=1
-fi
 
 echo "==> Installing binary to $BIN_PATH"
 if [[ -f "$BIN_PATH" ]]; then
@@ -179,8 +251,7 @@ DEPLOYED_BINARY=1
 
 if [[ "$ANALYZER_ENABLED" == "1" ]]; then
   if [[ ! -f "$ANALYZER_BIN_SOURCE" ]]; then
-    echo "ERROR: analyzer binary not found: $ANALYZER_BIN_SOURCE" >&2
-    exit 1
+    fail "analyzer binary not found: $ANALYZER_BIN_SOURCE"
   fi
   echo "==> Installing Go debug analyzer to $ANALYZER_BIN_PATH"
   install_binary_atomically "$ANALYZER_BIN_SOURCE" "$ANALYZER_BIN_PATH"
@@ -193,15 +264,14 @@ fi
 
 if [[ "$DB_MAINTENANCE_ON_RESTART" == "1" ]]; then
   if [[ -z "$PYTHON_BIN" ]]; then
-    echo "ERROR: python3 not found in PATH. Set PYTHON_BIN=/path/to/python3 or disable DB_MAINTENANCE_ON_RESTART=0." >&2
-    exit 1
+    fail "python3 not found in PATH. Set PYTHON_BIN=/path/to/python3 or disable DB_MAINTENANCE_ON_RESTART=0."
   fi
   if [[ ! -f "$DB_MAINTENANCE_RUNTIME_SCRIPT" ]]; then
-    echo "ERROR: SQLite maintenance script not found: $DB_MAINTENANCE_RUNTIME_SCRIPT" >&2
-    exit 1
+    fail "SQLite maintenance script not found: $DB_MAINTENANCE_RUNTIME_SCRIPT"
   fi
 
   echo "==> Offline SQLite maintenance requested; stopping PM2 app/analyzer first"
+  APP_START_ATTEMPTED=1
   "$PM2_BIN" stop "$ANALYZER_NAME" >/dev/null 2>&1 || true
   "$PM2_BIN" stop "$APP_NAME" >/dev/null 2>&1 || true
   "$PYTHON_BIN" "$DB_MAINTENANCE_RUNTIME_SCRIPT" \
@@ -213,9 +283,11 @@ fi
 
 if [[ "$PM2_EXISTS_BEFORE" -eq 1 ]]; then
   echo "==> Restarting PM2 app: $APP_NAME"
+  APP_START_ATTEMPTED=1
   pm2_with_clean_proxy_env restart "$APP_NAME" --update-env
 else
   echo "==> Starting PM2 app: $APP_NAME"
+  APP_START_ATTEMPTED=1
   pm2_with_clean_proxy_env start "$BIN_PATH" \
     --name "$APP_NAME" \
     --cwd "$RUNTIME_DIR" \
