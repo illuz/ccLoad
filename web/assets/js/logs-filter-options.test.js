@@ -27,15 +27,17 @@ function extractFunction(source, name) {
   assert.fail(`函数 ${name} 大括号未闭合`);
 }
 
-function makeSandbox(initialChannels = [], initialModels = []) {
+function makeSandbox(initialChannels = [], initialModels = [], initialStatusCodes = []) {
   const sandbox = {
     refreshCount: 0,
     logsChannelNameCombobox: { refresh() { sandbox.refreshCount++; } },
-    logsModelCombobox: { refresh() { sandbox.refreshCount++; } }
+    logsModelCombobox: { refresh() { sandbox.refreshCount++; } },
+    logsStatusCombobox: { refresh() { sandbox.refreshCount++; } }
   };
   sandbox.window = sandbox;
   sandbox.logsChannels = initialChannels;
   sandbox.availableLogsModels = initialModels;
+  sandbox.availableLogsStatusCodes = initialStatusCodes;
 
   vm.runInNewContext(extractFunction(logsSource, 'mergeLogsFilterOptions'), sandbox);
   return sandbox;
@@ -74,6 +76,21 @@ test('actual_model（重定向后实际模型）也并入模型下拉', () => {
   assertJSONEqual(sandbox.availableLogsModels, ['req-model', 'real-model']);
 });
 
+test('日志数据中新出现的状态码合并进下拉、去重并排序', () => {
+  const sandbox = makeSandbox([], [], [500, 200]);
+
+  sandbox.mergeLogsFilterOptions([
+    { status_code: 404 },
+    { status_code: 200 },
+    { status_code: 404 },
+    { status_code: 99 },
+    { status_code: 1000 }
+  ]);
+
+  assertJSONEqual(sandbox.availableLogsStatusCodes, [200, 404, 500]);
+  assert.ok(sandbox.refreshCount > 0, '有新增状态码时应刷新下拉');
+});
+
 test('无新增项时不触发下拉刷新', () => {
   const sandbox = makeSandbox([{ id: 1, name: 'ch' }], ['m']);
 
@@ -91,5 +108,6 @@ test('空数据/缺字段安全跳过', () => {
 
   assertJSONEqual(sandbox.logsChannels, []);
   assertJSONEqual(sandbox.availableLogsModels, []);
+  assertJSONEqual(sandbox.availableLogsStatusCodes, []);
   assert.equal(sandbox.refreshCount, 0);
 });

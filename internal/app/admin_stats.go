@@ -520,13 +520,14 @@ func (s *Server) HandlePublicVersion(c *gin.Context) {
 	})
 }
 
-// ModelsChannelsResponse 模型和渠道列表响应
+// ModelsChannelsResponse 日志筛选所需的模型、渠道和状态码列表响应。
 type ModelsChannelsResponse struct {
-	Models   []string              `json:"models"`
-	Channels []model.ChannelNameID `json:"channels"`
+	Models      []string              `json:"models"`
+	Channels    []model.ChannelNameID `json:"channels"`
+	StatusCodes []int                 `json:"status_codes"`
 }
 
-// HandleGetModels 获取数据库中有日志的模型和渠道列表（去重）
+// HandleGetModels 获取数据库中有日志的模型、渠道和状态码列表（去重）。
 // GET /admin/models
 // 支持参数：range（时间范围）、channel_type（渠道类型筛选）
 func (s *Server) HandleGetModels(c *gin.Context) {
@@ -538,19 +539,48 @@ func (s *Server) HandleGetModels(c *gin.Context) {
 	channelType := c.Query("channel_type")
 	logFilter := &model.LogFilter{LogSource: model.LogSourceProxy}
 
-	models, err := s.store.GetDistinctModels(c.Request.Context(), since, until, channelType, logFilter)
-	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
+	var (
+		models                              []string
+		channels                            []model.ChannelNameID
+		statusCodes                         []int
+		wg                                  sync.WaitGroup
+		modelsErr, channelsErr, statusesErr error
+	)
+
+	wg.Go(func() {
+		models, modelsErr = s.store.GetDistinctModels(c.Request.Context(), since, until, channelType, logFilter)
+	})
+	wg.Go(func() {
+		channels, channelsErr = s.store.GetDistinctChannels(c.Request.Context(), since, until, channelType, logFilter)
+	})
+	wg.Go(func() {
+		statusCodes, statusesErr = s.store.GetDistinctStatusCodes(c.Request.Context(), since, until, channelType, logFilter)
+	})
+	wg.Wait()
+
+	if modelsErr != nil {
+		RespondError(c, http.StatusInternalServerError, modelsErr)
 		return
 	}
-
-	channels, err := s.store.GetDistinctChannels(c.Request.Context(), since, until, channelType, logFilter)
-	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
+	if channelsErr != nil {
+		RespondError(c, http.StatusInternalServerError, channelsErr)
 		return
 	}
+	if statusesErr != nil {
+		RespondError(c, http.StatusInternalServerError, statusesErr)
+		return
+	}
+	if models == nil {
+		models = make([]string, 0)
+	}
+	if channels == nil {
+		channels = make([]model.ChannelNameID, 0)
+	}
+	if statusCodes == nil {
+		statusCodes = make([]int, 0)
+	}
 
-	RespondJSON(c, http.StatusOK, ModelsChannelsResponse{Models: models, Channels: channels})
+	RespondJSON(c, http.StatusOK, ModelsChannelsResponse{Models: models, Channels: channels, StatusCodes: statusCodes})
 }
 
 // HandleHealth 健康检查端点(公开访问,无需认证)

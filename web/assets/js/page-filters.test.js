@@ -110,7 +110,8 @@ test('page-filters 使用响应式宽度类代替筛选控件内联像素宽度'
   assert.match(logsLayout, /id="f_name_dropdown" class="filter-dropdown"/);
   assert.match(logsLayout, /id="f_model" class="filter-select filter-combobox"/);
   assert.match(logsLayout, /id="f_model_dropdown" class="filter-dropdown"/);
-  assert.match(logsLayout, /id="f_status" class="filter-input filter-control--narrow"/);
+  assert.match(logsLayout, /class="filter-combobox-wrapper filter-control--narrow"[\s\S]*id="f_status" class="filter-select filter-combobox"/);
+  assert.match(logsLayout, /id="f_status_dropdown" class="filter-dropdown"/);
   assert.match(logsLayout, /class="filter-group logs-filter-group logs-filter-group--token"[\s\S]*id="f_auth_token" class="filter-select filter-control--wide logs-filter-control--token"/);
   assert.match(trendLayout, /id="f_model" class="filter-select filter-control--wide"/);
   assert.match(trendLayout, /class="filter-controls trend-filter-controls"/);
