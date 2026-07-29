@@ -41,8 +41,12 @@ body {
 }
 
 .public-usage-refresh {
-  min-height: 36px;
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: 1px solid var(--surface-border-strong);
   border-radius: var(--radius-base);
   background: var(--surface-bg);
@@ -56,8 +60,7 @@ body {
   background: var(--surface-hover);
 }
 
-.public-usage-refresh:focus-visible,
-.public-usage-toolbar select:focus-visible {
+.public-usage-refresh:focus-visible {
   outline: 2px solid var(--primary-500);
   outline-offset: 2px;
 }
@@ -65,30 +68,6 @@ body {
 .public-usage-refresh:disabled {
   cursor: wait;
   opacity: 0.65;
-}
-
-.public-usage-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 20px 0;
-}
-
-.public-usage-toolbar label {
-  color: var(--muted-fg);
-  font-size: 14px;
-}
-
-.public-usage-toolbar select {
-  min-width: 112px;
-  min-height: 36px;
-  padding: 6px 28px 6px 10px;
-  border: 1px solid var(--surface-border-strong);
-  border-radius: var(--radius-base);
-  background: var(--field-bg);
-  color: var(--body-fg);
-  font: inherit;
-  font-size: 14px;
 }
 
 .public-usage-section {
@@ -109,7 +88,6 @@ body {
   line-height: 1.4;
 }
 
-.public-usage-period,
 .public-usage-live {
   color: var(--muted-fg);
   font-size: 13px;
@@ -122,7 +100,7 @@ body {
 
 .public-usage-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
 }
@@ -155,6 +133,40 @@ body {
   color: var(--primary-600);
 }
 
+.public-usage-metric-detail {
+  margin: 8px 0 0;
+  color: var(--muted-fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.public-usage-quota-track {
+  display: block;
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-bg-muted);
+}
+
+.public-usage-quota-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary-500);
+  transition: width 0.2s ease;
+}
+
+.public-usage-chart-section {
+  padding-bottom: 8px;
+}
+
+.public-usage-chart {
+  width: 100%;
+  height: 360px;
+  min-height: 360px;
+}
+
 @media (max-width: 760px) {
   .public-usage-page {
     width: min(100% - 24px, 1120px);
@@ -162,7 +174,7 @@ body {
   }
 
   .public-usage-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .public-usage-metric {
@@ -172,6 +184,11 @@ body {
 
   .public-usage-metric dd {
     font-size: 18px;
+  }
+
+  .public-usage-chart {
+    height: 320px;
+    min-height: 320px;
   }
 }
 
@@ -184,7 +201,4 @@ body {
     font-size: 21px;
   }
 
-  .public-usage-refresh {
-    padding-inline: 10px;
-  }
 }

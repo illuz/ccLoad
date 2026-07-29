@@ -7,26 +7,42 @@ import (
 	"time"
 
 	"ccLoad/internal/model"
+	"ccLoad/internal/util"
 
 	"github.com/gin-gonic/gin"
 )
 
-// PublicKeyUsageResponse contains only usage figures. It intentionally omits
-// the token value, hash, description, and quota configuration.
-type PublicKeyUsageResponse struct {
-	Range            string                     `json:"range"`
-	RangeStart       int64                      `json:"range_start"`
-	RangeEnd         int64                      `json:"range_end"`
-	History          *model.AuthTokenRangeStats `json:"history"`
-	Today            *model.AuthTokenRangeStats `json:"today"`
-	Total            model.AuthTokenRangeStats  `json:"total"`
-	UpdatedAt        int64                      `json:"updated_at"`
-	HistoryIsCurrent bool                       `json:"history_is_current"`
+const publicKeyUsageBucket = 30 * time.Minute
+
+type PublicKeyTodayUsage struct {
+	RequestCount  int     `json:"request_count"`
+	TotalTokens   int64   `json:"total_tokens"`
+	EffectiveCost float64 `json:"effective_cost"`
 }
 
-// HandlePublicKeyUsage returns the requested key's historical range, live
-// statistics for today, and cumulative totals.
-// GET /public/key-usage?key=...&range=today|yesterday|this_week|this_month|custom
+type PublicKeyCostQuota struct {
+	UsedUSD         float64  `json:"used_usd"`
+	LimitUSD        *float64 `json:"limit_usd,omitempty"`
+	UsagePercentage *float64 `json:"usage_percentage,omitempty"`
+}
+
+type PublicKeyUsageTrendPoint struct {
+	Timestamp     int64   `json:"timestamp"`
+	EffectiveCost float64 `json:"effective_cost"`
+	TotalTokens   int64   `json:"total_tokens"`
+}
+
+// PublicKeyUsageResponse intentionally omits token metadata and channel data.
+type PublicKeyUsageResponse struct {
+	TodayStart int64                      `json:"today_start"`
+	Today      PublicKeyTodayUsage        `json:"today"`
+	CostQuota  PublicKeyCostQuota         `json:"cost_quota"`
+	Trend      []PublicKeyUsageTrendPoint `json:"trend"`
+	UpdatedAt  int64                      `json:"updated_at"`
+}
+
+// HandlePublicKeyUsage returns only today's live totals and half-hour trend.
+// GET /public/key-usage?key=...
 func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
@@ -37,46 +53,26 @@ func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 		return
 	}
 
-	params := ParsePaginationParams(c)
 	now := time.Now()
 	todayStart := beginningOfDay(now)
-	historyStart, historyEnd := params.GetTimeRangeAt(now)
-	total := publicUsageTotal(token)
-
-	var (
-		history *model.AuthTokenRangeStats
-		err     error
-	)
-	if params.Range == "all" {
-		history = &total
-		historyStart = token.CreatedAt
-		historyEnd = now
-	} else {
-		history, err = s.store.GetAuthTokenStatsByIDInRange(ctx, token.ID, historyStart, historyEnd, params.Range == "today")
-		if err != nil {
-			RespondError(c, http.StatusInternalServerError, err)
-			return
-		}
+	authTokenID := token.ID
+	points, err := s.store.AggregateRangeWithFilter(ctx, todayStart, now, publicKeyUsageBucket, &model.LogFilter{
+		AuthTokenID: &authTokenID,
+	})
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
 	}
 
-	today := history
-	if !sameTimeRange(historyStart, historyEnd, todayStart, now) || params.Range == "all" {
-		today, err = s.store.GetAuthTokenStatsByIDInRange(ctx, token.ID, todayStart, now, true)
-		if err != nil {
-			RespondError(c, http.StatusInternalServerError, err)
-			return
-		}
-	}
+	today, trend := buildPublicKeyTodayUsage(points)
+	costQuota := s.buildPublicKeyCostQuota(ctx, token)
 
 	RespondJSON(c, http.StatusOK, PublicKeyUsageResponse{
-		Range:            params.Range,
-		RangeStart:       historyStart.UnixMilli(),
-		RangeEnd:         historyEnd.UnixMilli(),
-		History:          history,
-		Today:            today,
-		Total:            total,
-		UpdatedAt:        now.UnixMilli(),
-		HistoryIsCurrent: params.Range == "today",
+		TodayStart: todayStart.UnixMilli(),
+		Today:      today,
+		CostQuota:  costQuota,
+		Trend:      trend,
+		UpdatedAt:  now.UnixMilli(),
 	})
 }
 
@@ -113,26 +109,72 @@ func respondPublicUsageNotFound(c *gin.Context) {
 	c.Abort()
 }
 
-func publicUsageTotal(token *model.AuthToken) model.AuthTokenRangeStats {
-	if token == nil {
-		return model.AuthTokenRangeStats{}
+func buildPublicKeyTodayUsage(points []model.MetricPoint) (PublicKeyTodayUsage, []PublicKeyUsageTrendPoint) {
+	today := PublicKeyTodayUsage{}
+	trend := make([]PublicKeyUsageTrendPoint, 0, len(points))
+	for _, point := range points {
+		cost := 0.0
+		if point.EffectiveCost != nil {
+			cost = *point.EffectiveCost
+		}
+		tokens := point.InputTokens + point.OutputTokens + point.CacheReadTokens + point.CacheCreationTokens
+		today.RequestCount += point.Success + point.Error
+		today.TotalTokens += tokens
+		today.EffectiveCost += cost
+		trend = append(trend, PublicKeyUsageTrendPoint{
+			Timestamp:     point.Ts.UnixMilli(),
+			EffectiveCost: cost,
+			TotalTokens:   tokens,
+		})
 	}
-	return model.AuthTokenRangeStats{
-		SuccessCount:        token.SuccessCount,
-		FailureCount:        token.FailureCount,
-		PromptTokens:        token.PromptTokensTotal,
-		CompletionTokens:    token.CompletionTokensTotal,
-		CacheReadTokens:     token.CacheReadTokensTotal,
-		CacheCreationTokens: token.CacheCreationTokensTotal,
-		TotalCost:           token.TotalCostUSD,
-		EffectiveCost:       token.EffectiveCostUSD,
-		StreamAvgTTFB:       token.StreamAvgTTFB,
-		NonStreamAvgRT:      token.NonStreamAvgRT,
-		StreamCount:         token.StreamCount,
-		NonStreamCount:      token.NonStreamCount,
-	}
+	return today, trend
 }
 
-func sameTimeRange(firstStart, firstEnd, secondStart, secondEnd time.Time) bool {
-	return firstStart.Equal(secondStart) && firstEnd.Equal(secondEnd)
+func (s *Server) buildPublicKeyCostQuota(ctx context.Context, token *model.AuthToken) PublicKeyCostQuota {
+	if token == nil {
+		return PublicKeyCostQuota{}
+	}
+	token.NormalizeDailyCostForToday()
+
+	if token.GroupID > 0 {
+		group, err := s.store.GetAuthTokenGroup(ctx, token.GroupID)
+		if err == nil {
+			token.ApplyGroupEffective(group)
+		} else {
+			token.ApplyGroupEffective(nil)
+		}
+	} else {
+		token.ApplyGroupEffective(nil)
+	}
+
+	usedMicro := int64(0)
+	limitMicro := effectiveDailyLimitMicro(token)
+	if limitMicro > 0 {
+		usedMicro = token.DailyCostUsedMicroUSD
+		if s.authService != nil {
+			if used, limit, _ := s.authService.IsDailyCostLimitExceeded(token.Token); limit > 0 {
+				usedMicro = used
+				limitMicro = limit
+			}
+		}
+	} else {
+		usedMicro = token.CostUsedMicroUSD
+		limitMicro = effectiveCostLimitMicro(token)
+		if s.authService != nil {
+			if used, limit, _ := s.authService.IsCostLimitExceeded(token.Token); limit > 0 {
+				usedMicro = used
+				limitMicro = limit
+			}
+		}
+	}
+
+	quota := PublicKeyCostQuota{UsedUSD: util.MicroUSDToUSD(usedMicro)}
+	if limitMicro <= 0 {
+		return quota
+	}
+	limitUSD := util.MicroUSDToUSD(limitMicro)
+	percentage := float64(usedMicro) * 100 / float64(limitMicro)
+	quota.LimitUSD = &limitUSD
+	quota.UsagePercentage = &percentage
+	return quota
 }

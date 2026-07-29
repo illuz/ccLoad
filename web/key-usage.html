@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/web/assets/css/styles.css?v=__VERSION__">
   <link rel="stylesheet" href="/web/assets/css/key-usage.css?v=__VERSION__">
   <link rel="stylesheet" href="/web/theme.css?v=__VERSION__">
+  <script defer src="/web/assets/js/echarts.min.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/key-usage.js?v=__VERSION__"></script>
 </head>
 <body>
@@ -21,28 +22,10 @@
         <h1>Key 使用情况</h1>
         <p id="updatedAt" class="public-usage-updated">--</p>
       </div>
-      <button id="refreshButton" class="public-usage-refresh" type="button">刷新</button>
+      <button id="refreshButton" class="public-usage-refresh" type="button" title="刷新" aria-label="刷新">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M20 6V10H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18V14H8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.49 9A7 7 0 0 0 6.64 6.64L4 10M20 14L17.36 17.36A7 7 0 0 1 5.51 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </header>
-
-    <section class="public-usage-toolbar" aria-label="历史统计范围">
-      <label for="historyRange">历史区间</label>
-      <select id="historyRange">
-        <option value="today">本日</option>
-        <option value="yesterday">昨日</option>
-        <option value="this_week">本周</option>
-        <option value="this_month">本月</option>
-        <option value="last_month">上月</option>
-        <option value="all">全部</option>
-      </select>
-    </section>
-
-    <section class="public-usage-section" aria-labelledby="historyTitle">
-      <div class="public-usage-section-heading">
-        <h2 id="historyTitle">历史统计</h2>
-        <span id="historyPeriod" class="public-usage-period">--</span>
-      </div>
-      <dl id="historyMetrics" class="public-usage-metrics"></dl>
-    </section>
 
     <section class="public-usage-section" aria-labelledby="todayTitle">
       <div class="public-usage-section-heading">
@@ -52,11 +35,11 @@
       <dl id="todayMetrics" class="public-usage-metrics"></dl>
     </section>
 
-    <section class="public-usage-section" aria-labelledby="totalTitle">
+    <section class="public-usage-section public-usage-chart-section" aria-labelledby="trendTitle">
       <div class="public-usage-section-heading">
-        <h2 id="totalTitle">累计总量</h2>
+        <h2 id="trendTitle">今日用量趋势</h2>
       </div>
-      <dl id="totalMetrics" class="public-usage-metrics"></dl>
+      <div id="usageChart" class="public-usage-chart" role="img" aria-label="今日费用和 Token 使用趋势图"></div>
     </section>
   </main>
 </body>

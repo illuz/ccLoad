@@ -3,15 +3,13 @@
 
   const REFRESH_INTERVAL_MS = 15000;
   const key = new URLSearchParams(window.location.search).get('key');
-  const rangeSelect = document.getElementById('historyRange');
   const refreshButton = document.getElementById('refreshButton');
-  const historyMetrics = document.getElementById('historyMetrics');
   const todayMetrics = document.getElementById('todayMetrics');
-  const totalMetrics = document.getElementById('totalMetrics');
-  const historyPeriod = document.getElementById('historyPeriod');
   const updatedAt = document.getElementById('updatedAt');
+  const chartElement = document.getElementById('usageChart');
 
   let loading = false;
+  let usageChart = null;
 
   if (!key) {
     window.location.replace('/key-usage');
@@ -33,36 +31,34 @@
     }).format(Number(value) || 0);
   }
 
-  function percent(stats) {
-    const total = (Number(stats.success_count) || 0) + (Number(stats.failure_count) || 0);
-    if (!total) return '0%';
-    return `${number((Number(stats.success_count) || 0) * 100 / total, 1)}%`;
+  function costMetric(today, quota) {
+    const limit = Number(quota.limit_usd);
+    const percentage = Number(quota.usage_percentage);
+    if (Number.isFinite(limit) && limit > 0 && Number.isFinite(percentage)) {
+      return {
+        label: '实际费用',
+        value: currency(today.effective_cost),
+        detail: `费用上限 ${currency(limit)} · 已使用 ${number(percentage, 1)}%`,
+        progress: Math.max(0, Math.min(100, percentage)),
+        cost: true
+      };
+    }
+    return {
+      label: '实际费用',
+      value: currency(today.effective_cost),
+      cost: true
+    };
   }
 
-  function milliseconds(seconds) {
-    return `${number((Number(seconds) || 0) * 1000, 0)} ms`;
-  }
-
-  function metricsFor(stats, includeLive) {
+  function renderMetrics(data) {
+    const today = data.today || {};
+    const quota = data.cost_quota || {};
     const metrics = [
-      { label: '实际费用', value: currency(stats.effective_cost), cost: true },
-      { label: '请求次数', value: number((Number(stats.success_count) || 0) + (Number(stats.failure_count) || 0)) },
-      { label: '成功率', value: percent(stats) },
-      { label: '输入 Token', value: number(stats.prompt_tokens) },
-      { label: '输出 Token', value: number(stats.completion_tokens) },
-      { label: '缓存读取', value: number(stats.cache_read_tokens) },
-      { label: '缓存写入', value: number(stats.cache_creation_tokens) }
+      costMetric(today, quota),
+      { label: '请求次数', value: number(today.request_count) },
+      { label: '总 Token', value: number(today.total_tokens) }
     ];
 
-    if (includeLive) {
-      metrics.push({ label: '最近一分钟 RPM', value: number(stats.recent_rpm, 1) });
-    } else {
-      metrics.push({ label: '平均 RPM', value: number(stats.avg_rpm, 1) });
-    }
-    return metrics;
-  }
-
-  function renderMetrics(container, metrics) {
     const fragment = document.createDocumentFragment();
     metrics.forEach((metric) => {
       const item = document.createElement('div');
@@ -72,26 +68,113 @@
       label.textContent = metric.label;
       value.textContent = metric.value;
       item.append(label, value);
+
+      if (metric.detail) {
+        const detail = document.createElement('p');
+        detail.className = 'public-usage-metric-detail';
+        detail.textContent = metric.detail;
+        item.appendChild(detail);
+      }
+      if (metric.progress !== undefined) {
+        const track = document.createElement('div');
+        const fill = document.createElement('span');
+        track.className = 'public-usage-quota-track';
+        fill.className = 'public-usage-quota-fill';
+        fill.style.width = `${metric.progress}%`;
+        track.appendChild(fill);
+        item.appendChild(track);
+      }
       fragment.appendChild(item);
     });
-    container.replaceChildren(fragment);
+    todayMetrics.replaceChildren(fragment);
   }
 
-  function formatPeriod(start, end) {
-    const format = new Intl.DateTimeFormat('zh-CN', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    return `${format.format(new Date(start))} - ${format.format(new Date(end))}`;
+  function chartColors() {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      cost: styles.getPropertyValue('--warning-500').trim() || '#f59e0b',
+      token: styles.getPropertyValue('--primary-400').trim() || '#3ca3ff',
+      text: styles.getPropertyValue('--neutral-600').trim() || '#d1d5db',
+      grid: styles.getPropertyValue('--surface-border').trim() || 'rgba(255,255,255,0.12)'
+    };
+  }
+
+  function renderChart(points) {
+    if (!window.echarts || !chartElement) return;
+    if (!usageChart) usageChart = window.echarts.init(chartElement);
+
+    const colors = chartColors();
+    const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const labels = points.map((point) => timeFormat.format(new Date(point.timestamp)));
+    const costs = points.map((point) => Number(point.effective_cost) || 0);
+    const tokens = points.map((point) => Number(point.total_tokens) || 0);
+
+    usageChart.setOption({
+      animationDuration: 250,
+      color: [colors.cost, colors.token],
+      grid: { left: 12, right: 12, top: 48, bottom: 8, containLabel: true },
+      legend: {
+        top: 4,
+        data: ['费用', 'Token'],
+        textStyle: { color: colors.text }
+      },
+      tooltip: {
+        trigger: 'axis',
+        formatter(params) {
+          const rows = params.map((item) => {
+            const value = item.seriesName === '费用' ? currency(item.value) : number(item.value);
+            return `${item.marker}${item.seriesName}: ${value}`;
+          });
+          return `${params[0]?.axisValue || ''}<br>${rows.join('<br>')}`;
+        }
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: true,
+        data: labels,
+        axisLine: { lineStyle: { color: colors.grid } },
+        axisTick: { show: false },
+        axisLabel: { color: colors.text, hideOverlap: true }
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: '费用 (USD)',
+          nameTextStyle: { color: colors.text },
+          axisLabel: { color: colors.text },
+          splitLine: { lineStyle: { color: colors.grid } }
+        },
+        {
+          type: 'value',
+          name: 'Token',
+          nameTextStyle: { color: colors.text },
+          axisLabel: { color: colors.text, formatter: (value) => number(value) },
+          splitLine: { show: false }
+        }
+      ],
+      series: [
+        {
+          name: '费用',
+          type: 'line',
+          yAxisIndex: 0,
+          data: costs,
+          showSymbol: false,
+          lineStyle: { width: 2 }
+        },
+        {
+          name: 'Token',
+          type: 'bar',
+          yAxisIndex: 1,
+          data: tokens,
+          barMaxWidth: 18
+        }
+      ]
+    }, true);
   }
 
   function render(data) {
-    renderMetrics(historyMetrics, metricsFor(data.history || {}, data.history_is_current));
-    renderMetrics(todayMetrics, metricsFor(data.today || {}, true));
-    renderMetrics(totalMetrics, metricsFor(data.total || {}, false));
-    historyPeriod.textContent = formatPeriod(data.range_start, data.range_end);
+    renderMetrics(data);
+    renderChart(Array.isArray(data.trend) ? data.trend : []);
     updatedAt.textContent = `更新于 ${new Intl.DateTimeFormat('zh-CN', {
       hour: '2-digit',
       minute: '2-digit',
@@ -104,7 +187,7 @@
     loading = true;
     refreshButton.disabled = true;
     try {
-      const query = new URLSearchParams({ key, range: rangeSelect.value });
+      const query = new URLSearchParams({ key });
       const response = await fetch(`/public/key-usage?${query.toString()}`, {
         headers: { Accept: 'application/json' },
         cache: 'no-store'
@@ -125,8 +208,8 @@
     }
   }
 
-  rangeSelect.addEventListener('change', load);
   refreshButton.addEventListener('click', load);
+  window.addEventListener('resize', () => usageChart?.resize());
   window.setInterval(load, REFRESH_INTERVAL_MS);
   load();
 })();
