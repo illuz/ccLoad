@@ -100,6 +100,12 @@ func serveStaticFileFrom(c *gin.Context, fileSystem fs.FS) {
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte("it works"))
 		return
 	}
+	// key-usage.html is an implementation template, not a public static page.
+	// /key-usage validates its key before serving it.
+	if reqPath == "key-usage.html" {
+		c.Status(http.StatusNotFound)
+		return
+	}
 
 	// 运行时主题资源：颜色由 .env 中的 CCLOAD_THEME_COLOR 控制。
 	// 这些文件不依赖嵌入资源，因此在检查静态文件存在性之前处理。

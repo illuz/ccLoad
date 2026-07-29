@@ -641,7 +641,9 @@ window.I18N_LOCALES['en'] = {
   'tokens.msg.deleteSuccess': 'Token deleted successfully',
   'tokens.msg.copySuccess': 'Key copied to clipboard',
   'tokens.msg.noPlainToken': 'No plaintext token is stored for this token',
+  'tokens.msg.usageLinkCopied': 'Usage link copied to clipboard',
   'tokens.msg.regenerateSuccess': 'Key regenerated successfully',
+  'tokens.copyUsageLink': 'Copy usage link',
   // Table headers
   'tokens.table.description': 'Description',
   'tokens.table.token': 'Token',

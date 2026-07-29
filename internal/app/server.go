@@ -954,6 +954,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		public.GET("/summary", s.authService.RequireTokenAuth(), s.HandlePublicSummary)
 		public.GET("/channel-types", s.HandleGetChannelTypes)
 		public.GET("/version", s.HandlePublicVersion)
+		public.GET("/key-usage", s.HandlePublicKeyUsage)
 	}
 
 	// 事件日志（公开访问，兼容性占位接口）
@@ -1036,6 +1037,9 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/settings/:key/reset", s.AdminResetSetting)
 		admin.POST("/settings/batch", s.AdminBatchUpdateSettings)
 	}
+
+	// 公开用量页不位于 /web 下，以避开静态通配路由；处理器会校验链接中的 key。
+	r.GET("/key-usage", s.HandlePublicKeyUsagePage)
 
 	// 静态文件服务（带版本号和缓存控制）
 	// - HTML：不缓存，动态替换 __VERSION__ 占位符

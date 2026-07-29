@@ -641,7 +641,9 @@ window.I18N_LOCALES['zh-CN'] = {
   'tokens.msg.deleteSuccess': '令牌删除成功',
   'tokens.msg.copySuccess': '密钥已复制到剪贴板',
   'tokens.msg.noPlainToken': '当前令牌没有保存明文',
+  'tokens.msg.usageLinkCopied': '用量查询链接已复制到剪贴板',
   'tokens.msg.regenerateSuccess': '密钥已重新生成',
+  'tokens.copyUsageLink': '复制用量查询链接',
   // 新增：表头
   'tokens.table.description': '描述',
   'tokens.table.token': '令牌',

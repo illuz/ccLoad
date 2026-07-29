@@ -162,6 +162,7 @@
           'copy-token-result': () => copyToken(),
           'copy-edit-token': () => copyEditToken(),
           'copy-token-key': (actionTarget) => copyTokenKey(actionTarget),
+          'copy-token-usage-link': (actionTarget) => copyTokenUsageLink(actionTarget),
           'close-edit-modal': () => closeEditModal(),
           'update-token': () => updateToken(),
           'show-model-select-modal': () => showModelSelectModal(),
@@ -746,6 +747,14 @@
       return String(token.plain_token || '').trim();
     }
 
+    function buildTokenUsageLink(tokenValue) {
+      const key = String(tokenValue || '').trim();
+      if (!key) return '';
+      const url = new URL('/key-usage', window.location.origin);
+      url.searchParams.set('key', key);
+      return url.toString();
+    }
+
     function formatGroupQuotaSummary(group) {
       if (!group) return t('tokens.unlimited');
       const costLimitUSD = Number(group.cost_limit_usd || 0);
@@ -963,6 +972,7 @@
       const tokenID = normalizeSelectedTokenID(token.id);
       const copyTokenValue = getTokenCopyValue(token);
       const copyTokenTitle = copyTokenValue ? t('common.copy') : t('tokens.msg.noPlainToken');
+      const usageLinkTitle = copyTokenValue ? t('tokens.copyUsageLink') : t('tokens.msg.noPlainToken');
 
       return TemplateEngine.render('tpl-token-row', {
         id: token.id,
@@ -971,6 +981,7 @@
         maskedToken: maskedToken,
         copyTokenValue: copyTokenValue,
         copyTokenTitle: copyTokenTitle,
+        usageLinkTitle: usageLinkTitle,
         copyTokenDisabledAttr: copyTokenValue ? '' : 'disabled',
         groupHtml: groupHtml,
         dailyLimitDoubleBadgeHtml: dailyLimitDoubleBadgeHtml,
@@ -1432,6 +1443,7 @@
       const tokenID = normalizeSelectedTokenID(token.id);
       const copyTokenValue = getTokenCopyValue(token);
       const copyTokenTitle = copyTokenValue ? t('common.copy') : t('tokens.msg.noPlainToken');
+      const usageLinkTitle = copyTokenValue ? t('tokens.copyUsageLink') : t('tokens.msg.noPlainToken');
 
       return `
         <tr class="mobile-card-row token-card-row" data-token-id="${token.id}">
@@ -1442,7 +1454,7 @@
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
             <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span>${batteryHtml}</div>
-            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}${codexGuardBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button></div>
+            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}${codexGuardBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button><button type="button" class="btn-icon token-usage-link-btn" data-action="copy-token-usage-link" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(usageLinkTitle)}" aria-label="${escapeHtml(usageLinkTitle)}" ${copyTokenValue ? '' : 'disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M10 13A5 5 0 0 0 17.54 13.54L19.5 11.58A5 5 0 0 0 12.42 4.5L11.29 5.63" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11A5 5 0 0 0 6.46 10.46L4.5 12.42A5 5 0 0 0 11.58 19.5L12.71 18.37" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
             <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>
           <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
@@ -1623,6 +1635,17 @@
         return;
       }
       copyTokenToClipboard(value);
+    }
+
+    function copyTokenUsageLink(actionTarget) {
+      const link = buildTokenUsageLink(actionTarget?.dataset?.tokenValue);
+      if (!link) {
+        window.showNotification(t('tokens.msg.noPlainToken'), 'warning');
+        return;
+      }
+      window.copyToClipboard(link).then(() => {
+        window.showNotification(t('tokens.msg.usageLinkCopied'), 'success');
+      });
     }
 
     function copyEditToken() {

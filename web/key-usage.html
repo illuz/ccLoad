@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#3b82f6">
+  <link rel="icon" type="image/svg+xml" href="/web/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/web/favicon.ico">
+  <title>Key 使用情况</title>
+  <script src="/web/assets/js/theme-init.js?v=__VERSION__"></script>
+  <link rel="stylesheet" href="/web/assets/css/styles.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/assets/css/key-usage.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/theme.css?v=__VERSION__">
+  <script defer src="/web/assets/js/key-usage.js?v=__VERSION__"></script>
+</head>
+<body>
+  <main class="public-usage-page">
+    <header class="public-usage-header">
+      <div>
+        <h1>Key 使用情况</h1>
+        <p id="updatedAt" class="public-usage-updated">--</p>
+      </div>
+      <button id="refreshButton" class="public-usage-refresh" type="button">刷新</button>
+    </header>
+
+    <section class="public-usage-toolbar" aria-label="历史统计范围">
+      <label for="historyRange">历史区间</label>
+      <select id="historyRange">
+        <option value="today">本日</option>
+        <option value="yesterday">昨日</option>
+        <option value="this_week">本周</option>
+        <option value="this_month">本月</option>
+        <option value="last_month">上月</option>
+        <option value="all">全部</option>
+      </select>
+    </section>
+
+    <section class="public-usage-section" aria-labelledby="historyTitle">
+      <div class="public-usage-section-heading">
+        <h2 id="historyTitle">历史统计</h2>
+        <span id="historyPeriod" class="public-usage-period">--</span>
+      </div>
+      <dl id="historyMetrics" class="public-usage-metrics"></dl>
+    </section>
+
+    <section class="public-usage-section" aria-labelledby="todayTitle">
+      <div class="public-usage-section-heading">
+        <h2 id="todayTitle">今日实时</h2>
+        <span class="public-usage-live">实时</span>
+      </div>
+      <dl id="todayMetrics" class="public-usage-metrics"></dl>
+    </section>
+
+    <section class="public-usage-section" aria-labelledby="totalTitle">
+      <div class="public-usage-section-heading">
+        <h2 id="totalTitle">累计总量</h2>
+      </div>
+      <dl id="totalMetrics" class="public-usage-metrics"></dl>
+    </section>
+  </main>
+</body>
+</html>

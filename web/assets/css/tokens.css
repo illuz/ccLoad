@@ -450,6 +450,22 @@
       cursor: default;
       opacity: 0.72;
     }
+    .token-usage-link-btn {
+      width: 24px;
+      height: 24px;
+      min-width: 24px;
+      padding: 0;
+      color: var(--primary-600);
+    }
+    .token-usage-link-btn:hover:not(:disabled) {
+      color: var(--primary-700);
+      background: var(--surface-hover);
+    }
+    .token-usage-link-btn:disabled {
+      color: var(--neutral-500);
+      cursor: default;
+      opacity: 0.55;
+    }
     .token-mobile-details-toggle {
       display: none;
     }

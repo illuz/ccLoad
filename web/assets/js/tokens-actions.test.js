@@ -26,6 +26,8 @@ test('tokens 操作列使用图标按钮而不是文字按钮', () => {
   assert.match(template, /<button[^>]*class="btn-icon btn-danger btn-delete[\s\S]*?<svg[\s\S]*?aria-hidden="true"[\s\S]*?<\/button>/);
 
   assert.match(template, /class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*data-token-value="\{\{copyTokenValue\}\}"/);
+  assert.match(template, /class="btn-icon token-usage-link-btn"[\s\S]*data-action="copy-token-usage-link"[\s\S]*data-token-value="\{\{copyTokenValue\}\}"/);
+  assert.match(template, /token-usage-link-btn[\s\S]*?<svg[\s\S]*?aria-hidden="true"/);
   assert.doesNotMatch(template, /btn-copy-token/);
   assert.doesNotMatch(template, /<button[^>]*data-i18n="common\.(?:edit|delete)"[^>]*>/);
   assert.doesNotMatch(template, />\s*(?:编辑|删除)\s*<\/button>/);
@@ -40,6 +42,10 @@ test('tokens 图标按钮保持固定尺寸并支持图标内部点击', () => {
   assert.match(tokensCss, /\.token-select-checkbox\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(tokensScript, /const target = e\.target\.closest\('\.btn-edit, \.btn-delete, \.token-enable-switch'\);/);
   assert.match(tokensScript, /body:\s*JSON\.stringify\(\{\s*is_active:\s*isActive\s*\}\)/);
+  assert.match(tokensCss, /\.token-usage-link-btn\s*\{[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/);
+  assert.match(tokensScript, /'copy-token-usage-link': \(actionTarget\) => copyTokenUsageLink\(actionTarget\)/);
+  assert.match(tokensScript, /function buildTokenUsageLink\(tokenValue\)[\s\S]*?new URL\('\/key-usage', window\.location\.origin\)[\s\S]*?url\.searchParams\.set\('key', key\)/);
+  assert.match(tokensScript, /function copyTokenUsageLink\(actionTarget\)[\s\S]*?window\.copyToClipboard\(link\)[\s\S]*?tokens\.msg\.usageLinkCopied/);
 });
 
 test('tokens 页仅保留名称搜索并改为本地过滤', () => {

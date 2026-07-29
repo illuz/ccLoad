@@ -859,6 +859,10 @@ func (h *HybridStore) GetAuthTokenStatsInRange(ctx context.Context, startTime, e
 	return h.sqlite.GetAuthTokenStatsInRange(ctx, startTime, endTime)
 }
 
+func (h *HybridStore) GetAuthTokenStatsByIDInRange(ctx context.Context, authTokenID int64, startTime, endTime time.Time, isToday bool) (*model.AuthTokenRangeStats, error) {
+	return h.sqlite.GetAuthTokenStatsByIDInRange(ctx, authTokenID, startTime, endTime, isToday)
+}
+
 func (h *HybridStore) FillAuthTokenRPMStats(ctx context.Context, stats map[int64]*model.AuthTokenRangeStats, startTime, endTime time.Time, isToday bool) error {
 	return h.sqlite.FillAuthTokenRPMStats(ctx, stats, startTime, endTime, isToday)
 }

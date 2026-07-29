@@ -107,4 +107,26 @@ func TestAuthTokenStatsInRange_AndRPM(t *testing.T) {
 	if stats[1].RecentRPM <= 0 {
 		t.Fatalf("token1 recent rpm=%v, want >0", stats[1].RecentRPM)
 	}
+
+	tokenOneStats, err := store.GetAuthTokenStatsByIDInRange(ctx, 1, start, end, true)
+	if err != nil {
+		t.Fatalf("GetAuthTokenStatsByIDInRange failed: %v", err)
+	}
+	if tokenOneStats.SuccessCount != 1 || tokenOneStats.FailureCount != 1 {
+		t.Fatalf("single token counts=(%d,%d), want (1,1)", tokenOneStats.SuccessCount, tokenOneStats.FailureCount)
+	}
+	if tokenOneStats.PromptTokens != 11 || tokenOneStats.CompletionTokens != 22 {
+		t.Fatalf("single token tokens=(%d,%d), want (11,22)", tokenOneStats.PromptTokens, tokenOneStats.CompletionTokens)
+	}
+	if tokenOneStats.RecentRPM <= 0 {
+		t.Fatalf("single token recent rpm=%v, want >0", tokenOneStats.RecentRPM)
+	}
+
+	emptyStats, err := store.GetAuthTokenStatsByIDInRange(ctx, 999, start, end, false)
+	if err != nil {
+		t.Fatalf("GetAuthTokenStatsByIDInRange for no logs failed: %v", err)
+	}
+	if emptyStats.SuccessCount != 0 || emptyStats.FailureCount != 0 || emptyStats.PromptTokens != 0 {
+		t.Fatalf("expected zero stats for unknown token, got %+v", emptyStats)
+	}
 }
