@@ -29,6 +29,8 @@ window.I18N_LOCALES['zh-CN'] = {
   'common.no': '否',
   'common.success': '成功',
   'common.error': '错误',
+  'common.deleteFailed': '删除失败',
+  'common.operationFailed': '操作失败',
   'common.warning': '警告',
   'common.info': '提示',
   'common.login': '登录',
@@ -60,6 +62,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'common.timeHM': '{h}小时{m}分',
   'common.timeMS': '{m}分{s}秒',
   'common.timeS': '{s}秒',
+  'tokens.msg.notFound': '令牌不存在',
 
   // ============================================================
   // 导航

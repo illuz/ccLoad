@@ -52,6 +52,15 @@ test('中文渠道模型数量文案已补齐', () => {
   assert.match(zhLocaleSource, /'channels\.modal\.modelCount':\s*'共 \{count\} 个模型'/);
 });
 
+test('管理端操作失败提示在两种语言中都有翻译', () => {
+  assert.match(zhLocaleSource, /'common\.deleteFailed':\s*'删除失败'/);
+  assert.match(enLocaleSource, /'common\.deleteFailed':\s*'Delete failed'/);
+  assert.match(zhLocaleSource, /'common\.operationFailed':\s*'操作失败'/);
+  assert.match(enLocaleSource, /'common\.operationFailed':\s*'Operation failed'/);
+  assert.match(zhLocaleSource, /'tokens\.msg\.notFound':\s*'令牌不存在'/);
+  assert.match(enLocaleSource, /'tokens\.msg\.notFound':\s*'Token not found'/);
+});
+
 test('channels 页面脚本复用统一通知入口，不再引用不存在的 showToast', () => {
   assert.doesNotMatch(channelsKeysSource, /\bshowToast\(/);
   assert.match(channelsKeysSource, /window\.showSuccess\(/);

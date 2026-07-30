@@ -29,6 +29,8 @@ window.I18N_LOCALES['en'] = {
   'common.no': 'No',
   'common.success': 'Success',
   'common.error': 'Error',
+  'common.deleteFailed': 'Delete failed',
+  'common.operationFailed': 'Operation failed',
   'common.warning': 'Warning',
   'common.info': 'Info',
   'common.login': 'Login',
@@ -60,6 +62,7 @@ window.I18N_LOCALES['en'] = {
   'common.timeHM': '{h}h {m}m',
   'common.timeMS': '{m}m {s}s',
   'common.timeS': '{s}s',
+  'tokens.msg.notFound': 'Token not found',
 
   // ============================================================
   // Navigation
