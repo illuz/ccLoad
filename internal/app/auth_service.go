@@ -68,9 +68,20 @@ type tokenCostLimit struct {
 }
 
 type dailyTokenCostLimit struct {
-	usedMicroUSD  int64
-	limitMicroUSD int64
-	dayKey        int
+	usedMicroUSD      int64
+	limitMicroUSD     int64
+	baseLimitMicroUSD int64
+	dayKey            int
+}
+
+func (v dailyTokenCostLimit) resetForDay(dayKey int) dailyTokenCostLimit {
+	if v.dayKey == dayKey {
+		return v
+	}
+	v.usedMicroUSD = 0
+	v.limitMicroUSD = v.baseLimitMicroUSD
+	v.dayKey = dayKey
+	return v
 }
 
 // NewAuthService 创建认证服务实例
@@ -555,7 +566,12 @@ func (s *AuthService) ReloadAuthTokens() error {
 	newTokenMaxConns := make(map[string]int, len(tokens))
 	for _, t := range tokens {
 		t.NormalizeDailyCostForToday()
-		t.ApplyGroupEffective(groupByID[t.GroupID])
+		group := groupByID[t.GroupID]
+		baseDailyLimitMicro := t.DailyCostLimitMicroUSD
+		if group != nil && t.GroupID > 0 && t.GroupID == group.ID && t.InheritQuota {
+			baseDailyLimitMicro = group.DailyCostLimitMicroUSD
+		}
+		t.ApplyGroupEffective(group)
 		t.ApplyEffectiveValuesToRawForRuntime()
 		if err := t.ValidateUsageLimits(); err != nil {
 			return fmt.Errorf("invalid auth token %d: %w", t.ID, err)
@@ -592,9 +608,10 @@ func (s *AuthService) ReloadAuthTokens() error {
 		dailyLimitMicro := t.DailyCostLimitMicroUSD
 		if dailyLimitMicro > 0 {
 			newTokenDailyCostLimits[t.Token] = dailyTokenCostLimit{
-				usedMicroUSD:  t.DailyCostUsedMicroUSD,
-				limitMicroUSD: dailyLimitMicro,
-				dayKey:        t.DailyCostDayKey,
+				usedMicroUSD:      t.DailyCostUsedMicroUSD,
+				limitMicroUSD:     dailyLimitMicro,
+				baseLimitMicroUSD: baseDailyLimitMicro,
+				dayKey:            t.DailyCostDayKey,
 			}
 		}
 		if t.MaxConcurrency > 0 {
@@ -616,15 +633,9 @@ func (s *AuthService) ReloadAuthTokens() error {
 	}
 	currentDayKey := model.CurrentLocalDayKey()
 	for tok, lim := range newTokenDailyCostLimits {
-		if lim.dayKey != currentDayKey {
-			lim.usedMicroUSD = 0
-			lim.dayKey = currentDayKey
-		}
+		lim = lim.resetForDay(currentDayKey)
 		if old, ok := s.authTokenDailyCostLimits[tok]; ok {
-			if old.dayKey != currentDayKey {
-				old.usedMicroUSD = 0
-				old.dayKey = currentDayKey
-			}
+			old = old.resetForDay(currentDayKey)
 			if old.dayKey == lim.dayKey && old.usedMicroUSD > lim.usedMicroUSD {
 				lim.usedMicroUSD = old.usedMicroUSD
 			}
@@ -797,8 +808,7 @@ func (s *AuthService) IsDailyCostLimitExceeded(tokenHash string) (usedMicroUSD, 
 		return 0, 0, false
 	}
 	if v.dayKey != currentDayKey {
-		v.dayKey = currentDayKey
-		v.usedMicroUSD = 0
+		v = v.resetForDay(currentDayKey)
 		s.authTokenDailyCostLimits[tokenHash] = v
 	}
 	s.authTokensMux.Unlock()
@@ -823,8 +833,7 @@ func (s *AuthService) AddCostToCache(tokenHash string, deltaMicroUSD int64) {
 	if ok && daily.limitMicroUSD > 0 {
 		currentDayKey := model.CurrentLocalDayKey()
 		if daily.dayKey != currentDayKey {
-			daily.dayKey = currentDayKey
-			daily.usedMicroUSD = 0
+			daily = daily.resetForDay(currentDayKey)
 		}
 		daily.usedMicroUSD += deltaMicroUSD
 		s.authTokenDailyCostLimits[tokenHash] = daily

@@ -257,13 +257,49 @@ func TestAuthService_DailyCostLimitResetsOnNewDay(t *testing.T) {
 
 	s := &AuthService{
 		authTokenDailyCostLimits: map[string]dailyTokenCostLimit{
-			"t1": {usedMicroUSD: 100, limitMicroUSD: 200, dayKey: 20000101},
+			"t1": {usedMicroUSD: 100, limitMicroUSD: 200, baseLimitMicroUSD: 200, dayKey: 20000101},
 		},
 	}
 
 	used, limit, exceeded := s.IsDailyCostLimitExceeded("t1")
 	if used != 0 || limit != 200 || exceeded {
 		t.Fatalf("daily reset: got (%d,%d,%v), want (0,200,false)", used, limit, exceeded)
+	}
+}
+
+func TestAuthService_DailyCostLimitDropsPreviousDayDouble(t *testing.T) {
+	t.Parallel()
+
+	const hash = "previous-day-double"
+	stub := &reloadStubStore{
+		tokens: []*model.AuthToken{{
+			Token:                  hash,
+			ID:                     1,
+			DailyCostLimitMicroUSD: 100,
+			DailyLimitDoubleDayKey: model.CurrentLocalDayKey(),
+			DailyCostDayKey:        model.CurrentLocalDayKey(),
+		}},
+	}
+	s := newTestAuthService(t)
+	s.store = stub
+	if err := s.ReloadAuthTokens(); err != nil {
+		t.Fatalf("ReloadAuthTokens: %v", err)
+	}
+	if _, limit, _ := s.IsDailyCostLimitExceeded(hash); limit != 200 {
+		t.Fatalf("current-day doubled limit=%d, want 200", limit)
+	}
+
+	// Simulate midnight without reloading the token. The old implementation reset
+	// usage but incorrectly retained the previous day's doubled limit.
+	s.authTokensMux.Lock()
+	state := s.authTokenDailyCostLimits[hash]
+	state.dayKey = 20000101
+	s.authTokenDailyCostLimits[hash] = state
+	s.authTokensMux.Unlock()
+
+	used, limit, exceeded := s.IsDailyCostLimitExceeded(hash)
+	if used != 0 || limit != 100 || exceeded {
+		t.Fatalf("after doubled day: got (%d,%d,%v), want (0,100,false)", used, limit, exceeded)
 	}
 }
 
