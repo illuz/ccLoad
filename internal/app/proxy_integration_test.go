@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -645,6 +647,10 @@ func TestProxy_SkipsChannelAfterConcurrencyLimitExceeded(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "from-fallback") {
 		t.Fatalf("response should come from fallback, got %s", w.Body.String())
+	}
+	entry := waitForProxyLog(t, env, "gpt-4")
+	if entry.AttemptNumber != 1 {
+		t.Fatalf("fallback attempt_number=%d, want 1 because local concurrency rejection is not an upstream attempt", entry.AttemptNumber)
 	}
 }
 
@@ -4561,6 +4567,84 @@ func TestProxy_ResponseFailedBeforeClientOutput_RetriesNextChannel(t *testing.T)
 	}
 	if secondCalls.Load() != 1 {
 		t.Fatalf("expected second channel to be tried once, got %d", secondCalls.Load())
+	}
+}
+
+func TestProxy_RetryLogsShareRequestIDAndRecordEndToEndTTFB(t *testing.T) {
+	var firstCalls atomic.Int32
+	upstream1 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstCalls.Add(1)
+		time.Sleep(40 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "event: response.failed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.failed","response":{"status":"failed","error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded"}}}`+"\n\n")
+	}))
+	defer upstream1.Close()
+
+	var secondCalls atomic.Int32
+	upstream2 := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "event: response.output_text.delta\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"ok"}`+"\n\n")
+		_, _ = fmt.Fprint(w, "event: response.completed\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}`+"\n\n")
+	}))
+	defer upstream2.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "trace-failed", channelType: util.ChannelTypeCodex, models: "gpt-trace", apiKey: "sk-1", priority: 100},
+		{name: "trace-success", channelType: util.ChannelTypeCodex, models: "gpt-trace", apiKey: "sk-2", priority: 50},
+	}, map[int]string{0: upstream1.URL, 1: upstream2.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/responses", map[string]any{
+		"model":  "gpt-trace",
+		"stream": true,
+		"input":  "hi",
+	}, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if firstCalls.Load() != 1 || secondCalls.Load() != 1 {
+		t.Fatalf("upstream calls=(%d,%d), want (1,1)", firstCalls.Load(), secondCalls.Load())
+	}
+
+	var attempts []*model.LogEntry
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, err := env.store.ListLogs(context.Background(), time.Now().Add(-time.Minute), 20, 0, &model.LogFilter{Model: "gpt-trace", LogSource: model.LogSourceProxy})
+		if err != nil {
+			t.Fatalf("ListLogs: %v", err)
+		}
+		attempts = attempts[:0]
+		for _, entry := range logs {
+			if entry.ChannelID != 0 {
+				attempts = append(attempts, entry)
+			}
+		}
+		if len(attempts) >= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("attempt log count=%d, want 2", len(attempts))
+	}
+	slices.SortFunc(attempts, func(a, b *model.LogEntry) int { return cmp.Compare(a.AttemptNumber, b.AttemptNumber) })
+	if attempts[0].RequestID == "" || attempts[0].RequestID != attempts[1].RequestID {
+		t.Fatalf("request IDs=(%q,%q), want same non-empty UUID", attempts[0].RequestID, attempts[1].RequestID)
+	}
+	if attempts[0].AttemptNumber != 1 || attempts[1].AttemptNumber != 2 {
+		t.Fatalf("attempt numbers=(%d,%d), want (1,2)", attempts[0].AttemptNumber, attempts[1].AttemptNumber)
+	}
+	if attempts[0].EndToEndFirstByteTime != 0 {
+		t.Fatalf("failed pre-commit attempt end-to-end TTFB=%v, want 0", attempts[0].EndToEndFirstByteTime)
+	}
+	if attempts[1].FirstByteTime <= 0 || attempts[1].EndToEndFirstByteTime <= attempts[1].FirstByteTime+20*time.Millisecond.Seconds() {
+		t.Fatalf("success TTFB attempt=%v end-to-end=%v, want end-to-end to include prior attempt", attempts[1].FirstByteTime, attempts[1].EndToEndFirstByteTime)
 	}
 }
 

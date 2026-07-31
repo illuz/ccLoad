@@ -222,6 +222,9 @@ func DefineLogsTable() *TableBuilder {
 		Column("duration DOUBLE NOT NULL DEFAULT 0.0").
 		Column("is_streaming TINYINT NOT NULL DEFAULT 0").
 		Column("first_byte_time DOUBLE NOT NULL DEFAULT 0.0").
+		Column("request_id VARCHAR(36) NOT NULL DEFAULT ''").
+		Column("attempt_number INT NOT NULL DEFAULT 0").
+		Column("end_to_end_first_byte_time DOUBLE NOT NULL DEFAULT 0.0").
 		Column("api_key_used VARCHAR(191) NOT NULL DEFAULT ''").
 		Column("api_key_hash VARCHAR(64) NOT NULL DEFAULT ''"). // API Key SHA256（用于精确定位 key_index）
 		Column("auth_token_id BIGINT NOT NULL DEFAULT 0").      // 客户端使用的API令牌ID（新增2025-12）
@@ -247,6 +250,7 @@ func DefineLogsTable() *TableBuilder {
 		Index("idx_logs_channel_model_time_id", "channel_id, model, time, id").
 		Index("idx_logs_time_auth_token", "time, auth_token_id").  // 按时间+令牌查询
 		Index("idx_logs_time_actual_model", "time, actual_model"). // 按时间+实际模型查询
+		Index("idx_logs_request_id", "request_id").                // 按请求 UUID 聚合重试链
 		Index("idx_logs_source_time", "log_source, time").
 		Index("idx_logs_source_minute", "log_source, minute_bucket")
 }

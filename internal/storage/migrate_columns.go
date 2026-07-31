@@ -144,6 +144,9 @@ func ensureLogsNewColumns(ctx context.Context, db *sql.DB, dialect Dialect) erro
 		if err := ensureLogsThinkingEffortMySQL(ctx, db); err != nil {
 			return err
 		}
+		if err := ensureLogsRequestTraceMySQL(ctx, db); err != nil {
+			return err
+		}
 		return ensureLogsLogSourceMySQL(ctx, db)
 	}
 	// SQLite: 使用PRAGMA table_info检查列
@@ -176,6 +179,9 @@ func ensureLogsColumnsSQLite(ctx context.Context, db *sql.DB) error {
 		{name: "service_tier", definition: "TEXT NOT NULL DEFAULT ''"}, // OpenAI service_tier: priority/flex
 		{name: "thinking_effort", definition: "TEXT NOT NULL DEFAULT ''"},
 		{name: "reasoning_tokens", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "request_id", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "attempt_number", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "end_to_end_first_byte_time", definition: "REAL NOT NULL DEFAULT 0.0"},
 	}); err != nil {
 		return err
 	}
@@ -317,6 +323,15 @@ func ensureLogsThinkingEffortMySQL(ctx context.Context, db *sql.DB) error {
 	return ensureMySQLColumns(ctx, db, "logs", []mysqlColumnDef{
 		{name: "thinking_effort", definition: "VARCHAR(32) NOT NULL DEFAULT '' COMMENT '请求或上游返回的思考等级'"},
 		{name: "reasoning_tokens", definition: "INT NOT NULL DEFAULT 0 COMMENT '思考/推理Token数'"},
+	})
+}
+
+// ensureLogsRequestTraceMySQL 确保日志具备请求重试链路追踪字段。
+func ensureLogsRequestTraceMySQL(ctx context.Context, db *sql.DB) error {
+	return ensureMySQLColumns(ctx, db, "logs", []mysqlColumnDef{
+		{name: "request_id", definition: "VARCHAR(36) NOT NULL DEFAULT '' COMMENT '客户端请求 UUID'"},
+		{name: "attempt_number", definition: "INT NOT NULL DEFAULT 0 COMMENT '本请求内逻辑上游尝试序号'"},
+		{name: "end_to_end_first_byte_time", definition: "DOUBLE NOT NULL DEFAULT 0.0 COMMENT '端到端首次客户端写入耗时(秒)'"},
 	})
 }
 

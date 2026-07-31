@@ -987,7 +987,16 @@ func TestEnsureLogsNewColumns_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqliteExistingColumns: %v", err)
 	}
-	for _, col := range []string{"minute_bucket", "auth_token_id", "client_ip", "actual_model", "log_source"} {
+	for _, col := range []string{
+		"minute_bucket",
+		"auth_token_id",
+		"client_ip",
+		"actual_model",
+		"log_source",
+		"request_id",
+		"attempt_number",
+		"end_to_end_first_byte_time",
+	} {
 		if !cols[col] {
 			t.Errorf("column %s not found in logs", col)
 		}
@@ -1006,6 +1015,7 @@ func TestMigrate_SQLite_LogsHotPathIndexes(t *testing.T) {
 		"idx_logs_channel_time_id",
 		"idx_logs_channel_model_time_id",
 		"idx_logs_minute_auth_token_status",
+		"idx_logs_request_id",
 		"idx_logs_source_time",
 		"idx_logs_source_minute",
 	} {

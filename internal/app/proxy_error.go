@@ -153,6 +153,9 @@ func (s *Server) logProxyResult(
 	}
 
 	s.AddLogAsync(buildLogEntry(logEntryParams{
+		RequestID:               reqCtx.requestID,
+		AttemptNumber:           reqCtx.attemptNumber,
+		EndToEndFirstByteTime:   reqCtx.getEndToEndFirstByteTime(),
 		RequestModel:            reqCtx.originalModel,
 		ActualModel:             actualModel,
 		Channel:                 cfg,

@@ -673,6 +673,18 @@ curl -X POST http://localhost:8080/admin/channels \
 
 > **Concurrency Limit Note**: `max_concurrency` is a per-channel cap on simultaneous in-flight upstream requests; `0` means unlimited. A slot is acquired before the upstream request starts and released when the response body is closed, so streaming requests hold the slot until the stream ends. Over-limit channels are skipped without cooldown. The counter is in-memory and per instance.
 
+The cap can be changed independently without resubmitting the channel's URLs, models, or API keys:
+
+```bash
+curl -X PUT http://localhost:8080/admin/channels/42 \
+  -H "Content-Type: application/json" \
+  -d '{"max_concurrency":4}'
+```
+
+Set the value from the upstream account's documented concurrency allowance, minus capacity used by other applications. Lowering the value takes effect immediately for new requests; existing streams keep their slots until they close.
+
+Proxy log entries expose `request_id`, `attempt_number`, `first_byte_time`, and `end_to_end_first_byte_time` for retry-chain analysis. `request_id` is stable across channel, key, and URL failover; `attempt_number` counts logical upstream attempts from 1. Local concurrency/RPM rejections do not consume an attempt number, and an internal compatibility retry that only rewrites a rejected request body remains part of the same logical attempt. `first_byte_time` is that attempt's upstream TTFB, while `end_to_end_first_byte_time` measures from the original client request until the first successful client-body write. Failed attempts that never commit a client response keep the end-to-end value at `0`.
+
 ### Custom Request Rules (Advanced)
 
 The "Advanced" button in the channel editor opens a secondary modal that lets you rewrite the **HTTP headers** and **JSON request body** forwarded upstream at channel granularity. Typical use cases include `User-Agent` override, forcing API version headers, or tweaking fields like `thinking` / `max_tokens`. Rules apply in configured order and take effect for all subsequent requests on that channel as soon as they are saved.

@@ -906,6 +906,48 @@ func TestHandleUpdateChannel(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateChannel_MaxConcurrencyPatch(t *testing.T) {
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+
+	created, err := store.CreateConfig(context.Background(), &model.Config{
+		Name:           "Concurrency-Patch",
+		URL:            "https://api.example.com",
+		Priority:       10,
+		MaxConcurrency: 0,
+		Enabled:        true,
+		ModelEntries:   []model.ModelEntry{{Model: "gpt-4"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+
+	c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/channels/1", []byte(`{"max_concurrency":3}`)))
+	server.handleUpdateChannel(c, created.ID)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	updated, err := store.GetConfig(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if updated.MaxConcurrency != 3 {
+		t.Fatalf("max_concurrency=%d, want 3", updated.MaxConcurrency)
+	}
+	if updated.Name != created.Name || updated.URL != created.URL || updated.Priority != created.Priority {
+		t.Fatalf("patch changed unrelated fields: before=%+v after=%+v", created, updated)
+	}
+
+	for _, payload := range []string{`{"max_concurrency":-1}`, `{"max_concurrency":1.5}`, `{"max_concurrency":"3"}`, `{"max_concurrency":null}`} {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/channels/1", []byte(payload)))
+		server.handleUpdateChannel(c, created.ID)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("payload=%s status=%d body=%s, want 400", payload, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestHandleUpdateChannel_UpdatesProtocolTransforms(t *testing.T) {
 	server, store, cleanup := setupAdminTestServer(t)
 	defer cleanup()

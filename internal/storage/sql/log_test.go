@@ -23,14 +23,18 @@ func TestLog_AddAndList(t *testing.T) {
 
 	now := time.Now()
 	log := &model.LogEntry{
-		Time:        newJSONTime(now),
-		Model:       "gpt-4",
-		ChannelID:   channelID,
-		StatusCode:  200,
-		Message:     "success",
-		Duration:    1.5,
-		IsStreaming: false,
-		APIKeyUsed:  "abcd...efgh",
+		Time:                  newJSONTime(now),
+		Model:                 "gpt-4",
+		ChannelID:             channelID,
+		StatusCode:            200,
+		Message:               "success",
+		Duration:              1.5,
+		IsStreaming:           true,
+		FirstByteTime:         0.25,
+		RequestID:             "123e4567-e89b-42d3-a456-426614174000",
+		AttemptNumber:         2,
+		EndToEndFirstByteTime: 1.25,
+		APIKeyUsed:            "abcd...efgh",
 	}
 	if err := store.AddLog(ctx, log); err != nil {
 		t.Fatalf("add log: %v", err)
@@ -47,6 +51,21 @@ func TestLog_AddAndList(t *testing.T) {
 	}
 	if len(logs) > 0 && logs[0].Model != "gpt-4" {
 		t.Errorf("model: got %q, want %q", logs[0].Model, "gpt-4")
+	}
+	if len(logs) > 0 {
+		got := logs[0]
+		if got.RequestID != log.RequestID {
+			t.Errorf("request_id: got %q, want %q", got.RequestID, log.RequestID)
+		}
+		if got.AttemptNumber != log.AttemptNumber {
+			t.Errorf("attempt_number: got %d, want %d", got.AttemptNumber, log.AttemptNumber)
+		}
+		if got.FirstByteTime != log.FirstByteTime {
+			t.Errorf("first_byte_time: got %v, want %v", got.FirstByteTime, log.FirstByteTime)
+		}
+		if got.EndToEndFirstByteTime != log.EndToEndFirstByteTime {
+			t.Errorf("end_to_end_first_byte_time: got %v, want %v", got.EndToEndFirstByteTime, log.EndToEndFirstByteTime)
+		}
 	}
 }
 

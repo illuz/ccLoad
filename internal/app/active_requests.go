@@ -102,8 +102,9 @@ func (m *activeRequestManager) Register(startTime time.Time, model, clientIP str
 	return id
 }
 
-// Update 更新活跃请求的渠道信息（在选择渠道/key后调用）
-// 每次切换渠道/Key 时重置首字节计时和已接收字节，避免前次失败尝试的残留数据误导前端显示
+// Update 更新活跃请求的渠道信息（在选择渠道/key后调用）。
+// 每次切换渠道/Key 时清空当前尝试的观测值，但保留整个客户端请求的开始时间，
+// 使活动列表的 StartTime 与端到端首字耗时使用同一基准。
 func (m *activeRequestManager) Update(id int64, channelID int64, channelName, channelType, apiKey string, tokenID int64, costMultiplier float64) {
 	m.mu.Lock()
 	if req, ok := m.requests[id]; ok {
@@ -113,7 +114,6 @@ func (m *activeRequestManager) Update(id int64, channelID int64, channelName, ch
 		req.APIKeyUsed = util.MaskAPIKey(apiKey)
 		req.TokenID = tokenID
 		req.CostMultiplier = costMultiplier
-		req.StartTime = time.Now().UnixMilli()
 		req.clientFirstByteTimeUsec.Store(0)
 		req.bytesCounter.Store(0)
 	}

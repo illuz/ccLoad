@@ -804,6 +804,49 @@ func (s *Server) handleAPIKeyToggle(c *gin.Context, disable bool) {
 }
 
 // 更新渠道
+func parseChannelMaxConcurrencyPatch(raw any) (int, error) {
+	data, err := sonic.Marshal(raw)
+	if err != nil {
+		return 0, fmt.Errorf("max_concurrency must be an integer")
+	}
+	var value *int
+	if err := sonic.Unmarshal(data, &value); err != nil || value == nil {
+		return 0, fmt.Errorf("max_concurrency must be an integer")
+	}
+	if *value < 0 {
+		return 0, fmt.Errorf("max_concurrency must be >= 0 (got %d)", *value)
+	}
+	return *value, nil
+}
+
+func (s *Server) handleUpdateChannelMaxConcurrency(c *gin.Context, id int64, raw any) {
+	maxConcurrency, err := parseChannelMaxConcurrencyPatch(raw)
+	if err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	cfg, err := s.store.GetConfig(c.Request.Context(), id)
+	if err != nil {
+		RespondError(c, http.StatusNotFound, err)
+		return
+	}
+	updatedCfg := cfg.Clone()
+	updatedCfg.MaxConcurrency = maxConcurrency
+	updated, err := s.store.UpdateConfig(c.Request.Context(), id, updatedCfg)
+	if err != nil {
+		RespondError(c, http.StatusNotFound, err)
+		return
+	}
+
+	// Channel selection caches carry Config snapshots, so the new cap must be
+	// visible before the next proxy request. Existing in-flight slots drain
+	// naturally; lowering below the active count immediately rejects new work.
+	s.clearChannelBalanceCache(id)
+	s.InvalidateChannelListCache()
+	RespondJSON(c, http.StatusOK, updated)
+}
+
 func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	// 解析请求为通用map以支持部分更新
 	var rawReq map[string]any
@@ -814,6 +857,10 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 
 	// 检查是否为简单的enabled字段更新
 	if len(rawReq) == 1 {
+		if maxConcurrency, ok := rawReq["max_concurrency"]; ok {
+			s.handleUpdateChannelMaxConcurrency(c, id, maxConcurrency)
+			return
+		}
 		if enabled, ok := rawReq["enabled"].(bool); ok {
 			upd, err := s.store.UpdateChannelEnabled(c.Request.Context(), id, enabled)
 			if err != nil {

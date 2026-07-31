@@ -10,6 +10,7 @@ import (
 	neturl "net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ccLoad/internal/cooldown"
@@ -131,6 +132,7 @@ type fwResult struct {
 type ForwardObserver struct {
 	OnBytesRead                func(int64)  // 字节读取回调（可选）
 	OnFirstByteRead            func()       // 首字节读取回调（可选）
+	OnFirstClientWrite         func()       // 首次实际写入客户端回调（可选）
 	BeforeClientResponseCommit func() error // 与故障转移互斥，成功后才可写响应头
 	OnDebugCapture             func(*debugCapture)
 	Timing                     *proxyTimingTrace
@@ -145,6 +147,7 @@ func prepareClientResponseCommit(observer *ForwardObserver) error {
 
 // proxyRequestContext 代理请求上下文（封装请求信息，遵循DIP原则）
 type proxyRequestContext struct {
+	requestID               string // 客户端请求 UUID，跨所有重试保持不变
 	originalModel           string
 	clientProtocol          protocol.Protocol
 	requestMethod           string
@@ -170,10 +173,46 @@ type proxyRequestContext struct {
 	startTime               time.Time            // 请求开始时间（用于统计）
 	channelStartTime        time.Time            // 当前渠道尝试开始时间（每次切换渠道时重置）
 	attemptStartTime        time.Time            // 渠道内单次 Key/URL 尝试开始时间
+	attemptNumber           int                  // 本请求内实际上游尝试序号（从1开始）
 	baseURL                 string               // 当前尝试使用的上游URL（多URL场景）
 	debugData               *model.DebugLogEntry // Debug日志数据（debug开启时填充）
 	thinkingEffort          string
 	timing                  *proxyTimingTrace
+	firstClientByteMu       sync.RWMutex
+	endToEndFirstByteTime   float64 // 首次实际客户端写入距请求开始的秒数；只允许首次写入设置
+}
+
+// markEndToEndFirstByte records the first client-visible write for the request.
+// It is intentionally independent from per-attempt upstream TTFB so a retry
+// chain can be measured as one end-to-end operation.
+func (r *proxyRequestContext) markEndToEndFirstByte() {
+	if r == nil {
+		return
+	}
+	r.firstClientByteMu.Lock()
+	defer r.firstClientByteMu.Unlock()
+	if r.endToEndFirstByteTime > 0 {
+		return
+	}
+	start := r.startTime
+	if start.IsZero() {
+		start = time.Now()
+	}
+	d := time.Since(start).Seconds()
+	if d <= 0 {
+		d = time.Nanosecond.Seconds()
+	}
+	r.endToEndFirstByteTime = d
+}
+
+func (r *proxyRequestContext) getEndToEndFirstByteTime() float64 {
+	if r == nil {
+		return 0
+	}
+	r.firstClientByteMu.RLock()
+	d := r.endToEndFirstByteTime
+	r.firstClientByteMu.RUnlock()
+	return d
 }
 
 // proxyResult 代理请求结果
@@ -796,6 +835,9 @@ func stringMapValue(values map[string]any, key string) string {
 
 // logEntryParams 日志条目构建参数（避免多个 string 参数顺序混淆）
 type logEntryParams struct {
+	RequestID               string
+	AttemptNumber           int
+	EndToEndFirstByteTime   float64
 	RequestModel            string // 客户端请求的原始模型名称
 	ActualModel             string // 实际转发到上游的模型名称（可能经过重定向）
 	Channel                 *model.Config
@@ -832,18 +874,21 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		logTime = time.Now() // 兜底：未传入开始时间时使用当前时间
 	}
 	entry := &model.LogEntry{
-		Time:         model.JSONTime{Time: logTime},
-		Model:        p.RequestModel,
-		LogSource:    model.LogSourceProxy,
-		ChannelID:    p.ChannelID,
-		StatusCode:   p.StatusCode,
-		Duration:     p.Duration,
-		IsStreaming:  p.IsStreaming,
-		APIKeyUsed:   p.APIKeyUsed,
-		AuthTokenID:  p.AuthTokenID,
-		AuthTokenKey: p.AuthTokenKey,
-		ClientIP:     p.ClientIP,
-		BaseURL:      p.BaseURL,
+		Time:                  model.JSONTime{Time: logTime},
+		RequestID:             p.RequestID,
+		AttemptNumber:         p.AttemptNumber,
+		EndToEndFirstByteTime: p.EndToEndFirstByteTime,
+		Model:                 p.RequestModel,
+		LogSource:             model.LogSourceProxy,
+		ChannelID:             p.ChannelID,
+		StatusCode:            p.StatusCode,
+		Duration:              p.Duration,
+		IsStreaming:           p.IsStreaming,
+		APIKeyUsed:            p.APIKeyUsed,
+		AuthTokenID:           p.AuthTokenID,
+		AuthTokenKey:          p.AuthTokenKey,
+		ClientIP:              p.ClientIP,
+		BaseURL:               p.BaseURL,
 	}
 	entry.ThinkingEffort = normalizeThinkingEffort(p.ThinkingEffort)
 

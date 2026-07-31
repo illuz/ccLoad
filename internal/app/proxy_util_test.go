@@ -206,6 +206,47 @@ func TestAppendRetryStrategyToMessageUsesCompactDisplay(t *testing.T) {
 	}
 }
 
+func TestBuildLogEntry_PreservesRequestAttemptTiming(t *testing.T) {
+	entry := buildLogEntry(logEntryParams{
+		RequestID:             "123e4567-e89b-42d3-a456-426614174000",
+		AttemptNumber:         3,
+		EndToEndFirstByteTime: 2.75,
+		RequestModel:          "gpt-5.6-sol",
+		ChannelID:             55,
+		StatusCode:            http.StatusOK,
+		IsStreaming:           true,
+		Result:                &fwResult{Status: http.StatusOK, FirstByteTime: 0.45},
+	})
+
+	if entry.RequestID != "123e4567-e89b-42d3-a456-426614174000" {
+		t.Fatalf("request_id=%q", entry.RequestID)
+	}
+	if entry.AttemptNumber != 3 {
+		t.Fatalf("attempt_number=%d, want 3", entry.AttemptNumber)
+	}
+	if entry.FirstByteTime != 0.45 {
+		t.Fatalf("first_byte_time=%v, want 0.45", entry.FirstByteTime)
+	}
+	if entry.EndToEndFirstByteTime != 2.75 {
+		t.Fatalf("end_to_end_first_byte_time=%v, want 2.75", entry.EndToEndFirstByteTime)
+	}
+}
+
+func TestProxyRequestContext_EndToEndFirstByteFirstWriteWins(t *testing.T) {
+	reqCtx := &proxyRequestContext{startTime: time.Now().Add(-50 * time.Millisecond)}
+	reqCtx.markEndToEndFirstByte()
+	first := reqCtx.getEndToEndFirstByteTime()
+	if first <= 0 {
+		t.Fatalf("first end-to-end TTFB=%v, want >0", first)
+	}
+
+	reqCtx.startTime = time.Now().Add(-time.Second)
+	reqCtx.markEndToEndFirstByte()
+	if got := reqCtx.getEndToEndFirstByteTime(); got != first {
+		t.Fatalf("second mark changed end-to-end TTFB: got %v, want %v", got, first)
+	}
+}
+
 func TestBuildLogEntry_AppendsCodexGuardTraceID(t *testing.T) {
 	t.Parallel()
 

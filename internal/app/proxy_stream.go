@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 )
 
 var (
@@ -155,6 +156,41 @@ type deferredResponseWriter struct {
 	onFirstClientWrite   func()
 	clientWriteMarked    bool
 	beforeResponseCommit func() error
+}
+
+// firstClientWriteResponseWriter observes the first successful write on paths
+// that do not use deferredResponseWriter (for example non-stream responses).
+// It deliberately forwards Header/WriteHeader and Flush to preserve the
+// ResponseWriter behavior expected by the proxy pipeline.
+type firstClientWriteResponseWriter struct {
+	http.ResponseWriter
+	onFirstWrite func()
+	once         sync.Once
+}
+
+func newFirstClientWriteResponseWriter(target http.ResponseWriter, onFirstWrite func()) http.ResponseWriter {
+	if target == nil || onFirstWrite == nil {
+		return target
+	}
+	return &firstClientWriteResponseWriter{ResponseWriter: target, onFirstWrite: onFirstWrite}
+}
+
+func (w *firstClientWriteResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	if n > 0 {
+		w.once.Do(w.onFirstWrite)
+	}
+	return n, err
+}
+
+func (w *firstClientWriteResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *firstClientWriteResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 func newDeferredResponseWriter(target http.ResponseWriter) *deferredResponseWriter {

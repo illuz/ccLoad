@@ -189,3 +189,48 @@ func TestStreamCopy_ClosesWrappedUnderlyingCloserOnContextCancel(t *testing.T) {
 		t.Fatal("streamCopy did not close wrapped underlying reader after context cancellation")
 	}
 }
+
+func TestDeferredResponseWriter_FirstClientWriteCallbackFiresOnceOnCommit(t *testing.T) {
+	target := newRecorder()
+	w := newDeferredResponseWriter(target)
+	calls := 0
+	w.SetFirstClientWriteCallback(func() { calls++ })
+
+	if _, err := w.Write([]byte("first")); err != nil {
+		t.Fatalf("buffered write: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("callback fired before client commit: calls=%d", calls)
+	}
+	if err := w.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("callback calls after commit=%d, want 1", calls)
+	}
+	if _, err := w.Write([]byte("second")); err != nil {
+		t.Fatalf("post-commit write: %v", err)
+	}
+	if err := w.Commit(); err != nil {
+		t.Fatalf("second commit: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("callback calls after additional writes=%d, want 1", calls)
+	}
+}
+
+func TestFirstClientWriteResponseWriter_FiresOnceWithoutTimingTrace(t *testing.T) {
+	target := newRecorder()
+	calls := 0
+	w := newFirstClientWriteResponseWriter(target, func() { calls++ })
+
+	if _, err := w.Write([]byte("one")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := w.Write([]byte("two")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("callback calls=%d, want 1", calls)
+	}
+}

@@ -676,6 +676,31 @@ func isCodexSSEEventType(value string) bool {
 	return strings.HasPrefix(value, "response.")
 }
 
+// firstClientWriteCallback combines request-level and optional timing
+// observation. It is installed on every writer that can reach the client.
+func firstClientWriteCallback(observer *ForwardObserver) func() {
+	if observer == nil || (observer.OnFirstClientWrite == nil && observer.Timing == nil) {
+		return nil
+	}
+	return func() {
+		if observer.OnFirstClientWrite != nil {
+			observer.OnFirstClientWrite()
+		}
+		if observer.Timing != nil {
+			observer.Timing.MarkFirstClientWrite()
+		}
+	}
+}
+
+func configureDeferredResponseWriter(w *deferredResponseWriter, observer *ForwardObserver) {
+	if w == nil {
+		return
+	}
+	if callback := firstClientWriteCallback(observer); callback != nil {
+		w.SetFirstClientWriteCallback(callback)
+	}
+}
+
 // handleSuccessResponse 处理成功响应（流式传输）
 func (s *Server) handleSuccessResponse(
 	reqCtx *requestContext,
@@ -749,9 +774,7 @@ func (s *Server) handleSuccessResponse(
 	var deferredWriter *deferredResponseWriter
 	if reqCtx.isStreaming || guardBuffering {
 		deferredWriter = newDeferredResponseWriter(w)
-		if observer != nil && observer.Timing != nil {
-			deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
-		}
+		configureDeferredResponseWriter(deferredWriter, observer)
 		if observer != nil && observer.BeforeClientResponseCommit != nil {
 			deferredWriter.SetBeforeResponseCommitCallback(observer.BeforeClientResponseCommit)
 		}
@@ -759,6 +782,9 @@ func (s *Server) handleSuccessResponse(
 			deferredWriter.SetMaxBufferBytes(codexGuardMaxBufferedBytes)
 		}
 		streamWriter = deferredWriter
+	}
+	if deferredWriter == nil {
+		streamWriter = newFirstClientWriteResponseWriter(w, firstClientWriteCallback(observer))
 	}
 
 	if deferredWriter == nil {
@@ -954,9 +980,10 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 	if err := prepareClientResponseCommit(observer); err != nil {
 		return &fwResult{Status: resp.StatusCode, Header: hdrClone}, reqCtx.Duration().Seconds(), err
 	}
-	filterAndWriteResponseHeaders(w, translatedHeader)
-	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(translatedBody)
+	clientWriter := newFirstClientWriteResponseWriter(w, firstClientWriteCallback(observer))
+	filterAndWriteResponseHeaders(clientWriter, translatedHeader)
+	clientWriter.WriteHeader(resp.StatusCode)
+	_, _ = clientWriter.Write(translatedBody)
 
 	result := &fwResult{
 		Status:            resp.StatusCode,
@@ -991,9 +1018,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	disableResponseWriteTimeout(w, "流式")
 
 	deferredWriter := newDeferredResponseWriter(w)
-	if observer != nil && observer.Timing != nil {
-		deferredWriter.SetFirstClientWriteCallback(observer.Timing.MarkFirstClientWrite)
-	}
+	configureDeferredResponseWriter(deferredWriter, observer)
 	if observer != nil && observer.BeforeClientResponseCommit != nil {
 		deferredWriter.SetBeforeResponseCommitCallback(observer.BeforeClientResponseCommit)
 	}
@@ -1667,12 +1692,16 @@ func (s *Server) forwardAttempt(
 		}, cooldown.ActionRetryChannel, nil
 	}
 
+	// Count a logical upstream attempt once. Internal body-rewrite retries stay
+	// within the same logged attempt; local limiter rejections roll the count back.
+	reqCtx.attemptNumber++
 	res, duration, err := s.forwardOnceAsync(attemptCtx, cfg, selectedKey, reqCtx.requestMethod,
 		plan, reqCtx.header, reqCtx.rawQuery, baseURL, w, reqCtx.observer, codexGuardAttemptConfigForProxyRequest(reqCtx))
 	if errors.Is(context.Cause(attemptCtx), util.ErrManualFailover) {
 		err = util.ErrManualFailover
 	}
 	if err != nil && errors.Is(err, protocol.ErrUnsupportedRequestShape) {
+		reqCtx.attemptNumber--
 		channelID := cfg.ID
 		return &proxyResult{
 			status:     http.StatusBadRequest,
@@ -1711,6 +1740,7 @@ func (s *Server) forwardAttempt(
 	// [FIX] 2025-12: 传递 res 和 reqCtx，用于保留 499 场景下已消耗的 token 统计
 	if err != nil {
 		if errors.Is(err, ErrChannelRPMExceeded) || errors.Is(err, ErrChannelConcurrencyExceeded) {
+			reqCtx.attemptNumber--
 			return nil, cooldown.ActionRetryChannel, err
 		}
 		result, action := s.handleNetworkError(

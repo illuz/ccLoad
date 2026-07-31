@@ -5,9 +5,26 @@ import (
 	"time"
 
 	"ccLoad/internal/model"
+	"ccLoad/internal/util"
 
 	"github.com/gin-gonic/gin"
 )
+
+const proxyRequestIDContextKey = "ccLoad.proxyRequestID"
+
+func ensureProxyRequestID(c *gin.Context) string {
+	if c == nil {
+		return util.NewUUIDv4()
+	}
+	if value, ok := c.Get(proxyRequestIDContextKey); ok {
+		if requestID, ok := value.(string); ok && requestID != "" {
+			return requestID
+		}
+	}
+	requestID := util.NewUUIDv4()
+	c.Set(proxyRequestIDContextKey, requestID)
+	return requestID
+}
 
 // logAPIAuthRejections records requests stopped by RequireAPIAuth before they
 // can reach HandleProxyRequest. It deliberately does not inspect or persist the
@@ -61,16 +78,19 @@ func (s *Server) recordProxyRejection(
 
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
+	duration := time.Since(startTime).Seconds()
 	s.AddLogAsync(&model.LogEntry{
-		Time:           model.JSONTime{Time: startTime},
-		Model:          modelName,
-		LogSource:      model.LogSourceProxy,
-		StatusCode:     statusCode,
-		Message:        message,
-		Duration:       time.Since(startTime).Seconds(),
-		IsStreaming:    isStreaming,
-		AuthTokenID:    tokenIDInt64,
-		ClientIP:       c.ClientIP(),
-		ThinkingEffort: thinkingEffort,
+		Time:                  model.JSONTime{Time: startTime},
+		RequestID:             ensureProxyRequestID(c),
+		Model:                 modelName,
+		LogSource:             model.LogSourceProxy,
+		StatusCode:            statusCode,
+		Message:               message,
+		Duration:              duration,
+		EndToEndFirstByteTime: duration,
+		IsStreaming:           isStreaming,
+		AuthTokenID:           tokenIDInt64,
+		ClientIP:              c.ClientIP(),
+		ThinkingEffort:        thinkingEffort,
 	})
 }

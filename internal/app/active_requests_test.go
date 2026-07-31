@@ -40,7 +40,8 @@ func TestActiveRequestManager_ListSnapshotAndSort(t *testing.T) {
 func TestActiveRequestManager_UpdateMasksKey(t *testing.T) {
 	m := newActiveRequestManager()
 
-	id := m.Register(time.UnixMilli(100), "m", "1.1.1.1", false)
+	startTime := time.UnixMilli(100)
+	id := m.Register(startTime, "m", "1.1.1.1", false)
 	rawKey := "sk-1234567890abcdef"
 	m.Update(id, 1, "ch", "anthropic", rawKey, 0, 1.0)
 
@@ -53,6 +54,9 @@ func TestActiveRequestManager_UpdateMasksKey(t *testing.T) {
 	}
 	if got[0].APIKeyUsed != "****" && !strings.Contains(got[0].APIKeyUsed, ".") {
 		t.Fatalf("expected masked key format, got %q", got[0].APIKeyUsed)
+	}
+	if got[0].StartTime != startTime.UnixMilli() {
+		t.Fatalf("start_time=%d, want original request start %d", got[0].StartTime, startTime.UnixMilli())
 	}
 }
 

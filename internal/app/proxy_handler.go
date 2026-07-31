@@ -290,6 +290,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	handlerStart := time.Now()
 	startTime := proxyTimingStartTime(c, handlerStart)
 	timing := newProxyTimingTrace(startTime, handlerStart)
+	requestID := ensureProxyRequestID(c)
 
 	// 并发控制
 	queueStart := time.Now()
@@ -386,20 +387,23 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 
 	if len(cands) == 0 {
 		diagMessage, diagAPIKey := summarizeNoAvailableUpstream(ctx, s, originalModel, clientProtocol, tokenHashStr)
-		s.AddLogAsync(&model.LogEntry{
-			Time:           model.JSONTime{Time: startTime},
-			Model:          originalModel,
-			LogSource:      model.LogSourceProxy,
-			StatusCode:     503,
-			Message:        diagMessage,
-			Duration:       time.Since(startTime).Seconds(),
-			IsStreaming:    isStreaming,
-			APIKeyUsed:     diagAPIKey,
-			AuthTokenID:    tokenIDInt64,
-			ClientIP:       c.ClientIP(),
-			ThinkingEffort: thinkingEffort,
-		})
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available upstream (all cooled or none)"})
+		duration := time.Since(startTime).Seconds()
+		s.AddLogAsync(&model.LogEntry{
+			Time:                  model.JSONTime{Time: startTime},
+			RequestID:             requestID,
+			Model:                 originalModel,
+			LogSource:             model.LogSourceProxy,
+			StatusCode:            503,
+			Message:               diagMessage,
+			Duration:              duration,
+			EndToEndFirstByteTime: duration,
+			IsStreaming:           isStreaming,
+			APIKeyUsed:            diagAPIKey,
+			AuthTokenID:           tokenIDInt64,
+			ClientIP:              c.ClientIP(),
+			ThinkingEffort:        thinkingEffort,
+		})
 		return
 	}
 
@@ -418,6 +422,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	}
 
 	reqCtx := &proxyRequestContext{
+		requestID:         requestID,
 		originalModel:     originalModel,
 		clientProtocol:    clientProtocol,
 		requestMethod:     requestMethod,
@@ -441,8 +446,9 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		OnBytesRead: func(n int64) {
 			s.activeRequests.AddBytes(activeID, n)
 		},
-		OnFirstByteRead: func() {
-			s.activeRequests.SetClientFirstByteTime(activeID, time.Since(reqCtx.attemptStartTime))
+		OnFirstClientWrite: func() {
+			reqCtx.markEndToEndFirstByte()
+			s.activeRequests.SetClientFirstByteTime(activeID, time.Since(reqCtx.startTime))
 		},
 		BeforeClientResponseCommit: func() error {
 			return s.activeRequests.TryCommitResponse(activeID)
@@ -566,6 +572,9 @@ func (s *Server) runProxyAttemptLoop(
 	reqCtx *proxyRequestContext,
 	w gin.ResponseWriter,
 ) (lastResult *proxyResult, succeeded bool) {
+	if reqCtx != nil && reqCtx.requestID == "" {
+		reqCtx.requestID = util.NewUUIDv4()
+	}
 	for _, cfg := range cands {
 		result, err := s.tryChannelWithKeys(ctx, cfg, reqCtx, w)
 
@@ -589,7 +598,9 @@ func (s *Server) runProxyAttemptLoop(
 		}
 
 		if err != nil && errors.Is(err, ErrChannelConcurrencyExceeded) {
-			log.Printf("[INFO] 渠道 %s (ID=%d) 已达到并发限制，跳过该渠道", cfg.Name, cfg.ID)
+			active, limit, _ := channelConcurrencyLimit(err)
+			log.Printf("[INFO] request_id=%s 渠道 %s (ID=%d) 已达到并发限制 (%d/%d)，立即跳过该渠道",
+				reqCtx.requestID, cfg.Name, cfg.ID, active, limit)
 			continue
 		}
 
@@ -651,25 +662,29 @@ func (s *Server) writeFinalProxyResponse(
 	// - 候选池 ≤1：实际只尝试了 1 个渠道，渠道级日志已完整反映失败原因，汇总日志冗余
 	skipLog := lastResult != nil && (lastResult.isClientCanceled || finalStatus == http.StatusBadRequest)
 	skipLog = skipLog || (candidateCount <= 1 && !hasCodexGuardFinalTrace)
-	if !skipLog {
-		s.AddLogAsync(&model.LogEntry{
-			Time:        model.JSONTime{Time: reqCtx.startTime},
-			Model:       originalModel,
-			LogSource:   model.LogSourceProxy,
-			StatusCode:  finalStatus,
-			Message:     msg,
-			Duration:    time.Since(reqCtx.startTime).Seconds(),
-			IsStreaming: isStreaming,
-			ClientIP:    reqCtx.clientIP,
-		})
-	}
 
 	if lastResult != nil && lastResult.status != 0 {
 		// 透明代理原则：透传所有上游响应（状态码+header+body）
 		writeResponseWithHeaders(c.Writer, finalStatus, lastResult.header, lastResult.body)
-		return
+	} else {
+		disableResponseWriteTimeout(c.Writer, "最终响应")
+		c.JSON(finalStatus, gin.H{"error": "no upstream available"})
 	}
+	reqCtx.markEndToEndFirstByte()
 
-	disableResponseWriteTimeout(c.Writer, "最终响应")
-	c.JSON(finalStatus, gin.H{"error": "no upstream available"})
+	if !skipLog {
+		s.AddLogAsync(&model.LogEntry{
+			Time:                  model.JSONTime{Time: reqCtx.startTime},
+			RequestID:             reqCtx.requestID,
+			AttemptNumber:         reqCtx.attemptNumber,
+			EndToEndFirstByteTime: reqCtx.getEndToEndFirstByteTime(),
+			Model:                 originalModel,
+			LogSource:             model.LogSourceProxy,
+			StatusCode:            finalStatus,
+			Message:               msg,
+			Duration:              time.Since(reqCtx.startTime).Seconds(),
+			IsStreaming:           isStreaming,
+			ClientIP:              reqCtx.clientIP,
+		})
+	}
 }
