@@ -600,7 +600,7 @@ func TestAdminModels_HandleBatchRefreshModels(t *testing.T) {
 			Priority:    1,
 			ChannelType: "openai",
 			ModelEntries: []model.ModelEntry{
-				{Model: "old-1"},
+				{Model: "new-1", Disabled: true},
 				{Model: "old-2"},
 			},
 			Enabled: true,
@@ -627,7 +627,7 @@ func TestAdminModels_HandleBatchRefreshModels(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetConfig failed: %v", err)
 		}
-		if len(got.ModelEntries) != 1 || got.ModelEntries[0].Model != "new-1" {
+		if len(got.ModelEntries) != 1 || got.ModelEntries[0].Model != "new-1" || !got.ModelEntries[0].Disabled {
 			t.Fatalf("unexpected models after replace: %#v", got.ModelEntries)
 		}
 	})

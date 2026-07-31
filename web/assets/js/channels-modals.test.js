@@ -45,7 +45,7 @@ test('mergeCommonModels de-duplicates remote models and preserves existing rows'
 
     assert.deepEqual(merged.rows, [
       existing,
-      { model: 'gpt-5.7', redirect_model: '', fixed_cost_per_request: '' }
+      { model: 'gpt-5.7', redirect_model: '', fixed_cost_per_request: '', disabled: false }
     ]);
     assert.notEqual(merged.rows[0], existing);
     assert.equal(merged.added, 1);
@@ -59,7 +59,7 @@ test('mergeCommonModels falls back to embedded models with local pricing default
   try {
     const merged = runtime.mod.mergeCommonModels([], [], ['claude-sonnet-5']);
     assert.deepEqual(merged.rows, [
-      { model: 'claude-sonnet-5', redirect_model: '', fixed_cost_per_request: '' }
+      { model: 'claude-sonnet-5', redirect_model: '', fixed_cost_per_request: '', disabled: false }
     ]);
     assert.equal(merged.added, 1);
   } finally {
@@ -104,6 +104,59 @@ function loadFetchModelsFromAPI() {
   return require(modulePath).fetchModelsFromAPI;
 }
 
+test('fetched models preserve existing disabled state and enable new rows', () => {
+  const runtime = loadChannelModals();
+  try {
+    const result = runtime.mod.mergeModelRowsWithFetchedModels([
+      { model: 'existing-model', redirect_model: 'upstream-model', disabled: true }
+    ], [
+      { model: 'existing-model', redirect_model: 'ignored-replacement' },
+      { model: 'new-model', redirect_model: 'new-upstream' }
+    ]);
+
+    assert.deepEqual(result, {
+      rows: [
+        { model: 'existing-model', redirect_model: 'upstream-model', disabled: true },
+        { model: 'new-model', redirect_model: 'new-upstream', disabled: false }
+      ],
+      added: 1,
+      removed: 0
+    });
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('model disabled state toggles without changing the model mapping', () => {
+  const runtime = loadChannelModals();
+  try {
+    const rows = [{ model: 'model-a', redirect_model: 'upstream-a', disabled: false }];
+
+    assert.equal(runtime.mod.toggleModelDisabledState(rows, 0), true);
+    assert.deepEqual(rows, [{ model: 'model-a', redirect_model: 'upstream-a', disabled: true }]);
+    assert.equal(runtime.mod.toggleModelDisabledState(rows, 0), true);
+    assert.deepEqual(rows, [{ model: 'model-a', redirect_model: 'upstream-a', disabled: false }]);
+    assert.equal(runtime.mod.toggleModelDisabledState(rows, 9), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test('model submit payload includes disabled state and fixed cost', () => {
+  const runtime = loadChannelModals();
+  try {
+    assert.deepEqual(runtime.mod.collectModelsForSubmit([
+      { model: '  model-a  ', redirect_model: ' upstream-a ', fixed_cost_per_request: '0.25', disabled: true },
+      { model: 'model-b', redirect_model: '', disabled: false },
+      { model: '   ', disabled: true }
+    ]), [
+      { model: 'model-a', redirect_model: 'upstream-a', fixed_cost_per_request: 0.25, disabled: true },
+      { model: 'model-b', redirect_model: '', fixed_cost_per_request: 0, disabled: false }
+    ]);
+  } finally {
+    runtime.restore();
+  }
+});
 test('fetchModelsFromAPI sends the first enabled API key', async () => {
   let requestBody;
   const restore = installFetchModelsGlobals({

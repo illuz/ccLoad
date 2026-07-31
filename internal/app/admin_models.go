@@ -501,13 +501,33 @@ func mergeModelEntries(cfg *model.Config, fetched []model.ModelEntry) (added int
 func replaceModelEntries(cfg *model.Config, fetched []model.ModelEntry) (removed int, changed bool) {
 	oldEntries := cfg.ModelEntries
 	oldSet := make(map[string]struct{}, len(oldEntries))
+	metadataByAlias := make(map[string]model.ModelEntry, len(oldEntries)*2)
 	newSet := make(map[string]struct{}, len(fetched))
 
 	for _, entry := range oldEntries {
-		oldSet[strings.ToLower(entry.Model)] = struct{}{}
+		key := strings.ToLower(entry.Model)
+		oldSet[key] = struct{}{}
+		metadataByAlias[key] = entry
+		if entry.RedirectModel != "" {
+			redirectKey := strings.ToLower(entry.RedirectModel)
+			if _, exists := metadataByAlias[redirectKey]; !exists {
+				metadataByAlias[redirectKey] = entry
+			}
+		}
 	}
-	for _, entry := range fetched {
-		newSet[strings.ToLower(entry.Model)] = struct{}{}
+	for i := range fetched {
+		key := strings.ToLower(fetched[i].Model)
+		newSet[key] = struct{}{}
+		previous, exists := metadataByAlias[key]
+		if !exists && fetched[i].RedirectModel != "" {
+			previous, exists = metadataByAlias[strings.ToLower(fetched[i].RedirectModel)]
+		}
+		if exists {
+			fetched[i].Disabled = fetched[i].Disabled || previous.Disabled
+			if fetched[i].FixedCostPerRequest == 0 {
+				fetched[i].FixedCostPerRequest = previous.FixedCostPerRequest
+			}
+		}
 	}
 	for key := range oldSet {
 		if _, exists := newSet[key]; !exists {
@@ -518,7 +538,10 @@ func replaceModelEntries(cfg *model.Config, fetched []model.ModelEntry) (removed
 	if len(oldEntries) == len(fetched) {
 		same := true
 		for i := range oldEntries {
-			if oldEntries[i].Model != fetched[i].Model || oldEntries[i].RedirectModel != fetched[i].RedirectModel {
+			if oldEntries[i].Model != fetched[i].Model ||
+				oldEntries[i].RedirectModel != fetched[i].RedirectModel ||
+				oldEntries[i].FixedCostPerRequest != fetched[i].FixedCostPerRequest ||
+				oldEntries[i].Disabled != fetched[i].Disabled {
 				same = false
 				break
 			}

@@ -121,7 +121,8 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 	            LEFT JOIN api_keys k ON c.id = k.channel_id
 	            WHERE c.enabled = 1
               AND cm.model = ?
-            GROUP BY c.id
+	              AND cm.disabled = 0
+	            GROUP BY c.id
             ORDER BY c.priority DESC, c.id ASC
         `
 		args = []any{modelName}
@@ -218,7 +219,7 @@ func (s *SQLStore) GetEnabledChannelsByModelAndProtocol(ctx context.Context, mod
 		  AND EXISTS (
 		      SELECT 1
 		      FROM channel_models cm
-		      WHERE cm.channel_id = c.id AND cm.model = ?
+		      WHERE cm.channel_id = c.id AND cm.model = ? AND cm.disabled = 0
 		  )
 	`
 		args = append(args, modelName)
@@ -584,7 +585,7 @@ func (s *SQLStore) loadModelEntriesForConfigs(ctx context.Context, configs []*mo
 
 	//nolint:gosec // G201: placeholders 由内部构建的 "?" 占位符组成，安全可控
 	query := fmt.Sprintf(
-		`SELECT channel_id, model, redirect_model, fixed_cost_per_request FROM channel_models WHERE channel_id IN (%s) ORDER BY channel_id, created_at ASC, model ASC`,
+		`SELECT channel_id, model, redirect_model, fixed_cost_per_request, disabled FROM channel_models WHERE channel_id IN (%s) ORDER BY channel_id, created_at ASC, model ASC`,
 		strings.Join(placeholders, ","),
 	)
 
@@ -597,7 +598,7 @@ func (s *SQLStore) loadModelEntriesForConfigs(ctx context.Context, configs []*mo
 	for rows.Next() {
 		var channelID int64
 		var entry model.ModelEntry
-		if err := rows.Scan(&channelID, &entry.Model, &entry.RedirectModel, &entry.FixedCostPerRequest); err != nil {
+		if err := rows.Scan(&channelID, &entry.Model, &entry.RedirectModel, &entry.FixedCostPerRequest, &entry.Disabled); err != nil {
 			return fmt.Errorf("scan model entry: %w", err)
 		}
 		if cfg, ok := idToConfig[channelID]; ok {
@@ -756,14 +757,14 @@ func (s *SQLStore) saveModelEntriesImpl(ctx context.Context, exec dbExecutor, ch
 		chunk := entries[offset:end]
 
 		var b strings.Builder
-		b.WriteString(`INSERT INTO channel_models (channel_id, model, redirect_model, fixed_cost_per_request, created_at) VALUES `)
-		args := make([]any, 0, len(chunk)*5)
+		b.WriteString(`INSERT INTO channel_models (channel_id, model, redirect_model, fixed_cost_per_request, disabled, created_at) VALUES `)
+		args := make([]any, 0, len(chunk)*6)
 		for i, entry := range chunk {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteString("(?, ?, ?, ?, ?)")
-			args = append(args, channelID, entry.Model, entry.RedirectModel, entry.FixedCostPerRequest, baseCreatedAt+int64(offset+i))
+			b.WriteString("(?, ?, ?, ?, ?, ?)")
+			args = append(args, channelID, entry.Model, entry.RedirectModel, entry.FixedCostPerRequest, entry.Disabled, baseCreatedAt+int64(offset+i))
 		}
 		if _, err := exec.ExecContext(ctx, b.String(), args...); err != nil {
 			return fmt.Errorf("save model entries (offset %d): %w", offset, err)

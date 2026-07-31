@@ -76,6 +76,9 @@ func (s *Server) channelModelCooldownKeys(cfg *model.Config) []string {
 	for _, clientProtocol := range protocols {
 		upstreamProtocol := cfg.ResolveUpstreamProtocol(clientProtocol)
 		for _, entry := range cfg.ModelEntries {
+			if entry.Disabled {
+				continue
+			}
 			modelName := strings.TrimSpace(s.resolveFinalUpstreamModel(cfg, entry.Model, upstreamProtocol))
 			if modelName == "" {
 				continue

@@ -76,6 +76,7 @@ func DefineChannelModelsTable() *TableBuilder {
 		Column("model VARCHAR(191) NOT NULL").
 		Column("redirect_model VARCHAR(191) NOT NULL DEFAULT ''"). // 重定向目标模型（空表示不重定向）
 		Column("fixed_cost_per_request DOUBLE NOT NULL DEFAULT 0").
+		Column("disabled TINYINT NOT NULL DEFAULT 0").
 		Column("created_at BIGINT NOT NULL DEFAULT 0").
 		Column("PRIMARY KEY (channel_id, model)").
 		Column("FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE").
