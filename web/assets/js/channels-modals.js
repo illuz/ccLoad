@@ -2456,6 +2456,7 @@ function batchDeleteSelectedModels() {
 
 function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
   const existingModelKeys = new Set();
+  const occupiedModelKeys = new Set();
   const rows = [];
   (currentRows || []).forEach(row => {
     const model = (row?.model || '').trim();
@@ -2463,9 +2464,12 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
     const modelKey = model.toLowerCase();
     if (existingModelKeys.has(modelKey)) return;
     existingModelKeys.add(modelKey);
+    occupiedModelKeys.add(modelKey);
+    const redirectModel = (row?.redirect_model || '').trim();
+    if (redirectModel) occupiedModelKeys.add(redirectModel.toLowerCase());
     const normalized = {
       model,
-      redirect_model: (row?.redirect_model || '').trim(),
+      redirect_model: redirectModel,
       disabled: !!row?.disabled
     };
     const fixedCost = formatFixedCostPerRequestValue(row?.fixed_cost_per_request);
@@ -2479,12 +2483,13 @@ function mergeModelRowsWithFetchedModels(currentRows, fetchedModels) {
     if (!modelName) continue;
 
     const modelKey = modelName.toLowerCase();
-    if (existingModelKeys.has(modelKey)) continue;
-    existingModelKeys.add(modelKey);
-
     const fetchedRedirect = (typeof entry === 'object' && entry?.redirect_model)
       ? String(entry.redirect_model).trim()
       : modelName;
+    const redirectKey = fetchedRedirect.toLowerCase();
+    if (occupiedModelKeys.has(modelKey) || occupiedModelKeys.has(redirectKey)) continue;
+    occupiedModelKeys.add(modelKey);
+    occupiedModelKeys.add(redirectKey);
     const normalized = {
       model: modelName,
       redirect_model: fetchedRedirect,

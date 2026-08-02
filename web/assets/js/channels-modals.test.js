@@ -111,6 +111,7 @@ test('fetched models preserve existing disabled state and enable new rows', () =
       { model: 'existing-model', redirect_model: 'upstream-model', disabled: true }
     ], [
       { model: 'existing-model', redirect_model: 'ignored-replacement' },
+      { model: 'UPSTREAM-MODEL', redirect_model: 'UPSTREAM-MODEL' },
       { model: 'new-model', redirect_model: 'new-upstream' }
     ]);
 
