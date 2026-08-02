@@ -121,29 +121,26 @@ test('日志页分页信息区收紧按钮间距', () => {
 });
 
 test('日志表固定宽度列号与当前表头顺序一致', () => {
-  assert.match(html, /data-i18n="logs\.colTokenDesc"[\s\S]*data-i18n="logs\.colApiKey"/);
-  assert.match(css, /\.logs-table th:nth-child\(7\),\s*[\r\n\s]*\.logs-table td:nth-child\(7\)\s*\{[\s\S]*?状态码:/);
+  assert.match(html, /data-i18n="logs\.colTokenDesc"[\s\S]*data-i18n="logs\.colChannel"/);
+  assert.match(css, /\.logs-table th:nth-child\(6\),\s*[\r\n\s]*\.logs-table td:nth-child\(6\)\s*\{[\s\S]*?状态码:/);
 });
 
-test('日志表令牌和渠道 Key 列不设置固定宽度', () => {
+test('日志表令牌列不设置固定宽度', () => {
   assert.equal(logColumnHasWidthConstraint(3), false, '令牌列不应设置 width/min-width/max-width');
-  assert.equal(logColumnHasWidthConstraint(4), false, '渠道 Key 列不应设置 width/min-width/max-width');
 });
 
 test('日志表缓存命中与成本列通过内容驱动布局保留间隔', () => {
-  assert.match(css, /\.logs-table th:nth-child\(14\),\s*[\r\n\s]*\.logs-table td:nth-child\(14\)\s*\{[\s\S]*?width:\s*70px;[\s\S]*?缓存命中[\s\S]*?min-width:\s*70px;[\s\S]*?max-width:\s*70px;[\s\S]*?padding-right:\s*var\(--space-2\);/);
-  assert.equal(logColumnHasFixedPixelWidthConstraint(15), false, '成本列不应设置固定像素宽度');
+  assert.match(css, /\.logs-table th:nth-child\(13\),\s*[\r\n\s]*\.logs-table td:nth-child\(13\)\s*\{[\s\S]*?width:\s*70px;[\s\S]*?缓存命中[\s\S]*?min-width:\s*70px;[\s\S]*?max-width:\s*70px;[\s\S]*?padding-right:\s*var\(--space-2\);/);
+  assert.equal(logColumnHasFixedPixelWidthConstraint(14), false, '成本列不应设置固定像素宽度');
   assert.match(css, /\.logs-table\s+\.logs-col-cost\s*\{[\s\S]*?width:\s*1%;[\s\S]*?padding-left:\s*var\(--space-3\);[\s\S]*?white-space:\s*nowrap;/);
   assert.match(css, /\.logs-table\s+\.logs-col-cost\s+\.log-cost\s*\{[\s\S]*?min-width:\s*max-content;/);
 });
 
-test('日志表令牌和渠道 Key 表头文案使用业务命名', () => {
+test('日志表移除渠道 Key 列并保留令牌业务命名', () => {
   assert.match(html, /<th class="logs-col-token-desc" data-i18n="logs\.colTokenDesc">令牌<\/th>/);
-  assert.match(html, /<th class="logs-col-api-key" data-i18n="logs\.colApiKey">渠道Key<\/th>/);
+  assert.doesNotMatch(html, /logs-col-api-key|logs\.colApiKey/);
   assert.match(zhLocale, /'logs\.colTokenDesc': '令牌'/);
-  assert.match(zhLocale, /'logs\.colApiKey': '渠道Key'/);
   assert.match(enLocale, /'logs\.colTokenDesc': 'Token'/);
-  assert.match(enLocale, /'logs\.colApiKey': 'Channel Key'/);
 });
 
 test('日志页窄屏分页覆盖全局纵向堆叠规则', () => {
@@ -294,7 +291,7 @@ test('日志页筛选输入控件允许在 flex 布局中收缩', () => {
   assert.match(styleBlock, /width:\s*100%/);
 });
 
-test('日志页为 IP 和 API Key 提供共享等宽文本样式类', () => {
+test('日志页为 IP 提供共享等宽文本样式类', () => {
   const monoMatch = css.match(/\.logs-mono-text\s*\{[^}]+\}/);
   assert.ok(monoMatch, '缺少 .logs-mono-text 样式');
 
@@ -365,7 +362,7 @@ test('进行中请求复用日志表格列类名和共享字体类', () => {
   assert.match(activeSource, /class="logs-col-ip logs-mono-text"/);
   assert.match(activeSource, /class="\$\{tokenDescCellClass\}"/);
   assert.doesNotMatch(logsSource, /logs-col-token-desc logs-mono-text/);
-  assert.match(activeSource, /class="logs-col-api-key"/);
+  assert.doesNotMatch(activeSource, /logs-col-api-key|api_key_used/);
   assert.match(activeSource, /class="logs-col-channel"/);
   assert.match(activeSource, /class="logs-col-model"/);
   assert.match(activeSource, /class="logs-col-status"/);
@@ -380,12 +377,15 @@ test('日志页窄屏隐藏空指标列时优先级高于列布局规则', () =>
   assert.ok(mobileMatch, '缺少日志页窄屏空指标列隐藏覆盖样式');
 });
 
-test('普通日志渲染也使用共享等宽字体类而不是内联 monospace', () => {
+test('普通日志不显示渠道 Key，并将 Key 操作挂在令牌列', () => {
   const renderMatch = logsSource.match(/function renderLogs\(data\)\s*\{[\s\S]*?\n\}/);
   assert.ok(renderMatch, '缺少 renderLogs');
 
   const renderSource = renderMatch[0];
   assert.match(renderSource, /class="logs-col-ip logs-mono-text"/);
-  assert.match(renderSource, /class="logs-api-key-text logs-mono-text"/);
+  assert.doesNotMatch(renderSource, /logs-col-api-key|logs-api-key-text/);
+  assert.match(renderSource, /class="logs-token-cell-content"/);
+  assert.match(renderSource, /class="logs-key-actions"/);
+  assert.match(renderSource, /<td class="logs-col-token-desc"[^>]*>\$\{tokenCellDisplay\}<\/td>/);
   assert.doesNotMatch(renderSource, /font-family:\s*monospace/);
 });

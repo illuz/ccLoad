@@ -359,17 +359,18 @@
       color: var(--neutral-600);
     }
 
-    .logs-api-key-group {
+    .logs-token-cell-content {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      justify-content: center;
+      max-width: 100%;
     }
 
-    .logs-api-key-actions {
+    .logs-key-actions {
       display: inline-flex;
       align-items: center;
       gap: 1px;
+      flex-shrink: 0;
     }
 
     .logs-table th,
@@ -1090,48 +1091,44 @@
         order: 4;
       }
 
-      .logs-table .logs-col-api-key {
+      .logs-table .logs-col-token-desc {
         order: 5;
       }
 
-      .logs-table .logs-col-token-desc {
+      .logs-table .logs-col-ip {
         order: 6;
       }
 
-      .logs-table .logs-col-ip {
+      .logs-table .logs-col-timing {
         order: 7;
       }
 
-      .logs-table .logs-col-timing {
+      .logs-table .logs-col-speed {
         order: 8;
       }
 
-      .logs-table .logs-col-speed {
+      .logs-table .logs-col-input {
         order: 9;
       }
 
-      .logs-table .logs-col-input {
+      .logs-table .logs-col-output {
         order: 10;
       }
 
-      .logs-table .logs-col-output {
+      .logs-table .logs-col-cache-read {
         order: 11;
       }
 
-      .logs-table .logs-col-cache-read {
+      .logs-table .logs-col-cache-write {
         order: 12;
       }
 
-      .logs-table .logs-col-cache-write {
+      .logs-table .logs-col-cache-util {
         order: 13;
       }
 
-      .logs-table .logs-col-cache-util {
-        order: 14;
-      }
-
       .logs-table .logs-col-cost {
-        order: 15;
+        order: 14;
       }
 
       .logs-table .logs-col-message {
@@ -1144,7 +1141,6 @@
       .logs-table .logs-col-status,
       .logs-table .logs-col-channel,
       .logs-table .logs-col-model,
-      .logs-table .logs-col-api-key,
       .logs-table .logs-col-token-desc,
       .logs-table .logs-col-ip,
       .logs-table .logs-col-timing,
@@ -1167,7 +1163,6 @@
       .logs-table .logs-col-status::before,
       .logs-table .logs-col-channel::before,
       .logs-table .logs-col-model::before,
-      .logs-table .logs-col-api-key::before,
       .logs-table .logs-col-token-desc::before,
       .logs-table .logs-col-ip::before,
       .logs-table .logs-col-timing::before,
@@ -1208,10 +1203,6 @@
       .logs-table .logs-col-model .model-tag,
       .logs-table .logs-col-message {
         min-width: 0;
-      }
-
-      .logs-table .logs-col-api-key code {
-        word-break: break-all;
       }
 
       .logs-table .logs-col-token-desc.mobile-empty-cell {
@@ -1325,8 +1316,8 @@
       text-align: center;
     }
 
-    .logs-table th:nth-child(7),
-    .logs-table td:nth-child(7) {
+    .logs-table th:nth-child(6),
+    .logs-table td:nth-child(6) {
       width: 60px;
       /* 状态码: 200/403/500 */
       min-width: 60px;
@@ -1334,8 +1325,8 @@
       text-align: center;
     }
 
-    .logs-table th:nth-child(14),
-    .logs-table td:nth-child(14) {
+    .logs-table th:nth-child(13),
+    .logs-table td:nth-child(13) {
       width: 70px;
       /* 缓存命中 */
       min-width: 70px;
@@ -1343,8 +1334,8 @@
       padding-right: var(--space-2);
     }
 
-    .logs-table th:nth-child(16),
-    .logs-table td:nth-child(16) {
+    .logs-table th:nth-child(15),
+    .logs-table td:nth-child(15) {
       min-width: 120px;
     }
 

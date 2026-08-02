@@ -38,7 +38,6 @@ const LOG_COLUMNS = [
   { key: 'time',        cls: 'logs-col-time',        i18n: 'logs.colTime' },
   { key: 'ip',          cls: 'logs-col-ip',          i18n: 'logs.colIP' },
   { key: 'tokenDesc',   cls: 'logs-col-token-desc',  i18n: 'logs.colTokenDesc' },
-  { key: 'apiKey',      cls: 'logs-col-api-key',     i18n: 'logs.colApiKey' },
   { key: 'channel',     cls: 'logs-col-channel',     i18n: 'logs.colChannel' },
   { key: 'model',       cls: 'logs-col-model',       i18n: 'common.model' },
   { key: 'status',      cls: 'logs-col-status',      i18n: 'logs.statusCode' },
@@ -462,7 +461,6 @@ function getLogMobileLabels() {
     time: escapeHtml(t('logs.colTime')),
     ip: escapeHtml(t('logs.colIP')),
     tokenDesc: escapeHtml(t('logs.colTokenDesc')),
-    apiKey: escapeHtml(t('logs.colApiKey')),
     channel: escapeHtml(t('logs.colChannel')),
     model: escapeHtml(t('common.model')),
     status: escapeHtml(t('logs.statusCode')),
@@ -890,12 +888,6 @@ function renderActiveRequests(activeRequests) {
     const tokenDescDisplay = buildActiveRequestTokenDescDisplay(req);
     const tokenDescCellClass = `logs-col-token-desc${tokenDescDisplay ? '' : ' mobile-empty-cell'}`;
 
-    // Key显示
-    let keyDisplay = '<span style="color: var(--neutral-500);">-</span>';
-    if (req.api_key_used) {
-      keyDisplay = `<span class="logs-api-key-text logs-mono-text">${escapeHtml(req.api_key_used)}</span>`;
-    }
-
     const infoContent = buildActiveRequestInfoContent(req);
     const failoverButton = buildActiveRequestFailoverButton(req);
 
@@ -918,7 +910,6 @@ function renderActiveRequests(activeRequests) {
             <td class="logs-col-time" data-mobile-label="${logMobileLabels.time}" style="white-space: nowrap;">${formatTime(req.start_time)}</td>
             <td class="logs-col-ip logs-mono-text" data-mobile-label="${logMobileLabels.ip}" style="white-space: nowrap;" title="${escapeHtml(req.client_ip || '')}">${escapeHtml(maskIP(req.client_ip) || '-')}</td>
             <td class="${tokenDescCellClass}" data-mobile-label="${logMobileLabels.tokenDesc}" style="white-space: nowrap;">${tokenDescDisplay}</td>
-            <td class="logs-col-api-key" data-mobile-label="${logMobileLabels.apiKey}" style="text-align: center; white-space: nowrap;">${keyDisplay}</td>
             <td class="logs-col-channel" data-mobile-label="${logMobileLabels.channel}" style="text-align: left;">${channelDisplay}</td>
             <td class="logs-col-model" data-mobile-label="${logMobileLabels.model}">${modelDisplay}</td>
             <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="status-pending">进行中</span>${failoverButton}</td>
@@ -974,7 +965,7 @@ function getTableColspan() {
   const table = document.getElementById('tbody')?.closest('table')
     || document.querySelector('.logs-table');
   const headerCells = table ? table.querySelectorAll('thead th') : [];
-  return headerCells.length || 16; // fallback到16列（日志页默认列数）
+  return headerCells.length || 15; // fallback到15列（日志页默认列数）
 }
 
 function formatCacheUtilRate(inputTokens, cacheReadTokens, cacheCreationTokens) {
@@ -1065,8 +1056,8 @@ function renderLogs(data) {
       ? ''
       : `<span class="token-metric-value" style="color: var(--neutral-700);">${logSpeed.toFixed(1)}</span>`;
 
-    // 5. API Key显示(含按钮组)
-    let apiKeyDisplay = '';
+    // 5. 渠道 Key 操作挂在令牌列，不展示 Key 文本
+    let keyActionsDisplay = '';
     if (entry.api_key_used && entry.channel_id && entry.model) {
       const sc = entry.status_code || 0;
       const showTestBtn = sc !== 200;
@@ -1084,12 +1075,11 @@ function renderLogs(data) {
         buttons += `<button class="test-key-btn" style="color: var(--error-600);" data-action="delete" data-channel-id="${entry.channel_id}" data-channel-name="${attr(entry.channel_name)}" data-api-key="${attr(entry.api_key_used)}" data-api-key-hash="${keyHashAttr}" title="删除此 API Key">${deleteBtnIcon}</button>`;
       }
 
-      apiKeyDisplay = `<div class="logs-api-key-group"><code class="logs-api-key-text logs-mono-text">${escapeHtml(entry.api_key_used)}</code><span class="logs-api-key-actions">${buttons}</span></div>`;
-    } else if (entry.api_key_used) {
-      apiKeyDisplay = `<code class="logs-api-key-text logs-mono-text">${escapeHtml(entry.api_key_used)}</code>`;
-    } else {
-      apiKeyDisplay = '<span style="color: var(--neutral-500);">-</span>';
+      if (buttons) {
+        keyActionsDisplay = `<span class="logs-key-actions">${buttons}</span>`;
+      }
     }
+    const tokenCellDisplay = `<div class="logs-token-cell-content">${tokenDescDisplay}${keyActionsDisplay}</div>`;
 
     // 6. Token统计显示(0值为空)
     const tokenValue = (value, color) => {
@@ -1136,8 +1126,7 @@ function renderLogs(data) {
     htmlParts[i] = `<tr class="mobile-card-row logs-table-row">
           <td class="logs-col-time" data-mobile-label="${logMobileLabels.time}" style="white-space: nowrap;">${formatTime(entry.time)}</td>
           <td class="logs-col-ip logs-mono-text" data-mobile-label="${logMobileLabels.ip}" style="white-space: nowrap;">${clientIPDisplay}</td>
-          <td class="logs-col-token-desc" data-mobile-label="${logMobileLabels.tokenDesc}" style="white-space: nowrap;">${tokenDescDisplay}</td>
-          <td class="logs-col-api-key" data-mobile-label="${logMobileLabels.apiKey}" style="text-align: center; white-space: nowrap;">${apiKeyDisplay}</td>
+          <td class="logs-col-token-desc" data-mobile-label="${logMobileLabels.tokenDesc}" style="white-space: nowrap;">${tokenCellDisplay}</td>
           <td class="logs-col-channel" data-mobile-label="${logMobileLabels.channel}" style="text-align: left;">${configDisplay}</td>
           <td class="logs-col-model" data-mobile-label="${logMobileLabels.model}">${modelDisplay}</td>
           <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="${statusClass}">${statusCode}</span></td>
