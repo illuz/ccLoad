@@ -33,6 +33,9 @@ function createHelpers() {
     renderLogSourceBadge() {
       return '';
     },
+    renderCodexGuardBadges() {
+      return '';
+    },
     escapeHtml(value) {
       return String(value ?? '');
     },
