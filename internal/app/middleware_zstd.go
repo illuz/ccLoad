@@ -142,6 +142,11 @@ func shouldBypassResponse(h http.Header) bool {
 	if ct == "" {
 		return false
 	}
+	// SSE clients consume event boundaries and flushes directly; compressing the
+	// stream delays those boundaries and prevents incremental delivery.
+	if ct == "text/event-stream" {
+		return true
+	}
 	if strings.HasPrefix(ct, "image/") ||
 		strings.HasPrefix(ct, "video/") ||
 		strings.HasPrefix(ct, "audio/") {
