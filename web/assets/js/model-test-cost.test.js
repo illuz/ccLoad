@@ -113,6 +113,12 @@ test('model-test 测试结果把成本列渲染为实际成本组件并按实际
     formatDurationMs(value) {
       return `${value}ms`;
     },
+    formatFirstByteDurationMs(value) {
+      return `${value}ms`;
+    },
+    formatTotalDurationMs(value) {
+      return `${value}ms`;
+    },
     pickPositiveTokenCount(...values) {
       return values.find(value => Number(value) > 0) ?? null;
     },

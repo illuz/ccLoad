@@ -256,7 +256,10 @@ function createHarness({
     selectedModelIndices: new Set(),
     selectedURLIndices: new Set(),
     inlineURLTableData: channel ? String(channel.url || '').split('\n').filter(Boolean) : ['https://api.example.com'],
-    inlineKeyTableData: apiKeys.map((key) => key.api_key || key),
+    inlineKeyTableData: apiKeys.map((key) => ({
+      api_key: String(key?.api_key || key || ''),
+      note: String(key?.note || '')
+    })),
     inlineKeyVisible: true,
     currentModelFilter: '',
     deletingChannelRequest: null,
@@ -278,6 +281,18 @@ function createHarness({
     normalizeSelectedChannelID(value) { return String(value); },
     setInlineURLTableData(value) {
       sandbox.inlineURLTableData = String(value || '').split('\n').filter(Boolean);
+    },
+    setInlineKeyTableDataFromAPI(value) {
+      sandbox.inlineKeyTableData = (value || []).map((key) => ({
+        api_key: String(key?.api_key || key || ''),
+        note: String(key?.note || '')
+      }));
+      if (sandbox.inlineKeyTableData.length === 0) {
+        sandbox.inlineKeyTableData = [{ api_key: '', note: '' }];
+      }
+    },
+    getValidInlineKeyRows() {
+      return sandbox.inlineKeyTableData.filter((row) => row.api_key);
     },
     getValidInlineURLs() {
       return sandbox.inlineURLTableData.filter((url) => url && url.trim());
@@ -302,11 +317,17 @@ function createHarness({
         }
         return { value: channelCheckIntervalHours };
       }
+      if (channel && requestPath === `/admin/channels/${channel.id}`) {
+        return channel;
+      }
       if (channel && requestPath === `/admin/channels/${channel.id}/keys`) {
         if (apiKeysResponse) {
           return await apiKeysResponse;
         }
         return apiKeys;
+      }
+      if (channel && requestPath === `/admin/channels/${channel.id}/model-stats`) {
+        return [];
       }
       throw new Error(`unexpected fetchDataWithAuth: ${requestPath}`);
     },
@@ -638,12 +659,13 @@ test('编辑渠道会并行读取定时检测配置和 API Keys，避免串行�
   });
 
   const editPromise = harness.api.editChannel(7);
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
 
-  assert.deepEqual(harness.dataFetchCalls, [
+  assert.deepEqual(Array.from(harness.dataFetchCalls), [
+    '/admin/channels/7',
     '/admin/settings/channel_check_interval_hours',
-    '/admin/channels/7/keys'
+    '/admin/channels/7/keys',
+    '/admin/channels/7/model-stats'
   ]);
 
   setting.resolve({ value: 24 });

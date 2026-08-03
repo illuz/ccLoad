@@ -163,6 +163,9 @@ test('channels 页倍率角标只读渠道配置倍率，不依赖统计聚合�
   context.buildBatchRefreshStatusHtml = () => '';
   context.buildChannelLastSuccessHtml = () => '';
   context.buildChannelLastRequestFailureHtml = () => '';
+  context.buildChannelGroupBadge = () => '';
+  context.buildChannelUpstreamBalanceHtml = () => '';
+  context.channelHasBalanceQueryScript = () => false;
   context.TemplateEngine = {
     render(_id, data) {
       return data;
@@ -216,6 +219,9 @@ test('渠道卡片倍率角标：0 倍率（免费渠道）显示 0x', () => {
   context.buildBatchRefreshStatusHtml = () => '';
   context.buildChannelLastSuccessHtml = () => '';
   context.buildChannelLastRequestFailureHtml = () => '';
+  context.buildChannelGroupBadge = () => '';
+  context.buildChannelUpstreamBalanceHtml = () => '';
+  context.channelHasBalanceQueryScript = () => false;
   context.TemplateEngine = {
     render(_id, data) {
       return data;
@@ -245,22 +251,25 @@ ${extractFunction(channelsSource, 'createChannelCard')}`,
   assert.equal(card.nameMultiplierBadge, '<sup class="cell-multiplier-badge">0x</sup>');
 });
 
-test('tokens 页总费用改为调用统计同款 warning 两行成本', () => {
+test('tokens 页总费用展示总费用和当日费用摘要', () => {
   const sandbox = createHelperSandbox();
+  sandbox.getTokenEffectiveDailyCostLimit = () => 10;
   vm.runInNewContext(
-    `${extractBlock(uiSource, 'formatCost', 'formatNumber')}
-${extractBlock(tokensSource, 'buildCostHtml', 'buildResponseTimeHtml')}`,
+    extractBlock(tokensSource, 'formatCostValue', 'buildConcurrencyHtml'),
     sandbox
   );
 
-  const costHtml = sandbox.buildCostHtml(0.02, 0.017);
-  const emptyHtml = sandbox.buildCostHtml(0, 0);
+  const costHtml = sandbox.buildCostSummaryHtml({
+    total_cost_usd: 12.4,
+    daily_cost_used_usd: 3.6
+  });
 
-  assert.match(costHtml, /class="cost-stack cost-stack--warning cost-stack--with-multiplier"/);
-  assert.match(costHtml, /class="cost-stack-standard">\$0\.020<\/span>/);
-  assert.match(costHtml, /class="cost-stack-effective">\$0\.017<\/span>/);
-  assert.match(emptyHtml, /token-value-muted/);
-  assert.match(tokensCss, /\.token-cost\s+\.cost-stack\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?text-align:\s*center;/);
+  assert.match(costHtml, /class="token-cost-summary"/);
+  assert.match(costHtml, /tokens\.table\.totalCost/);
+  assert.match(costHtml, />\$12<\/span>/);
+  assert.match(costHtml, /tokens\.table\.dailyCost/);
+  assert.match(costHtml, />\$4\/\$10<\/span>/);
+  assert.match(tokensCss, /\.token-cost-summary\s*\{[\s\S]*?align-items:\s*stretch;/);
 });
 
 test('共享成本样式把标准成本置灰，并按页面语义区分现价颜色', () => {

@@ -9,6 +9,12 @@ function loadRenderSandbox(overrides = {}) {
   const source = fs.readFileSync(path.join(__dirname, 'channels-render.js'), 'utf8');
   const sandbox = {
     window: {
+      getDurationTimingColor() {
+        return '#22c55e';
+      },
+      getFirstByteTimingColor() {
+        return '#22c55e';
+      },
       t(key, params = {}) {
         if (key === 'channels.table.priority') return '优先级';
         if (key === 'channels.stats.healthScoreLabel') return '健康度';

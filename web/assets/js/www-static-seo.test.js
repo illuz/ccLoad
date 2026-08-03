@@ -28,7 +28,11 @@ test('www static HTML defaults to English for SEO', () => {
 });
 
 test('www i18n supports SEO-relevant attributes', () => {
-  const source = read(path.join(wwwDir, 'assets', 'js', 'i18n.js'));
+  const generatedPath = path.join(wwwDir, 'assets', 'js', 'i18n.js');
+  const sourcePath = fs.existsSync(generatedPath)
+    ? generatedPath
+    : path.join(repoRoot, 'web', 'assets', 'js', 'i18n.js');
+  const source = read(sourcePath);
 
   assert.match(source, /\[data-i18n-content\]/, 'meta content translation support is required');
   assert.match(source, /\[data-i18n-alt\]/, 'image alt translation support is required');

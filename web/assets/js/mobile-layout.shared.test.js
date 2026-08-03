@@ -40,6 +40,21 @@ function getLastExactRuleBody(css, selector) {
   return lastBody;
 }
 
+function getContainingAtRule(source, marker) {
+  const markerIndex = source.indexOf(marker);
+  assert.ok(markerIndex >= 0, `缺少样式标记: ${marker}`);
+  const start = source.lastIndexOf('@media', markerIndex);
+  assert.ok(start >= 0, `样式标记不在 @media 内: ${marker}`);
+  const braceStart = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = braceStart; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    if (source[i] === '}') depth--;
+    if (depth === 0) return source.slice(start, i + 1);
+  }
+  assert.fail(`@media 大括号未闭合: ${marker}`);
+}
+
 test('共享样式在窄屏下压缩顶部导航、时间范围、筛选栏和弹窗', () => {
   assert.match(sharedCss, /--topbar-offset:\s*var\(--topbar-height\)/);
   assert.match(sharedCss, /\.top-layout\s+\.main-content\s*\{[^}]*padding-top:\s*calc\(var\(--topbar-offset\)\s*-\s*12px\)/s);
@@ -71,9 +86,7 @@ test('共享样式在窄屏下压缩顶部导航、时间范围、筛选栏和�
 
   assert.match(compactDesktopCss, /\.brand-text\s*\{[\s\S]*?display:\s*none;/);
 
-  const mobileSection = sharedCss.match(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\n\}/);
-  assert.ok(mobileSection, '缺少共享移动端适配规则');
-  const mobileCss = mobileSection[0];
+  const mobileCss = getContainingAtRule(sharedCss, '--topbar-offset: 144px;');
 
   assert.match(mobileCss, /--topbar-offset:\s*144px;/);
   assert.match(mobileCss, /\.topbar\s*\{[\s\S]*?flex-wrap:\s*wrap;/);

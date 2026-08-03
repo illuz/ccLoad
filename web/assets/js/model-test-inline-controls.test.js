@@ -873,6 +873,12 @@ test('applyTestResultToRow 在失败时优先展示结构化上游错误而不�
     formatDurationMs(value) {
       return value ? `${value}ms` : '-';
     },
+    formatFirstByteDurationMs(value) {
+      return value ? `${value}ms` : '-';
+    },
+    formatTotalDurationMs(value) {
+      return value ? `${value}ms` : '-';
+    },
     formatCost(value) {
       return String(value);
     },
@@ -904,7 +910,7 @@ test('applyTestResultToRow 在失败时优先展示结构化上游错误而不�
     cells.get('.response').title,
     '由于负载过高，为了尽量保证用户体验，本站已开启限流，当前用户本周无法使用，请下周重试'
   );
-  assert.equal(cells.get('.duration').textContent, '1503ms');
+  assert.equal(cells.get('.duration').innerHTML, '1503ms');
   assert.equal(cells.get('.speed').textContent, '-');
   assert.equal(cells.get('.cost').textContent, '-');
 });

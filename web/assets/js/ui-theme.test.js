@@ -35,6 +35,16 @@ function getRuleBody(source, selector) {
   return match[1];
 }
 
+function getLastRuleBody(source, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'g');
+  let match;
+  let body = '';
+  while ((match = pattern.exec(source)) !== null) body = match[1];
+  assert.ok(body, `missing CSS rule: ${selector}`);
+  return body;
+}
+
 test('主题模块固定为暗色模式', () => {
   assert.match(uiSource, /FIXED_THEME_MODE\s*=\s*'dark'/);
   assert.match(uiSource, /document\.documentElement\.dataset\.theme\s*=\s*FIXED_THEME_MODE/);
@@ -189,7 +199,7 @@ test('暗色主题为模型测试和日志页渠道链接提供可读颜色', ()
 
 test('首页和登录页提示块使用主题变量适配暗色模式', () => {
   const indexTipRule = getRuleBody(sharedCss, '.index-api-tip');
-  const securityNoticeRule = getRuleBody(sharedCss, '.security-notice');
+  const securityNoticeRule = getLastRuleBody(sharedCss, '.security-notice');
 
   assert.match(indexTipRule, /background:\s*var\(--surface-bg-muted\)/);
   assert.match(indexTipRule, /border:\s*1px\s+solid\s+var\(--surface-border\)/);

@@ -212,7 +212,10 @@ test('refreshKeyCooldownStatus 只刷新冷却元数据，不丢弃未保存的�
   await api.refreshKeyCooldownStatus();
 
   assert.deepEqual(fetchCalls, ['/admin/channels/7/keys']);
-  assert.deepEqual(api.getInlineKeys(), ['sk-old', 'sk-new-unsaved']);
+  assert.deepEqual(JSON.parse(JSON.stringify(api.getInlineKeys())), [
+    { api_key: 'sk-old', note: '' },
+    { api_key: 'sk-new-unsaved', note: '' }
+  ]);
   assert.equal(api.getRenderCalls(), 1);
 
   const cooldowns = api.getCooldowns();

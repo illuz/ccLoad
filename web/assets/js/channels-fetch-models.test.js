@@ -55,11 +55,10 @@ test('获取模型合并新模型时保留已有模型和重定向配置', () =>
   const result = mergeModelRowsWithFetchedModels(currentRows, fetchedModels);
 
   assert.deepEqual(JSON.parse(JSON.stringify(result.rows)), [
-    { model: 'kiro-opus-4-8', redirect_model: 'claude-opus-4.8-thinking' },
-    { model: 'gemini-3.5-flash', redirect_model: 'claude-haiku-4.5' },
-    { model: 'claude-opus-4.8-thinking', redirect_model: 'claude-opus-4.8-thinking' },
-    { model: 'claude-sonnet-4.6', redirect_model: 'claude-sonnet-4.6-thinking' }
+    { model: 'kiro-opus-4-8', redirect_model: 'claude-opus-4.8-thinking', disabled: false },
+    { model: 'gemini-3.5-flash', redirect_model: 'claude-haiku-4.5', disabled: false },
+    { model: 'claude-sonnet-4.6', redirect_model: 'claude-sonnet-4.6-thinking', disabled: false }
   ]);
-  assert.equal(result.added, 2);
+  assert.equal(result.added, 1);
   assert.equal(result.removed, 0);
 });
