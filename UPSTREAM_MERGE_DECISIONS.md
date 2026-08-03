@@ -80,3 +80,24 @@ Do not recommend these again unless the user asks for them or a future selected 
 - Channel cooldown probe rules (`44c0e370`, `4ba9068e`, `76b36f33`), the nine-setting migration (`e7b23e96`), and standard-cost detail UI (`5a746111`) because they are useful but not prerequisites for the selected routing and accounting work.
 
 For the next upstream check, treat `61568753` as the content-review checkpoint. Verify ancestry first; if upstream has been rewritten again, compare patches/features rather than using `61568753..upstream/master` blindly.
+
+## 2026-08-03 selected upstream batch
+
+Upstream head checked: `caidaoli/ccLoad` `upstream/master` at `898552b2` (`v4.5.0`, `fix: 模型刷新时去重重定向目标`).
+Local safety branch before work: `backup-before-upstream-selected-20260803-161023`.
+
+The upstream v4 protocol refactor is not present in this fork, so the selected changes were ported by behavior and covered with local tests instead of being cherry-picked wholesale.
+
+| Review item | Decision | Status | Upstream source commits | Local commits and adaptation notes |
+| --- | --- | --- | --- | --- |
+| GPT-5.6 pricing corrections | Accept | Ported | `8bf4b605`, `5defe016` | `1d434326`, `6395f8e3`; adds the 272K tiers, cache-read tier accounting, and current Terra/Luna rates without replacing the local runtime catalog. |
+| Clear cooldowns when enabling a channel | Accept | Ported | `8d9dd4ec` | `cddc67cd`; clears channel, key, URL, and model cooldown state through the local admin and cache layers. |
+| Codex Fast billing | Accept | Ported | `532de95f` | `76fea8e5`; bills the actual upstream model and preserves the local billable-log semantics. |
+| Per-model enable/disable | Accept | Ported | `afb9b934` | `7993e532`; adds persistence, routing exclusion, admin UI controls, and model refresh preservation for the local SQLite/MySQL storage model. |
+| Model refresh redirect-target deduplication | Accept | Ported | `898552b2` | `70c2c4e8`; deduplicates against both exposed model names and upstream redirect targets in the backend and editor. |
+| Dynamic log status-code filter | Accept | Ported | `7b943df3` | `63eceafe`; uses the local `/admin/models` statistics contract rather than upstream's v4 dashboard bootstrap. |
+| Actual service-tier multiplier display | Accept | Ported | `c0be3960` | `b55e2f1b`; accounting returns a transient `service_tier_multiplier` for the actual model, including GPT Fast/Flex and Claude Opus Fast rates. |
+| Upstream connection reuse limit | Accept | Ported | `6c49386a` | `83acf468`; applies to this fork's HTTP/1.1, HTTP/2, and channel-proxy pools. Setting `upstream_connection_reuse_limit_seconds` defaults to `0` and takes effect after restart. This does not claim support for the absent Responses WebSocket pool. |
+| One-click channel import | Selective adaptation | Ported | `38c4126c` (reviewed together with the earlier protocol behavior in `2dd34360`) | `a77f9afc`; retains the existing local quick-create workflow with multiple keys, priorities, channel/auth-token groups, source-channel model copying, and direct backend creation. Adds broader JSON/environment/Bearer parsing, terminal `/v1` removal, and atomic model discovery when no model source is supplied. Protocol remains an explicit channel-type choice because a successful Models API call does not prove the chat protocol. |
+
+For the next upstream check, use `898552b2` as the content-review checkpoint. Do not re-propose the full `38c4126c` UI or its OpenAI-to-Anthropic Models API probing; only review later fixes that provide a reliable protocol capability signal or improve the retained local quick-create workflow.
