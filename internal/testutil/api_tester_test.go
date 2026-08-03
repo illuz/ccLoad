@@ -270,6 +270,57 @@ func TestCodexTesterBuild_UsesCurrentCodexClientBodyShape(t *testing.T) {
 	}
 }
 
+func TestCodexTesterBuild_UsesMessagesAsResponsesInput(t *testing.T) {
+	cfg := &model.Config{URL: "https://api.example.com"}
+	req := &TestChannelRequest{
+		Model:  "gpt-5.5",
+		Stream: true,
+		Messages: []ChatMessage{
+			{Role: "user", Content: "first question"},
+			{Role: "assistant", Content: "previous answer"},
+			{Role: "user", Content: "follow up"},
+		},
+	}
+
+	_, _, body, err := (&CodexTester{}).Build(cfg, "sk-test", req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := sonic.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal body failed: %v; body=%s", err, body)
+	}
+	input, ok := payload["input"].([]any)
+	if !ok || len(input) != 3 {
+		t.Fatalf("input = %#v, want 3 messages; body=%s", payload["input"], body)
+	}
+
+	want := []struct {
+		role     string
+		partType string
+		text     string
+	}{
+		{role: "user", partType: "input_text", text: "first question"},
+		{role: "assistant", partType: "output_text", text: "previous answer"},
+		{role: "user", partType: "input_text", text: "follow up"},
+	}
+	for i, expected := range want {
+		item, ok := input[i].(map[string]any)
+		if !ok || item["type"] != "message" || item["role"] != expected.role {
+			t.Fatalf("input[%d] = %#v, want role %q message; body=%s", i, input[i], expected.role, body)
+		}
+		content, ok := item["content"].([]any)
+		if !ok || len(content) != 1 {
+			t.Fatalf("input[%d].content = %#v, want one part; body=%s", i, item["content"], body)
+		}
+		part, ok := content[0].(map[string]any)
+		if !ok || part["type"] != expected.partType || part["text"] != expected.text {
+			t.Fatalf("input[%d].content[0] = %#v, want %s %q; body=%s", i, content[0], expected.partType, expected.text, body)
+		}
+	}
+}
+
 func TestAnthropicTesterBuild_ExactURLMarkerSkipsEndpointPath(t *testing.T) {
 	cfg := &model.Config{URL: "https://api.example.com/custom/messages#"}
 	req := &TestChannelRequest{Model: "claude-test", Content: "hello"}

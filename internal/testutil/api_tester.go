@@ -665,6 +665,16 @@ func (t *CodexTester) Build(cfg *model.Config, apiKey string, req *TestChannelRe
 	if err != nil {
 		return "", nil, nil, err
 	}
+	if len(req.Messages) > 0 {
+		body, err = patchMessagesInBody(body, "input", toCodexInput(req.Messages))
+		if err != nil {
+			return "", nil, nil, err
+		}
+	}
+	body, err = applyCodexTestOptions(body, req)
+	if err != nil {
+		return "", nil, nil, err
+	}
 
 	fullURL := buildTesterURL(cfg.GetURLs()[0], "/v1/responses")
 
