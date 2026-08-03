@@ -157,6 +157,21 @@ test('settings 超时组按全局项和渠道类型成对排序', () => {
   ]);
 });
 
+test('上游连接复用时限使用独立设置分组', () => {
+  const harness = createSettingsHarness();
+  const groups = harness.settingsTest.groupSettings([
+    { key: 'upstream_first_byte_timeout', value: '0', value_type: 'duration' },
+    { key: 'upstream_connection_reuse_limit_seconds', value: '0', value_type: 'duration' }
+  ]);
+
+  const connectionGroup = groups.find(group => group.id === 'upstream-connection');
+  assert.ok(connectionGroup);
+  assert.deepEqual(Array.from(connectionGroup.settings, setting => setting.key), [
+    'upstream_connection_reuse_limit_seconds'
+  ]);
+  assert.ok(groups.findIndex(group => group.id === 'upstream-connection') < groups.findIndex(group => group.id === 'timeout'));
+});
+
 test('可热更新的设置项包含超时项和直接读取的运行时项', () => {
   const harness = createSettingsHarness();
 

@@ -1132,6 +1132,7 @@ window.I18N_LOCALES['zh-CN'] = {
   // 分组名称
   'settings.group.channel': '渠道与测试',
   'settings.group.model': '模型匹配',
+  'settings.group.upstreamConnection': '上游连接',
   'settings.group.timeout': '超时',
   'settings.group.health': '渠道动态排序',
   'settings.group.cooldown': '冷却兜底',
@@ -1158,6 +1159,7 @@ window.I18N_LOCALES['zh-CN'] = {
   // 设置项描述（与后端 key 对应）
   'settings.desc.log_retention_days': '日志保留天数(-1永久保留,1-365天)',
   'settings.desc.max_key_retries': '单渠道最大Key重试次数',
+  'settings.desc.upstream_connection_reuse_limit_seconds': '上游 HTTP 连接最长复用时间（秒，适用于 HTTP/1.1 和 HTTP/2；0 表示不限制；达到时限后不再接收新请求，在途请求完成后关闭）',
   'settings.desc.upstream_first_byte_timeout': '上游首个有效流内容超时(秒,0=禁用，仅流式)',
   'settings.desc.non_stream_timeout': '非流式请求超时(秒,0=禁用)',
   'settings.desc.anthropic_first_byte_timeout': 'Anthropic首个有效流内容超时(秒,0=使用全局首字超时)',

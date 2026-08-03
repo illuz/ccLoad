@@ -1132,6 +1132,7 @@ window.I18N_LOCALES['en'] = {
   // Group names
   'settings.group.channel': 'Channel & Testing',
   'settings.group.model': 'Model Matching',
+  'settings.group.upstreamConnection': 'Upstream Connections',
   'settings.group.timeout': 'Timeout',
   'settings.group.health': 'Dynamic Channel Sorting',
   'settings.group.cooldown': 'Cooldown Fallback',
@@ -1158,6 +1159,7 @@ window.I18N_LOCALES['en'] = {
   // Setting descriptions (mapped to backend keys)
   'settings.desc.log_retention_days': 'Log retention days (-1 = permanent, 1-365 days)',
   'settings.desc.max_key_retries': 'Max key retries per channel',
+  'settings.desc.upstream_connection_reuse_limit_seconds': 'Maximum upstream HTTP connection reuse time (seconds; applies to HTTP/1.1 and HTTP/2; 0 = unlimited; connections stop accepting new requests at the limit and close after active requests finish)',
   'settings.desc.upstream_first_byte_timeout': 'Upstream first valid stream content timeout (seconds, 0 = disabled, stream only)',
   'settings.desc.non_stream_timeout': 'Non-stream request timeout (seconds, 0 = disabled)',
   'settings.desc.anthropic_first_byte_timeout': 'Anthropic first valid stream content timeout (seconds, 0 = use global first-byte timeout)',

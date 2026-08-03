@@ -34,6 +34,7 @@ function getSettingGroupInfo(key) {
   const defs = [
     { id: 'channel', nameKey: 'settings.group.channel', order: 10, match: () => k.startsWith('channel_') || k === 'max_key_retries' },
     { id: 'model', nameKey: 'settings.group.model', order: 15, match: () => k.startsWith('model_') },
+    { id: 'upstream-connection', nameKey: 'settings.group.upstreamConnection', order: 19, match: () => k === 'upstream_connection_reuse_limit_seconds' },
     { id: 'timeout', nameKey: 'settings.group.timeout', order: 20, match: () => k.includes('timeout') },
     { id: 'health', nameKey: 'settings.group.health', order: 30, match: () => k.includes('health_score') || k.includes('success_rate') || k.includes('penalty_weight') || k.includes('ttfb') || k === 'enable_health_score' || k === 'health_min_confident_sample' },
     { id: 'cooldown', nameKey: 'settings.group.cooldown', order: 40, match: () => k.startsWith('cooldown_') },
@@ -49,6 +50,7 @@ function getSettingGroupInfo(key) {
 
 function getSettingOrder(key) {
   const orders = {
+    upstream_connection_reuse_limit_seconds: 90,
     upstream_first_byte_timeout: 100,
     non_stream_timeout: 101,
     anthropic_first_byte_timeout: 110,

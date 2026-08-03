@@ -54,7 +54,7 @@ type Server struct {
 	urlSelector                   *URLSelector               // URL选择器（多URL场景的延迟追踪与冷却）
 	protocolRegistry              *protocol.Registry
 	client                        *http.Client          // HTTP客户端（全局默认）
-	proxyTransports               sync.Map              // proxyURL → *http.Transport（渠道级代理缓存）
+	proxyTransports               sync.Map              // proxyURL → *http.Client（渠道级代理缓存）
 	skipTLSVerify                 bool                  // 透传给渠道级 Transport
 	activeRequests                *activeRequestManager // 进行中请求（内存状态，不持久化）
 	scheduledChannelChecksRunning atomic.Bool
@@ -65,11 +65,12 @@ type Server struct {
 	tokenStatsDropCount atomic.Int64
 
 	// 运行时配置（超时使用原子快照，保存后对新请求生效）
-	maxKeyRetries       int                                 // 单个渠道内最大Key重试次数
-	firstByteTimeout    time.Duration                       // 上游首字节超时（流式请求）
-	nonStreamTimeout    time.Duration                       // 非流式请求超时
-	channelTypeTimeouts map[string]channelTypeTimeoutConfig // 按运行时上游协议覆盖超时，0=回退全局
-	timeoutConfig       atomic.Pointer[serverTimeoutConfig]
+	maxKeyRetries            int                                 // 单个渠道内最大Key重试次数
+	firstByteTimeout         time.Duration                       // 上游首字节超时（流式请求）
+	nonStreamTimeout         time.Duration                       // 非流式请求超时
+	upstreamConnectionMaxAge time.Duration                       // 上游 HTTP 连接最长复用时间，0 表示不限制
+	channelTypeTimeouts      map[string]channelTypeTimeoutConfig // 按运行时上游协议覆盖超时，0=回退全局
+	timeoutConfig            atomic.Pointer[serverTimeoutConfig]
 	// 模型匹配配置（启动时从数据库加载，修改后重启生效）
 	modelFuzzyMatch bool // 未命中时启用模糊匹配（子串匹配+版本排序）
 
@@ -168,18 +169,16 @@ func NewServerWithDebugLogStore(store storage.Store, debugLogs *debuglog.FileSto
 		loginRateLimiter: util.NewLoginRateLimiter(),
 
 		// 运行时配置（启动时加载，修改后重启生效）
-		maxKeyRetries:       runtimeCfg.MaxKeyRetries,
-		firstByteTimeout:    runtimeCfg.FirstByteTimeout,
-		nonStreamTimeout:    runtimeCfg.NonStreamTimeout,
-		channelTypeTimeouts: runtimeCfg.ChannelTypeTimeouts,
+		maxKeyRetries:            runtimeCfg.MaxKeyRetries,
+		firstByteTimeout:         runtimeCfg.FirstByteTimeout,
+		nonStreamTimeout:         runtimeCfg.NonStreamTimeout,
+		upstreamConnectionMaxAge: runtimeCfg.UpstreamConnectionMaxAge,
+		channelTypeTimeouts:      runtimeCfg.ChannelTypeTimeouts,
 		// 模型匹配配置（启动时加载，修改后重启生效）
 		modelFuzzyMatch: runtimeCfg.ModelFuzzyMatch,
 
-		// HTTP客户端
-		client: &http.Client{
-			Transport: transport,
-			Timeout:   0, // 不设置全局超时，避免中断长时间任务
-		},
+		// 不设置请求总超时；连接复用时限只轮换连接池，不中断在途请求。
+		client:        newUpstreamHTTPClient(transport, runtimeCfg.UpstreamConnectionMaxAge),
 		skipTLSVerify: skipTLSVerify,
 
 		// 并发控制：使用信号量限制最大并发请求数
@@ -336,12 +335,13 @@ type channelTypeTimeoutConfig struct {
 
 // serverRuntimeConfig 启动期从数据库读取的运行时配置（修改后重启生效）
 type serverRuntimeConfig struct {
-	MaxKeyRetries       int
-	FirstByteTimeout    time.Duration
-	NonStreamTimeout    time.Duration
-	ChannelTypeTimeouts map[string]channelTypeTimeoutConfig
-	LogRetentionDays    int
-	ModelFuzzyMatch     bool
+	MaxKeyRetries            int
+	FirstByteTimeout         time.Duration
+	NonStreamTimeout         time.Duration
+	UpstreamConnectionMaxAge time.Duration
+	ChannelTypeTimeouts      map[string]channelTypeTimeoutConfig
+	LogRetentionDays         int
+	ModelFuzzyMatch          bool
 }
 
 // serverTimeoutConfig 是供请求路径无锁读取的不可变超时快照。
@@ -435,6 +435,12 @@ func loadServerRuntimeConfig(cs *ConfigService) serverRuntimeConfig {
 		nonStreamTimeout = 120 * time.Second
 	}
 
+	upstreamConnectionMaxAge := cs.GetDuration("upstream_connection_reuse_limit_seconds", 0)
+	if upstreamConnectionMaxAge < 0 {
+		log.Printf("[WARN] 无效的 upstream_connection_reuse_limit_seconds=%v（必须 >= 0，0=不限制），已设为 0", upstreamConnectionMaxAge)
+		upstreamConnectionMaxAge = 0
+	}
+
 	channelTypeTimeouts := loadChannelTypeTimeouts(cs)
 
 	logRetentionDays := cs.GetInt("log_retention_days", 7)
@@ -445,12 +451,13 @@ func loadServerRuntimeConfig(cs *ConfigService) serverRuntimeConfig {
 	}
 
 	return serverRuntimeConfig{
-		MaxKeyRetries:       maxKeyRetries,
-		FirstByteTimeout:    firstByteTimeout,
-		NonStreamTimeout:    nonStreamTimeout,
-		ChannelTypeTimeouts: channelTypeTimeouts,
-		LogRetentionDays:    logRetentionDays,
-		ModelFuzzyMatch:     modelFuzzyMatch,
+		MaxKeyRetries:            maxKeyRetries,
+		FirstByteTimeout:         firstByteTimeout,
+		NonStreamTimeout:         nonStreamTimeout,
+		UpstreamConnectionMaxAge: upstreamConnectionMaxAge,
+		ChannelTypeTimeouts:      channelTypeTimeouts,
+		LogRetentionDays:         logRetentionDays,
+		ModelFuzzyMatch:          modelFuzzyMatch,
 	}
 }
 
@@ -666,9 +673,9 @@ func (s *Server) getClientForChannel(cfg *model.Config) *http.Client {
 		log.Printf("[WARN] 渠道 %d 代理 %q 无效，回退全局: %v", cfg.ID, cfg.ProxyURL, err)
 		return s.client
 	}
-	c := &http.Client{Transport: t, Timeout: 0}
+	c := newUpstreamHTTPClient(t, s.upstreamConnectionMaxAge)
 	if actual, loaded := s.proxyTransports.LoadOrStore(cfg.ProxyURL, c); loaded {
-		t.CloseIdleConnections()
+		closeUpstreamHTTPClient(c)
 		return actual.(*http.Client)
 	}
 	log.Printf("[INFO] 渠道 %d 使用独立代理: %s", cfg.ID, cfg.ProxyURL)
@@ -1240,9 +1247,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		err = ctx.Err()
 	}
 
-	// 关闭渠道级代理 Transport 的空闲连接
+	// 停止连接池老化计时器并关闭全局及渠道代理 Transport 的空闲连接。
+	closeUpstreamHTTPClient(s.client)
 	s.proxyTransports.Range(func(_, v any) bool {
-		v.(*http.Client).CloseIdleConnections()
+		closeUpstreamHTTPClient(v.(*http.Client))
 		return true
 	})
 

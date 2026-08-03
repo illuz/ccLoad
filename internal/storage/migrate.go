@@ -394,6 +394,7 @@ func initDefaultSettings(ctx context.Context, db *sql.DB, dialect Dialect) error
 		{"log_retention_days", "7", "int", "日志保留天数(-1永久保留,1-365天)", "7"},
 		{"max_key_retries", "3", "int", "单渠道最大Key重试次数", "3"},
 		{"upstream_first_byte_timeout", "0", "duration", "上游首个有效流内容超时(秒,0=禁用，仅流式)", "0"},
+		{"upstream_connection_reuse_limit_seconds", "0", "duration", "上游HTTP连接最长复用时间(秒,0=不限制;达到时限后不接收新请求,在途请求完成后关闭)", "0"},
 		{"non_stream_timeout", "120", "duration", "非流式请求超时(秒,0=禁用)", "120"},
 		{"anthropic_first_byte_timeout", "0", "duration", "Anthropic首个有效流内容超时(秒,0=使用全局upstream_first_byte_timeout)", "0"},
 		{"anthropic_non_stream_timeout", "0", "duration", "Anthropic非流式请求超时(秒,0=使用全局non_stream_timeout)", "0"},

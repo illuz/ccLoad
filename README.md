@@ -973,6 +973,7 @@ Settings marked with the lightning icon take effect immediately after saving: up
 |---------|---------|-------------|
 | `log_retention_days` | `7` | Log retention days (-1 for permanent, 1-365 days) |
 | `max_key_retries` | `3` | Max key retries within single channel |
+| `upstream_connection_reuse_limit_seconds` | `0` | Maximum upstream HTTP connection reuse time in seconds (`0` = unlimited); applies to HTTP/1.1 and HTTP/2, drains active requests, then reconnects on demand |
 | `upstream_first_byte_timeout` | `0` | Upstream first valid stream content timeout (seconds, 0=disabled, stream only) |
 | `non_stream_timeout` | `120` | Non-stream request timeout (seconds, 0=disabled) |
 | `anthropic_first_byte_timeout` | `0` | Anthropic first valid stream content timeout (seconds, 0=use global `upstream_first_byte_timeout`) |
