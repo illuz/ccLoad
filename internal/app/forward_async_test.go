@@ -775,7 +775,7 @@ func TestNoGoroutineLeak(t *testing.T) {
 		const testTimeout = 20 * time.Millisecond
 		const upstreamDelay = testTimeout * 3 // 明确3倍超时
 
-		srv.firstByteTimeout = testTimeout
+		setFirstByteTimeoutForTest(t, srv, testTimeout)
 
 		upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(upstreamDelay)
@@ -801,7 +801,7 @@ func TestNoGoroutineLeak(t *testing.T) {
 			)
 		}
 
-		srv.firstByteTimeout = 0 // 恢复默认
+		setFirstByteTimeoutForTest(t, srv, 0) // 恢复默认
 		after := waitForGoroutineDeltaLE(t, before, maxDelta, waitTimeout)
 		t.Logf("10次超时请求后 goroutine 数量: %d (增加: %d)", after, after-before)
 
@@ -821,7 +821,7 @@ func TestFirstByteTimeout_StreamingResponse(t *testing.T) {
 	const testTimeout = 10 * time.Millisecond
 	const upstreamDelay = testTimeout * 10 // 明确10倍超时
 
-	srv.firstByteTimeout = testTimeout
+	setFirstByteTimeoutForTest(t, srv, testTimeout)
 
 	// 上游服务器：延迟发送响应头，模拟慢响应导致首字节超时
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -884,7 +884,7 @@ func TestFirstByteTimeout_StreamingResponseBodyDelayed(t *testing.T) {
 	const testTimeout = 10 * time.Millisecond
 	const upstreamBodyDelay = testTimeout * 20 // 明确20倍超时
 
-	srv.firstByteTimeout = testTimeout
+	setFirstByteTimeoutForTest(t, srv, testTimeout)
 
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -938,7 +938,7 @@ func TestFirstByteTimeout_StreamingHeartbeatBeforeContent(t *testing.T) {
 	const heartbeatInterval = 5 * time.Millisecond
 	const contentDelay = testTimeout * 6
 
-	srv.firstByteTimeout = testTimeout
+	setFirstByteTimeoutForTest(t, srv, testTimeout)
 
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

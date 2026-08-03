@@ -396,7 +396,7 @@ func TestTestChannelAPI_NonStreamUsesConfiguredTimeout(t *testing.T) {
 	defer upstream.Close()
 
 	srv := newInMemoryServer(t)
-	srv.nonStreamTimeout = 25 * time.Millisecond
+	setNonStreamTimeoutForTest(t, srv, 25*time.Millisecond)
 
 	cfg := &model.Config{
 		ID:           9530,
@@ -458,7 +458,7 @@ func TestTestChannelAPI_StreamFirstValidContentTimeoutIgnoresHeartbeats(t *testi
 	defer upstream.Close()
 
 	srv := newInMemoryServer(t)
-	srv.firstByteTimeout = 30 * time.Millisecond
+	setFirstByteTimeoutForTest(t, srv, 30*time.Millisecond)
 
 	cfg := &model.Config{
 		ID:           9531,

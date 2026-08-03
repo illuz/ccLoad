@@ -969,7 +969,7 @@ func TestStreamChatWithURLKeepsFirstContentTimeoutUntilValidSSEEvent(t *testing.
 	defer upstream.Close()
 
 	srv := newInMemoryServer(t)
-	srv.firstByteTimeout = 25 * time.Millisecond
+	setFirstByteTimeoutForTest(t, srv, 25*time.Millisecond)
 	cfg := &model.Config{
 		ID:           77,
 		Name:         "chat-first-content-timeout",

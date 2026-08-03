@@ -373,6 +373,22 @@ func newInMemoryServer(t testing.TB) *Server {
 	return srv
 }
 
+func setFirstByteTimeoutForTest(t testing.TB, srv *Server, timeout time.Duration) {
+	t.Helper()
+	snapshot := *srv.currentTimeoutConfig()
+	snapshot.firstByteTimeout = timeout
+	srv.firstByteTimeout = timeout
+	srv.timeoutConfig.Store(&snapshot)
+}
+
+func setNonStreamTimeoutForTest(t testing.TB, srv *Server, timeout time.Duration) {
+	t.Helper()
+	snapshot := *srv.currentTimeoutConfig()
+	snapshot.nonStreamTimeout = timeout
+	srv.nonStreamTimeout = timeout
+	srv.timeoutConfig.Store(&snapshot)
+}
+
 func newRequest(method, target string, body io.Reader) *http.Request {
 	return testutil.NewRequestReader(method, target, body)
 }

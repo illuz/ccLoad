@@ -3547,7 +3547,7 @@ func TestProxy_MultiURL5xx_SwitchesToNextChannel(t *testing.T) {
 	}
 }
 
-func TestProxy_MultiURLFallbackOn598_DoesNotChannelCooldownEarly(t *testing.T) {
+func TestProxy_MultiURLFirstByteTimeout_DoesNotRetryOrCooldownAnotherURL(t *testing.T) {
 	t.Parallel()
 
 	var failCalls atomic.Int64
@@ -3581,7 +3581,7 @@ func TestProxy_MultiURLFallbackOn598_DoesNotChannelCooldownEarly(t *testing.T) {
 	})
 
 	// 缩短首字节超时，稳定触发 598
-	env.server.firstByteTimeout = 50 * time.Millisecond
+	setFirstByteTimeoutForTest(t, env.server, 50*time.Millisecond)
 
 	ctx := context.Background()
 	configs, err := env.store.ListConfigs(ctx)
@@ -3593,8 +3593,13 @@ func TestProxy_MultiURLFallbackOn598_DoesNotChannelCooldownEarly(t *testing.T) {
 	}
 	channelID := configs[0].ID
 
-	// 强制 URL2 进入冷却，确保首跳先打到 timeout URL
-	env.server.urlSelector.CooldownURL(channelID, upstreamOK.URL)
+	// 已探测 URL 排在未探测 URL 之后，稳定让 timeout URL 成为首跳。
+	env.server.urlSelector.RecordLatency(channelID, upstreamOK.URL, 10*time.Millisecond)
+	env.server.urlSelector.probeDial = func(context.Context, string, string) (net.Conn, error) {
+		conn, peer := net.Pipe()
+		_ = peer.Close()
+		return conn, nil
+	}
 
 	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
 		"model":    "gpt-4",
@@ -3602,25 +3607,32 @@ func TestProxy_MultiURLFallbackOn598_DoesNotChannelCooldownEarly(t *testing.T) {
 		"messages": []map[string]string{{"role": "user", "content": "hi"}},
 	}, nil)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504, got %d: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "from-url2") {
-		t.Fatalf("expected fallback to url2 on 598, got body: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "first byte timeout") {
+		t.Fatalf("expected first-byte timeout response, got body: %s", w.Body.String())
 	}
 	fail := failCalls.Load()
 	ok := okCalls.Load()
-	if fail < 1 || ok < 1 {
-		t.Fatalf("expected both URLs attempted, failCalls=%d okCalls=%d", fail, ok)
+	if fail < 1 || ok != 0 {
+		t.Fatalf("model-scoped timeout must not retry another URL, failCalls=%d okCalls=%d", fail, ok)
 	}
 
-	// 关键断言：598 触发多URL内部回退成功后，不应残留渠道级冷却
+	if env.server.urlSelector.IsCooledDown(channelID, upstreamTimeout.URL) {
+		t.Fatalf("model-scoped timeout must not cool the URL, url=%s", upstreamTimeout.URL)
+	}
+	if env.server.urlSelector.IsCooledDown(channelID, upstreamOK.URL) {
+		t.Fatalf("untried URL must not be cooled, url=%s", upstreamOK.URL)
+	}
+
+	// 该渠道只有一个模型；模型冷却后会升级为渠道冷却。
 	cooldowns, err := env.store.GetAllChannelCooldowns(ctx)
 	if err != nil {
 		t.Fatalf("GetAllChannelCooldowns: %v", err)
 	}
-	if _, exists := cooldowns[channelID]; exists {
-		t.Fatalf("unexpected channel cooldown for multi-url fallback success, channel_id=%d", channelID)
+	if _, exists := cooldowns[channelID]; !exists {
+		t.Fatalf("expected channel cooldown after its only model timed out, channel_id=%d", channelID)
 	}
 }
 
