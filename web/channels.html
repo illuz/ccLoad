@@ -933,9 +933,9 @@
       </div>
       <div class="channel-import-modal-body">
         <div class="form-group">
-          <label class="form-label">粘贴 URL + Key(s) <span class="channel-import-hint">(优先识别 JSON 或首行 URL，其他文本用正则提取 URL 与 sk Key)</span></label>
+          <label class="form-label">粘贴 URL + Key(s) <span class="channel-import-hint">(支持 JSON、环境变量、Bearer 和标签文本)</span></label>
           <textarea id="quickAddInput" class="form-input channel-import-textarea" rows="8"
-            placeholder="{&quot;_type&quot;:&quot;newapi_channel_conn&quot;,&quot;key&quot;:&quot;sk-xxxx&quot;,&quot;url&quot;:&quot;https://muyuan.do&quot;}&#10;&#10;或:&#10;https://codex.hiyo.top&#10;sk-yyyy"></textarea>
+            placeholder="OPENAI_BASE_URL=https://api.example.com/v1&#10;OPENAI_API_KEY=sk-xxxx&#10;&#10;或:&#10;https://codex.hiyo.top&#10;sk-yyyy"></textarea>
         </div>
 
         <div class="channel-editor-group">
@@ -966,7 +966,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">或手动填模型 <span class="channel-import-hint">(逗号分隔,模型来源为空时生效)</span></label>
+            <label class="form-label">或手动填模型 <span class="channel-import-hint">(可留空，创建前按所选类型自动探测)</span></label>
             <input id="quickAddModels" type="text" class="form-input" placeholder="gpt-5-codex,claude-sonnet-4-6" />
           </div>
         </div>
