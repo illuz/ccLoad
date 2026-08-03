@@ -342,8 +342,12 @@ function buildActiveRequestChannelDisplay(req) {
     return channelHtml;
   }
 
-  const multiplierText = `${Number(multiplier.toFixed(2)).toString()}x`;
+  const multiplierText = formatMultiplierText(multiplier);
   return `<span class="log-channel-cell">${channelHtml}<sup class="log-channel-multiplier-badge">${multiplierText}</sup></span>`;
+}
+
+function formatMultiplierText(multiplier) {
+  return `${Number(multiplier.toFixed(2)).toString()}x`;
 }
 
 function buildLogChannelDisplay(entry) {
@@ -363,7 +367,7 @@ function buildLogChannelDisplay(entry) {
     return channelHtml;
   }
 
-  const multiplierText = `${Number(multiplier.toFixed(2)).toString()}x`;
+  const multiplierText = formatMultiplierText(multiplier);
   return `<span class="log-channel-cell">${channelHtml}<sup class="log-channel-multiplier-badge">${multiplierText}</sup></span>`;
 }
 // 生成流式标志HTML（公共函数，避免重复）
@@ -576,16 +580,20 @@ function buildLogCostDisplay(entry) {
   const hasMultiplier = Math.abs(effectiveCost - standardCost) >= 1e-9;
   const badgeParts = [];
 
-  switch (entry?.service_tier) {
-    case 'priority':
-      badgeParts.push('<sup class="log-cost-badge log-cost-badge--priority">2x</sup>');
-      break;
-    case 'flex':
-      badgeParts.push('<sup class="log-cost-badge log-cost-badge--flex">0.5x</sup>');
-      break;
-    case 'fast':
-      badgeParts.push('<sup class="log-cost-badge log-cost-badge--fast">⚡6x</sup>');
-      break;
+  const tierMultiplier = Number(entry?.service_tier_multiplier);
+  if (Number.isFinite(tierMultiplier) && tierMultiplier > 0 && Math.abs(tierMultiplier - 1) >= 1e-9) {
+    const multiplierText = formatMultiplierText(tierMultiplier);
+    switch (entry?.service_tier) {
+      case 'priority':
+        badgeParts.push(`<sup class="log-cost-badge log-cost-badge--priority">${multiplierText}</sup>`);
+        break;
+      case 'flex':
+        badgeParts.push(`<sup class="log-cost-badge log-cost-badge--flex">${multiplierText}</sup>`);
+        break;
+      case 'fast':
+        badgeParts.push(`<sup class="log-cost-badge log-cost-badge--fast">⚡${multiplierText}</sup>`);
+        break;
+    }
   }
 
   const badgesHtml = badgeParts.length

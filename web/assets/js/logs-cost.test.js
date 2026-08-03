@@ -50,7 +50,8 @@ test('日志页倍率角标挂在渠道单元格容器右上角，成本列只�
   };
 
   vm.runInNewContext(
-    `${extractFunction(logsSource, 'buildLogChannelDisplay')}
+    `${extractFunction(logsSource, 'formatMultiplierText')}
+${extractFunction(logsSource, 'buildLogChannelDisplay')}
 ${extractFunction(logsSource, 'buildLogCostDisplay')}`,
     sandbox
   );
@@ -75,6 +76,49 @@ ${extractFunction(logsSource, 'buildLogCostDisplay')}`,
   assert.doesNotMatch(costHtml, /log-cost-badge--multiplier/);
 });
 
+test('日志页按后端实际 service tier 倍率展示角标', () => {
+  const sandbox = {
+    formatCost(cost) {
+      return '$' + Number(cost).toFixed(3);
+    }
+  };
+
+  vm.runInNewContext(
+    `${extractFunction(logsSource, 'formatMultiplierText')}
+${extractFunction(logsSource, 'buildLogCostDisplay')}`,
+    sandbox
+  );
+
+  const codexFast = sandbox.buildLogCostDisplay({
+    cost: 0.019,
+    cost_multiplier: 1,
+    service_tier: 'priority',
+    service_tier_multiplier: 2.5
+  });
+  const claudeFast = sandbox.buildLogCostDisplay({
+    cost: 0.019,
+    cost_multiplier: 1,
+    service_tier: 'fast',
+    service_tier_multiplier: 6
+  });
+  const flex = sandbox.buildLogCostDisplay({
+    cost: 0.019,
+    cost_multiplier: 1,
+    service_tier: 'flex',
+    service_tier_multiplier: 0.5
+  });
+  const unsupported = sandbox.buildLogCostDisplay({
+    cost: 0.019,
+    cost_multiplier: 1,
+    service_tier: 'priority'
+  });
+
+  assert.match(codexFast, /log-cost-badge--priority">2\.5x<\/sup>/);
+  assert.match(claudeFast, /log-cost-badge--fast">⚡6x<\/sup>/);
+  assert.match(flex, /log-cost-badge--flex">0\.5x<\/sup>/);
+  assert.doesNotMatch(unsupported, /log-cost-badge--priority/);
+});
+
 
 test('日志页高成本按阈值高亮：大于 0.3 变红，大于 1 变紫', () => {
   const sandbox = {
@@ -87,7 +131,8 @@ test('日志页高成本按阈值高亮：大于 0.3 变红，大于 1 变紫', 
   };
 
   vm.runInNewContext(
-    `${extractFunction(logsSource, 'buildLogCostDisplay')}`,
+    `${extractFunction(logsSource, 'formatMultiplierText')}
+${extractFunction(logsSource, 'buildLogCostDisplay')}`,
     sandbox
   );
 
@@ -115,7 +160,8 @@ test('日志页普通成本保持单值显示且不追加原价删除线', () =>
   };
 
   vm.runInNewContext(
-    `${extractFunction(logsSource, 'buildLogCostDisplay')}`,
+    `${extractFunction(logsSource, 'formatMultiplierText')}
+${extractFunction(logsSource, 'buildLogCostDisplay')}`,
     sandbox
   );
 
@@ -152,7 +198,8 @@ test('日志页免费渠道保留 0x 角标并显示 $0 的渠道成本', () => 
   };
 
   vm.runInNewContext(
-    `${extractFunction(logsSource, 'buildLogChannelDisplay')}
+    `${extractFunction(logsSource, 'formatMultiplierText')}
+${extractFunction(logsSource, 'buildLogChannelDisplay')}
 ${extractFunction(logsSource, 'buildLogCostDisplay')}`,
     sandbox
   );

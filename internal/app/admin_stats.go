@@ -30,8 +30,25 @@ func (s *Server) HandleErrors(c *gin.Context) {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	annotateLogServiceTierMultipliers(logs)
 
 	RespondJSONWithCount(c, http.StatusOK, logs, total)
+}
+
+func annotateLogServiceTierMultipliers(logs []*model.LogEntry) {
+	for _, entry := range logs {
+		if entry == nil {
+			continue
+		}
+		billingModel := entry.ActualModel
+		if billingModel == "" {
+			billingModel = entry.Model
+		}
+		entry.ServiceTierMultiplier = 0
+		if multiplier := util.ServiceTierCostMultiplier(billingModel, entry.ServiceTier); multiplier != 1 {
+			entry.ServiceTierMultiplier = multiplier
+		}
+	}
 }
 
 // HandleMetrics 获取聚合指标数据

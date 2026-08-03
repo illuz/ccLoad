@@ -390,6 +390,27 @@ func TestOpenAIServiceTierMultiplier(t *testing.T) {
 	}
 }
 
+func TestServiceTierCostMultiplier(t *testing.T) {
+	tests := []struct {
+		model string
+		tier  string
+		want  float64
+	}{
+		{model: "gpt-5.6", tier: "priority", want: 2.5},
+		{model: "gpt-5.4", tier: "fast", want: 2.0},
+		{model: "gpt-5", tier: "flex", want: 0.5},
+		{model: "claude-opus-4-6", tier: "fast", want: 6.0},
+		{model: "qwen3.5-plus", tier: "priority", want: 1.0},
+		{model: "gpt-5.6", tier: "default", want: 1.0},
+	}
+
+	for _, tt := range tests {
+		if got := ServiceTierCostMultiplier(tt.model, tt.tier); got != tt.want {
+			t.Errorf("ServiceTierCostMultiplier(%q, %q) = %v, want %v", tt.model, tt.tier, got, tt.want)
+		}
+	}
+}
+
 // P1-2 回归：Gemini 长上下文分档只看非缓存 prompt size，缓存读 token 不得推高分档。
 // 修复前 cacheRead 被无条件加进 tierInputTokens（条件 CacheReadPriceHigh>0 过宽），
 // 256K 纯缓存读会误触 200K 高档，把 0.20 低档缓存价算成 0.40 高档价。

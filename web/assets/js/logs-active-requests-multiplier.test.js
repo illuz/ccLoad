@@ -19,14 +19,15 @@ test('活跃请求渠道显示在倍率为1时不显示角标', () => {
 });
 
 test('活跃请求渠道显示在倍率非1时显示角标', () => {
-  assert.match(logsSource, /const multiplierText = `\$\{Number\(multiplier\.toFixed\(2\)\)\.toString\(\)\}x`;/);
+  assert.match(logsSource, /function formatMultiplierText\(multiplier\) \{[\s\S]*?return `\$\{Number\(multiplier\.toFixed\(2\)\)\.toString\(\)\}x`;/);
+  assert.match(logsSource, /const multiplierText = formatMultiplierText\(multiplier\);/);
   assert.match(logsSource, /return `<span class="log-channel-cell">\$\{channelHtml\}<sup class="log-channel-multiplier-badge">\$\{multiplierText\}<\/sup><\/span>`;/);
 });
 
 test('活跃请求渠道显示在倍率为0时保留 0x 角标', () => {
   assert.match(logsSource, /const multiplier = Number\(req\.cost_multiplier\);/);
   assert.doesNotMatch(logsSource, /if \(!\(multiplier > 0\) \|\| Math\.abs\(multiplier - 1\) < 1e-9\) \{/);
-  assert.match(logsSource, /const multiplierText = `\$\{Number\(multiplier\.toFixed\(2\)\)\.toString\(\)\}x`;/);
+  assert.match(logsSource, /const multiplierText = formatMultiplierText\(multiplier\);/);
 });
 
 test('renderActiveRequests 使用 buildActiveRequestChannelDisplay 构建渠道显示', () => {

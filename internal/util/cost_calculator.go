@@ -408,6 +408,16 @@ func OpenAIServiceTierMultiplier(model, serviceTier string) float64 {
 	}
 }
 
+// ServiceTierCostMultiplier returns the pricing multiplier represented by a
+// service tier. Anthropic fast mode uses independent prices equivalent to 6x
+// for input/output, while OpenAI tiers use the model-specific table above.
+func ServiceTierCostMultiplier(model, serviceTier string) float64 {
+	if serviceTier == "fast" && IsFastModeModel(model) {
+		return 6.0
+	}
+	return OpenAIServiceTierMultiplier(model, serviceTier)
+}
+
 func openAIFastModeMultiplier(model string) float64 {
 	lowerModel := strings.ToLower(model)
 	switch {
