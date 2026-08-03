@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/web/assets/css/styles.css?v=__VERSION__">
   <link rel="stylesheet" href="/web/assets/css/channels.css?v=__VERSION__">
   <link rel="stylesheet" href="/web/assets/css/logs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/assets/css/logs-channel-panel.css?v=__VERSION__">
   <link rel="stylesheet" href="/web/theme.css?v=__VERSION__">
   <script defer src="/web/assets/locales/zh-CN.js?v=__VERSION__"></script>
   <script defer src="/web/assets/locales/en.js?v=__VERSION__"></script>
@@ -23,6 +24,7 @@
   <script defer src="/web/assets/js/filter-query.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/page-filters.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/ui.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/logs-channel-panel.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/logs.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/logs-channel-editor.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/logs-token-editor.js?v=__VERSION__"></script>
@@ -132,6 +134,80 @@
       </div>
     </main>
   </div>
+
+  <aside id="logsChannelPanel" class="logs-channel-panel" data-state="collapsed" aria-label="渠道快捷控制">
+    <button
+      type="button"
+      id="logsChannelPanelTrigger"
+      class="logs-channel-panel__trigger"
+      data-channel-panel-action="expand"
+      aria-controls="logsChannelPanelSurface"
+      aria-expanded="false"
+      data-i18n-title="logs.channelPanel.open"
+      data-i18n-aria-label="logs.channelPanel.open"
+      title="打开渠道快捷控制"
+      aria-label="打开渠道快捷控制"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="21" x2="14" y1="4" y2="4"></line>
+        <line x1="10" x2="3" y1="4" y2="4"></line>
+        <line x1="21" x2="12" y1="12" y2="12"></line>
+        <line x1="8" x2="3" y1="12" y2="12"></line>
+        <line x1="21" x2="16" y1="20" y2="20"></line>
+        <line x1="12" x2="3" y1="20" y2="20"></line>
+        <line x1="14" x2="14" y1="2" y2="6"></line>
+        <line x1="8" x2="8" y1="10" y2="14"></line>
+        <line x1="16" x2="16" y1="18" y2="22"></line>
+      </svg>
+      <span id="logsChannelPanelBadge" class="logs-channel-panel__badge" hidden></span>
+    </button>
+
+    <section id="logsChannelPanelSurface" class="logs-channel-panel__surface" hidden>
+      <header class="logs-channel-panel__header">
+        <div class="logs-channel-panel__heading">
+          <h2 data-i18n="logs.channelPanel.title">渠道快捷控制</h2>
+          <span id="logsChannelPanelSummary" class="logs-channel-panel__summary"></span>
+        </div>
+        <div class="logs-channel-panel__header-actions">
+          <button
+            type="button"
+            id="logsChannelPanelRefresh"
+            class="logs-channel-panel__icon-btn"
+            data-channel-panel-action="refresh"
+            data-i18n-title="logs.channelPanel.refresh"
+            data-i18n-aria-label="logs.channelPanel.refresh"
+            title="刷新渠道"
+            aria-label="刷新渠道"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"></path>
+              <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="logs-channel-panel__icon-btn"
+            data-channel-panel-action="collapse"
+            data-i18n-title="logs.channelPanel.collapse"
+            data-i18n-aria-label="logs.channelPanel.collapse"
+            title="折叠渠道快捷控制"
+            aria-label="折叠渠道快捷控制"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m18 15-6-6-6 6"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+      <div id="logsChannelPanelBody" class="logs-channel-panel__body">
+        <div class="logs-channel-panel__state">
+          <span class="logs-channel-panel__spinner" aria-hidden="true"></span>
+          <span data-i18n="logs.channelPanel.loading">正在加载渠道...</span>
+        </div>
+      </div>
+      <div id="logsChannelPanelStatus" class="logs-channel-panel__status" aria-live="polite"></div>
+    </section>
+  </aside>
 
   <!-- 测试 API Key 模态框 -->
   <div id="testKeyModal" class="modal">

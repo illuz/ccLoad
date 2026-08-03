@@ -2269,6 +2269,7 @@ window.initPageBootstrap({
   topbarKey: 'logs',
   run: async () => {
   initLogsPageActions();
+  if (window.LogsChannelQuickPanel) window.LogsChannelQuickPanel.init();
   applyColVisibility();
   document.addEventListener('click', closeColMenuOnClickOutside);
 
@@ -2414,6 +2415,9 @@ window.initPageBootstrap({
       }
     });
   }
+  },
+  unmount: () => {
+    if (window.LogsChannelQuickPanel) window.LogsChannelQuickPanel.destroy();
   }
 });
 
