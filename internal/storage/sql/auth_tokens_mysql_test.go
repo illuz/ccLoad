@@ -98,7 +98,7 @@ func (r *foundRowsRows) Columns() []string {
 		"codex_guard_enabled",
 		"success_count", "failure_count", "stream_avg_ttfb", "non_stream_avg_rt", "stream_count", "non_stream_count",
 		"prompt_tokens_total", "completion_tokens_total", "cache_read_tokens_total", "cache_creation_tokens_total", "total_cost_usd", "effective_cost_usd",
-		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "allowed_models", "allowed_channel_ids", "channel_restriction_mode", "max_concurrency",
+		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "daily_limit_triple_day_key", "allowed_models", "allowed_channel_ids", "channel_restriction_mode", "max_concurrency",
 		"group_id", "inherit_quota", "inherit_channels", "inherit_models",
 	}
 }
@@ -145,6 +145,7 @@ func authTokenDriverValues(token *model.AuthToken) []driver.Value {
 		token.DailyCostLimitMicroUSD,
 		token.DailyCostDayKey,
 		token.DailyLimitDoubleDayKey,
+		token.DailyLimitTripleDayKey,
 		`["gpt-4o"]`,
 		`[42]`,
 		token.ChannelRestrictionMode,
@@ -200,6 +201,7 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 		IsActive:               true,
 		SuccessCount:           3,
 		CostLimitMicroUSD:      5000,
+		DailyLimitTripleDayKey: model.CurrentLocalDayKey(),
 		AllowedModels:          []string{"gpt-4o"},
 		AllowedChannelIDs:      []int64{42},
 		ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
@@ -229,6 +231,7 @@ func TestEnsureAuthToken_MySQLClientFoundRowsBackfillsExistingToken(t *testing.T
 		token.PlainToken != existing.PlainToken ||
 		token.CostLimitMicroUSD != existing.CostLimitMicroUSD ||
 		token.MaxConcurrency != existing.MaxConcurrency ||
+		!token.IsDailyLimitTripledToday() ||
 		token.ChannelRestrictionMode != model.ChannelRestrictionModeDeny ||
 		len(token.AllowedModels) != 1 || token.AllowedModels[0] != "gpt-4o" ||
 		len(token.AllowedChannelIDs) != 1 || token.AllowedChannelIDs[0] != 42 {

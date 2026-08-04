@@ -39,6 +39,13 @@ test('日志页令牌编辑器同步并保存 Codex Guard 开关', () => {
   assert.match(tokenEditorScript, /codex_guard_enabled:\s*codexGuardEnabled,/);
 });
 
+test('日志页令牌编辑器同步并互斥保存当日限额倍率', () => {
+  assert.match(tokenEditorScript, /editDailyLimitTripleInput\.checked = !!token\.daily_limit_triple_enabled;/);
+  assert.match(tokenEditorScript, /function enforceDailyLimitMultiplierExclusivity\(changedInput\)/);
+  assert.match(tokenEditorScript, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
+  assert.match(tokenEditorScript, /daily_limit_triple_enabled:\s*dailyLimitTripleEnabled,/);
+});
+
 test('日志页令牌编辑保存后刷新日志令牌筛选和列表', () => {
   assert.match(tokenEditorScript, /window\.loadAuthTokensIntoSelect\('f_auth_token'/);
   assert.match(tokenEditorScript, /if \(typeof authTokens !== 'undefined'\)/);

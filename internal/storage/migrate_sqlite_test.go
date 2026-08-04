@@ -260,7 +260,7 @@ func TestEnsureAuthTokensCostLimit_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqliteExistingColumns: %v", err)
 	}
-	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key"} {
+	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "daily_limit_triple_day_key"} {
 		if !cols[col] {
 			t.Errorf("column %s not found in auth_tokens", col)
 		}

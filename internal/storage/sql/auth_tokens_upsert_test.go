@@ -38,6 +38,7 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 		DailyCostUsedMicroUSD:  5,
 		DailyCostLimitMicroUSD: 20,
 		DailyCostDayKey:        model.CurrentLocalDayKey(),
+		DailyLimitTripleDayKey: model.CurrentLocalDayKey(),
 		MaxConcurrency:         1,
 		SuccessCount:           1,
 		FailureCount:           2,
@@ -56,6 +57,9 @@ func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {
 	}
 	if got.CostLimitMicroUSD != 100 || got.CostUsedMicroUSD != 10 || got.DailyCostLimitMicroUSD != 20 || got.DailyCostUsedMicroUSD != 5 {
 		t.Fatalf("unexpected cost fields: %+v", got)
+	}
+	if !got.IsDailyLimitTripledToday() {
+		t.Fatal("expected daily triple limit to round-trip")
 	}
 	if len(got.AllowedModels) != 2 {
 		t.Fatalf("unexpected allowed_models: %+v", got.AllowedModels)

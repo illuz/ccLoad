@@ -53,6 +53,7 @@ type AuthToken struct {
 	DailyCostLimitMicroUSD int64 `json:"-"` // 当日费用上限（微美元；0=无限制）
 	DailyCostDayKey        int   `json:"-"` // 当日费用所属日期（YYYYMMDD，本地时区）
 	DailyLimitDoubleDayKey int   `json:"-"` // 当日限额翻倍生效日期（YYYYMMDD，0=未启用）
+	DailyLimitTripleDayKey int   `json:"-"` // 当日限额三倍生效日期（YYYYMMDD，0=未启用）
 
 	// RPM统计（2025-12新增，用于tokens.html显示）
 	PeakRPM   float64 `json:"peak_rpm,omitempty"`   // 峰值RPM
@@ -361,20 +362,53 @@ func (t *AuthToken) EffectiveCostLimitUSDValue() float64 {
 // EffectiveDailyCostLimitUSDValue 返回已计算的有效当日费用上限（美元）。
 func (t *AuthToken) EffectiveDailyCostLimitUSDValue() float64 {
 	if !t.EffectiveSet {
-		if t.IsDailyLimitDoubledToday() {
-			return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD * 2)
-		}
-		return t.DailyCostLimitUSD()
+		return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD * t.DailyLimitMultiplierToday())
 	}
 	return util.MicroUSDToUSD(t.EffectiveDailyCostLimitMicroUSD)
 }
 
 // IsDailyLimitDoubledToday 返回“当日限额翻倍”是否仍对今天生效。
 func (t *AuthToken) IsDailyLimitDoubledToday() bool {
-	if t == nil || t.DailyLimitDoubleDayKey <= 0 {
-		return false
+	return t.DailyLimitMultiplierToday() == 2
+}
+
+// IsDailyLimitTripledToday 返回“当日限额三倍”是否仍对今天生效。
+func (t *AuthToken) IsDailyLimitTripledToday() bool {
+	return t.DailyLimitMultiplierToday() == 3
+}
+
+// DailyLimitMultiplierToday 返回今天的当日限额倍率。三倍优先级用于兼容异常的双开历史数据。
+func (t *AuthToken) DailyLimitMultiplierToday() int64 {
+	if t == nil {
+		return 1
 	}
-	return t.DailyLimitDoubleDayKey == CurrentLocalDayKey()
+	if t.DailyLimitDoubleDayKey <= 0 && t.DailyLimitTripleDayKey <= 0 {
+		return 1
+	}
+	today := CurrentLocalDayKey()
+	if t.DailyLimitTripleDayKey == today {
+		return 3
+	}
+	if t.DailyLimitDoubleDayKey == today {
+		return 2
+	}
+	return 1
+}
+
+// SetDailyLimitMultiplierForToday 设置今天的当日限额倍率，并保证 2 倍与 3 倍互斥。
+func (t *AuthToken) SetDailyLimitMultiplierForToday(multiplier int64) {
+	if t == nil {
+		return
+	}
+	t.DailyLimitDoubleDayKey = 0
+	t.DailyLimitTripleDayKey = 0
+	today := CurrentLocalDayKey()
+	switch multiplier {
+	case 2:
+		t.DailyLimitDoubleDayKey = today
+	case 3:
+		t.DailyLimitTripleDayKey = today
+	}
 }
 
 // ApplyGroupEffective 根据分组与继承开关计算令牌的有效限制。
@@ -408,8 +442,8 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 			t.EffectiveAllowedModels = cloneStringSlice(group.AllowedModels)
 		}
 	}
-	if t.IsDailyLimitDoubledToday() && t.EffectiveDailyCostLimitMicroUSD > 0 {
-		t.EffectiveDailyCostLimitMicroUSD *= 2
+	if t.EffectiveDailyCostLimitMicroUSD > 0 {
+		t.EffectiveDailyCostLimitMicroUSD *= t.DailyLimitMultiplierToday()
 	}
 }
 
@@ -569,6 +603,7 @@ type authTokenJSON struct {
 	DailyCostUsedUSD                float64   `json:"daily_cost_used_usd"`
 	DailyCostLimitUSD               float64   `json:"daily_cost_limit_usd"`
 	DailyLimitDoubleEnabled         bool      `json:"daily_limit_double_enabled"`
+	DailyLimitTripleEnabled         bool      `json:"daily_limit_triple_enabled"`
 	PeakRPM                         float64   `json:"peak_rpm,omitempty"`
 	AvgRPM                          float64   `json:"avg_rpm,omitempty"`
 	RecentRPM                       float64   `json:"recent_rpm,omitempty"`
@@ -630,6 +665,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		DailyCostUsedUSD:                t.DailyCostUsedUSD(),
 		DailyCostLimitUSD:               t.DailyCostLimitUSD(),
 		DailyLimitDoubleEnabled:         t.IsDailyLimitDoubledToday(),
+		DailyLimitTripleEnabled:         t.IsDailyLimitTripledToday(),
 		PeakRPM:                         t.PeakRPM,
 		AvgRPM:                          t.AvgRPM,
 		RecentRPM:                       t.RecentRPM,

@@ -96,6 +96,7 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
   assert.match(html, /<div class="token-edit-main">[\s\S]*token-edit-section--channels[\s\S]*token-edit-section--models[\s\S]*<\/div>/);
   assert.match(html, /data-token-edit-section="channels"/);
   assert.match(html, /id="editDailyLimitDoubleEnabled"/);
+  assert.match(html, /id="editDailyLimitTripleEnabled"/);
   assert.match(html, /id="editAllowedChannelsCount"/);
   assert.match(html, /id="allowedChannelsTableBody"/);
   assert.match(html, /id="editChannelRestrictionMode"[^>]*data-change-action="change-channel-restriction-mode"/);
@@ -126,10 +127,13 @@ test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /function renderAllowedChannelsTable\(\)/);
   assert.match(script, /editAllowedChannelIDs = \(token\.allowed_channel_ids \|\| \[\]\)\.slice\(\);/);
   assert.match(script, /editDailyLimitDoubleEnabled = !!token\.daily_limit_double_enabled;/);
+  assert.match(script, /editDailyLimitTripleEnabled = !!token\.daily_limit_triple_enabled;/);
   assert.match(script, /allowed_channel_ids:\s*editInheritChannels\s*\?\s*editRawAllowedChannelIDs\s*:\s*editAllowedChannelIDs,/);
   assert.match(script, /channel_restriction_mode:\s*editInheritChannels/);
   assert.match(script, /channel_restriction_mode:\s*tokenGroupChannelRestrictionMode/);
   assert.match(script, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
+  assert.match(script, /daily_limit_triple_enabled:\s*dailyLimitTripleEnabled,/);
+  assert.match(script, /function enforceDailyLimitMultiplierExclusivity\(changedInput\)/);
   assert.match(script, /'show-channel-select-modal':\s*\(\)\s*=> showChannelSelectModal\(\)/);
   assert.match(script, /'confirm-channel-selection':\s*\(\)\s*=> confirmChannelSelection\(\)/);
   assert.match(script, /'batch-delete-allowed-channels':\s*\(\)\s*=> batchDeleteSelectedAllowedChannels\(\)/);

@@ -157,3 +157,43 @@ test('tokens 页当日翻倍开关会把每日限额按 2 倍展示', () => {
     6
   );
 });
+
+test('tokens 页当日 3 倍开关会把每日限额按 3 倍展示并优先于异常双开数据', () => {
+  const sandbox = {};
+  vm.runInNewContext(joinFunctions([
+    'getTokenEffectiveDailyCostLimit'
+  ]), sandbox);
+
+  assert.equal(
+    sandbox.getTokenEffectiveDailyCostLimit({
+      daily_cost_limit_usd: 3,
+      daily_limit_double_enabled: true,
+      daily_limit_triple_enabled: true
+    }),
+    9
+  );
+});
+
+test('tokens 页当日 2 倍和 3 倍开关互斥', () => {
+  const inputs = {
+    editDailyLimitDoubleEnabled: { id: 'editDailyLimitDoubleEnabled', checked: true },
+    editDailyLimitTripleEnabled: { id: 'editDailyLimitTripleEnabled', checked: true }
+  };
+  const sandbox = {
+    document: {
+      getElementById(id) {
+        return inputs[id];
+      }
+    }
+  };
+  vm.runInNewContext(joinFunctions([
+    'enforceDailyLimitMultiplierExclusivity'
+  ]), sandbox);
+
+  sandbox.enforceDailyLimitMultiplierExclusivity(inputs.editDailyLimitTripleEnabled);
+  assert.equal(inputs.editDailyLimitDoubleEnabled.checked, false);
+
+  inputs.editDailyLimitDoubleEnabled.checked = true;
+  sandbox.enforceDailyLimitMultiplierExclusivity(inputs.editDailyLimitDoubleEnabled);
+  assert.equal(inputs.editDailyLimitTripleEnabled.checked, false);
+});

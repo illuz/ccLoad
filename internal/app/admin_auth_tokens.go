@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -280,6 +281,27 @@ func isDuplicateAuthTokenError(err error) bool {
 		strings.Contains(msg, "duplicated")
 }
 
+func applyDailyLimitMultiplierRequest(token *model.AuthToken, doubleEnabled, tripleEnabled *bool) error {
+	if doubleEnabled != nil && tripleEnabled != nil && *doubleEnabled && *tripleEnabled {
+		return errors.New("daily_limit_double_enabled and daily_limit_triple_enabled cannot both be true")
+	}
+	if tripleEnabled != nil && *tripleEnabled {
+		token.SetDailyLimitMultiplierForToday(3)
+		return nil
+	}
+	if doubleEnabled != nil && *doubleEnabled {
+		token.SetDailyLimitMultiplierForToday(2)
+		return nil
+	}
+	if doubleEnabled != nil {
+		token.DailyLimitDoubleDayKey = 0
+	}
+	if tripleEnabled != nil {
+		token.DailyLimitTripleDayKey = 0
+	}
+	return nil
+}
+
 // HandleCreateAuthToken 创建新的API访问令牌
 // POST /admin/auth-tokens
 func (s *Server) HandleCreateAuthToken(c *gin.Context) {
@@ -294,6 +316,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		CostLimitUSD           *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD      *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
 		DailyLimitDouble       *bool    `json:"daily_limit_double_enabled"`
+		DailyLimitTriple       *bool    `json:"daily_limit_triple_enabled"`
 		MaxConcurrency         *int     `json:"max_concurrency"` // 最大并发请求数（0=无限制）
 		CodexGuardEnabled      *bool    `json:"codex_guard_enabled"`
 		GroupID                *int64   `json:"group_id"` // 分组ID，0/空表示未分组
@@ -389,12 +412,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	if req.DailyCostLimitUSD != nil {
 		authToken.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
 	}
-	if req.DailyLimitDouble != nil {
-		if *req.DailyLimitDouble {
-			authToken.DailyLimitDoubleDayKey = model.CurrentLocalDayKey()
-		} else {
-			authToken.DailyLimitDoubleDayKey = 0
-		}
+	if err := applyDailyLimitMultiplierRequest(authToken, req.DailyLimitDouble, req.DailyLimitTriple); err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+		return
 	}
 	if req.MaxConcurrency != nil {
 		authToken.MaxConcurrency = *req.MaxConcurrency
@@ -446,6 +466,7 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"channel_restriction_mode":   authToken.ChannelRestrictionMode,
 		"daily_cost_limit_usd":       authToken.DailyCostLimitUSD(),
 		"daily_limit_double_enabled": authToken.IsDailyLimitDoubledToday(),
+		"daily_limit_triple_enabled": authToken.IsDailyLimitTripledToday(),
 		"max_concurrency":            authToken.MaxConcurrency,
 		"group_id":                   authToken.GroupID,
 		"inherit_quota":              authToken.InheritQuota,
@@ -474,6 +495,7 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		CostLimitUSD           *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD      *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
 		DailyLimitDouble       *bool             `json:"daily_limit_double_enabled"`
+		DailyLimitTriple       *bool             `json:"daily_limit_triple_enabled"`
 		MaxConcurrency         *int              `json:"max_concurrency"` // 最大并发请求数（0=无限制）
 		CodexGuardEnabled      *bool             `json:"codex_guard_enabled"`
 		GroupID                *int64            `json:"group_id"` // 分组ID，0表示未分组
@@ -574,12 +596,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	if req.DailyCostLimitUSD != nil {
 		token.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
 	}
-	if req.DailyLimitDouble != nil {
-		if *req.DailyLimitDouble {
-			token.DailyLimitDoubleDayKey = model.CurrentLocalDayKey()
-		} else {
-			token.DailyLimitDoubleDayKey = 0
-		}
+	if err := applyDailyLimitMultiplierRequest(token, req.DailyLimitDouble, req.DailyLimitTriple); err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+		return
 	}
 	if req.MaxConcurrency != nil {
 		token.MaxConcurrency = *req.MaxConcurrency

@@ -303,6 +303,40 @@ func TestAuthService_DailyCostLimitDropsPreviousDayDouble(t *testing.T) {
 	}
 }
 
+func TestAuthService_DailyCostLimitDropsPreviousDayTriple(t *testing.T) {
+	t.Parallel()
+
+	const hash = "previous-day-triple"
+	stub := &reloadStubStore{
+		tokens: []*model.AuthToken{{
+			Token:                  hash,
+			ID:                     1,
+			DailyCostLimitMicroUSD: 100,
+			DailyLimitTripleDayKey: model.CurrentLocalDayKey(),
+			DailyCostDayKey:        model.CurrentLocalDayKey(),
+		}},
+	}
+	s := newTestAuthService(t)
+	s.store = stub
+	if err := s.ReloadAuthTokens(); err != nil {
+		t.Fatalf("ReloadAuthTokens: %v", err)
+	}
+	if _, limit, _ := s.IsDailyCostLimitExceeded(hash); limit != 300 {
+		t.Fatalf("current-day tripled limit=%d, want 300", limit)
+	}
+
+	s.authTokensMux.Lock()
+	state := s.authTokenDailyCostLimits[hash]
+	state.dayKey = 20000101
+	s.authTokenDailyCostLimits[hash] = state
+	s.authTokensMux.Unlock()
+
+	used, limit, exceeded := s.IsDailyCostLimitExceeded(hash)
+	if used != 0 || limit != 100 || exceeded {
+		t.Fatalf("after tripled day: got (%d,%d,%v), want (0,100,false)", used, limit, exceeded)
+	}
+}
+
 func TestAuthService_AcquireTokenConcurrencySlot(t *testing.T) {
 	t.Parallel()
 

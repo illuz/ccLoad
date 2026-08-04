@@ -336,12 +336,18 @@
               </div>
             </div>
 
-            <div class="form-group token-edit-daily-double-row">
-              <label class="token-edit-active-label">
-                <input type="checkbox" id="editDailyLimitDoubleEnabled" class="control-checkbox">
-                <span data-i18n="tokens.dailyLimitDoubleLabel">当日限额翻倍</span>
-              </label>
-              <div class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.dailyLimitDoubleHint">仅对今天生效，午夜后自动恢复</div>
+            <div class="form-group token-edit-daily-double-row token-edit-daily-multiplier-row">
+              <div class="token-edit-daily-multiplier-options">
+                <label class="token-edit-active-label">
+                  <input type="checkbox" id="editDailyLimitDoubleEnabled" class="control-checkbox" data-change-action="toggle-daily-limit-multiplier">
+                  <span data-i18n="tokens.dailyLimitDoubleLabel">当日限额翻倍</span>
+                </label>
+                <label class="token-edit-active-label">
+                  <input type="checkbox" id="editDailyLimitTripleEnabled" class="control-checkbox" data-change-action="toggle-daily-limit-multiplier">
+                  <span data-i18n="tokens.dailyLimitTripleLabel">当日限额 3 倍</span>
+                </label>
+              </div>
+              <div class="token-limit-hint token-limit-hint--inline" data-i18n="tokens.dailyLimitMultiplierHint">仅对今天生效，两种倍率互斥，午夜后自动恢复</div>
             </div>
 
             <div class="form-group form-row-inline token-edit-field token-edit-field--concurrency">
@@ -694,6 +700,7 @@
         <div class="token-row-meta">
           {{{groupHtml}}}
           {{{dailyLimitDoubleBadgeHtml}}}
+          {{{dailyLimitTripleBadgeHtml}}}
           {{{codexGuardBadgeHtml}}}
           <button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="{{copyTokenValue}}"
             title="{{copyTokenTitle}}" aria-label="{{copyTokenTitle}}" {{copyTokenDisabledAttr}}>{{maskedToken}}</button>

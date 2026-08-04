@@ -273,6 +273,87 @@ func TestAuthToken_ApplyGroupEffective_DoublesDailyLimitForToday(t *testing.T) {
 	}
 }
 
+func TestAuthToken_ApplyGroupEffective_TriplesDailyLimitForToday(t *testing.T) {
+	t.Parallel()
+
+	token := &AuthToken{
+		GroupID:                9,
+		InheritQuota:           true,
+		DailyLimitTripleDayKey: CurrentLocalDayKey(),
+		DailyCostLimitMicroUSD: 300_000,
+	}
+	group := &AuthTokenGroup{
+		ID:                     9,
+		DailyCostLimitMicroUSD: 700_000,
+	}
+
+	token.ApplyGroupEffective(group)
+
+	if got := token.EffectiveDailyCostLimitMicroUSD; got != 2_100_000 {
+		t.Fatalf("EffectiveDailyCostLimitMicroUSD = %d, want 2100000", got)
+	}
+	if got := token.EffectiveDailyCostLimitUSDValue(); math.Abs(got-2.1) > 1e-9 {
+		t.Fatalf("EffectiveDailyCostLimitUSDValue() = %v, want 2.1", got)
+	}
+}
+
+func TestAuthToken_DailyLimitMultiplierToday_IsMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+
+	today := CurrentLocalDayKey()
+	token := &AuthToken{
+		DailyLimitDoubleDayKey: today,
+		DailyLimitTripleDayKey: today,
+	}
+	if got := token.DailyLimitMultiplierToday(); got != 3 {
+		t.Fatalf("DailyLimitMultiplierToday() = %d, want 3", got)
+	}
+	if token.IsDailyLimitDoubledToday() || !token.IsDailyLimitTripledToday() {
+		t.Fatalf("double/triple flags = %v/%v, want false/true", token.IsDailyLimitDoubledToday(), token.IsDailyLimitTripledToday())
+	}
+
+	token.SetDailyLimitMultiplierForToday(2)
+	if !token.IsDailyLimitDoubledToday() || token.IsDailyLimitTripledToday() || token.DailyLimitTripleDayKey != 0 {
+		t.Fatalf("setting 2x did not clear 3x: %+v", token)
+	}
+
+	token.SetDailyLimitMultiplierForToday(3)
+	if token.IsDailyLimitDoubledToday() || !token.IsDailyLimitTripledToday() || token.DailyLimitDoubleDayKey != 0 {
+		t.Fatalf("setting 3x did not clear 2x: %+v", token)
+	}
+
+	token.SetDailyLimitMultiplierForToday(1)
+	if got := token.DailyLimitMultiplierToday(); got != 1 {
+		t.Fatalf("DailyLimitMultiplierToday() after reset = %d, want 1", got)
+	}
+}
+
+func TestAuthToken_MarshalJSON_ExposesTripleDailyLimit(t *testing.T) {
+	t.Parallel()
+
+	token := AuthToken{DailyCostLimitMicroUSD: 800_000}
+	token.SetDailyLimitMultiplierForToday(3)
+
+	b, err := json.Marshal(token)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+	var got struct {
+		DailyLimitDoubleEnabled    bool    `json:"daily_limit_double_enabled"`
+		DailyLimitTripleEnabled    bool    `json:"daily_limit_triple_enabled"`
+		EffectiveDailyCostLimitUSD float64 `json:"effective_daily_cost_limit_usd"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got.DailyLimitDoubleEnabled || !got.DailyLimitTripleEnabled {
+		t.Fatalf("double/triple flags = %v/%v, want false/true", got.DailyLimitDoubleEnabled, got.DailyLimitTripleEnabled)
+	}
+	if math.Abs(got.EffectiveDailyCostLimitUSD-2.4) > 1e-9 {
+		t.Fatalf("effective_daily_cost_limit_usd = %v, want 2.4", got.EffectiveDailyCostLimitUSD)
+	}
+}
+
 func TestAuthTokenGroup_DailyCostConversionsAndValidation(t *testing.T) {
 	t.Parallel()
 

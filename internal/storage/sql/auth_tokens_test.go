@@ -30,6 +30,7 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 		AllowedChannelIDs:      []int64{11, 22},
 		ChannelRestrictionMode: model.ChannelRestrictionModeDeny,
 		MaxConcurrency:         3,
+		DailyLimitTripleDayKey: model.CurrentLocalDayKey(),
 		CreatedAt:              time.Now(),
 	}
 	if err := store.CreateAuthToken(ctx, token); err != nil {
@@ -61,6 +62,9 @@ func TestAuthToken_CreateAndGet(t *testing.T) {
 	}
 	if got.MaxConcurrency != 3 {
 		t.Fatalf("max_concurrency: got %d, want 3", got.MaxConcurrency)
+	}
+	if !got.IsDailyLimitTripledToday() {
+		t.Fatal("expected daily triple limit to round-trip")
 	}
 
 	// 通过 Token 值获取

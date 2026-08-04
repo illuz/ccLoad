@@ -32,7 +32,7 @@ test('tokens 页为手机卡片布局补齐模板标签和按钮布局', () => {
   assert.doesNotMatch(tokensHtml, /class="[^"]*tokens-col-description/);
   assert.match(tokensHtml, /class="tokens-col-checkbox mobile-card-no-label"[\s\S]*class="token-select-checkbox" data-token-id="\{\{id\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-token[^"]*"[^>]*data-mobile-label="\{\{mobileLabelToken\}\}"[\s\S]*class="token-row-description"><span class="token-row-name">\{\{description\}\}<\/span>\{\{\{batteryHtml\}\}\}<\/div>/);
-  assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*\{\{\{dailyLimitDoubleBadgeHtml\}\}\}[\s\S]*class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*>\{\{maskedToken\}\}<\/button>/);
+  assert.match(tokensHtml, /class="token-row-meta"[\s\S]*\{\{\{groupHtml\}\}\}[\s\S]*\{\{\{dailyLimitDoubleBadgeHtml\}\}\}[\s\S]*\{\{\{dailyLimitTripleBadgeHtml\}\}\}[\s\S]*class="token-row-key"[\s\S]*data-action="copy-token-key"[\s\S]*>\{\{maskedToken\}\}<\/button>/);
   assert.match(tokensHtml, /class="token-mobile-details-toggle"[\s\S]*data-action="toggle-token-mobile-details"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-enabled[^"]*"[^>]*data-mobile-label="\{\{mobileLabelEnabled\}\}"/);
   assert.match(tokensHtml, /class="[^"]*tokens-col-concurrency[^"]*"[^>]*data-mobile-label="\{\{mobileLabelConcurrency\}\}"/);

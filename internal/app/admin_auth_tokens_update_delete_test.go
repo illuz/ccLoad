@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"testing"
@@ -205,6 +206,45 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if updated.MaxConcurrency != 0 {
 			t.Fatalf("MaxConcurrency=%d, want 0", updated.MaxConcurrency)
+		}
+	})
+
+	t.Run("triple replaces double", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"daily_limit_triple_enabled":true}`)))
+		c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+		server.HandleUpdateAuthToken(c)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+		var flags struct {
+			DailyLimitDoubleEnabled bool `json:"daily_limit_double_enabled"`
+			DailyLimitTripleEnabled bool `json:"daily_limit_triple_enabled"`
+		}
+		resp := mustParseAPIResponse[json.RawMessage](t, w.Body.Bytes())
+		if err := json.Unmarshal(resp.Data, &flags); err != nil {
+			t.Fatalf("decode flags: %v", err)
+		}
+		if flags.DailyLimitDoubleEnabled || !flags.DailyLimitTripleEnabled {
+			t.Fatalf("double/triple flags=%v/%v, want false/true", flags.DailyLimitDoubleEnabled, flags.DailyLimitTripleEnabled)
+		}
+
+		updated, err := store.GetAuthToken(ctx, token.ID)
+		if err != nil {
+			t.Fatalf("GetAuthToken failed: %v", err)
+		}
+		if updated.IsDailyLimitDoubledToday() || !updated.IsDailyLimitTripledToday() {
+			t.Fatalf("stored double/triple flags=%v/%v, want false/true", updated.IsDailyLimitDoubledToday(), updated.IsDailyLimitTripledToday())
+		}
+	})
+
+	t.Run("rejects double and triple together", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"daily_limit_double_enabled":true,"daily_limit_triple_enabled":true}`)))
+		c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+		server.HandleUpdateAuthToken(c)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
 		}
 	})
 

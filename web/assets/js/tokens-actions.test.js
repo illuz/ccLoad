@@ -135,9 +135,13 @@ test('tokens 分组管理支持预设颜色并在列表/令牌徽标中展示颜
 test('tokens 列表为当日限额翻倍显示独立醒目徽标', () => {
   const template = tokenRowTemplate();
   assert.match(template, /\{\{\{dailyLimitDoubleBadgeHtml\}\}\}/);
+  assert.match(template, /\{\{\{dailyLimitTripleBadgeHtml\}\}\}/);
   assert.match(tokensScript, /function buildDailyLimitDoubleBadgeHtml\(token\)/);
+  assert.match(tokensScript, /function buildDailyLimitTripleBadgeHtml\(token\)/);
   assert.match(tokensScript, /×2 \$\{escapeHtml\(t\('tokens\.dailyLimitDoubleShort'\)\)\}/);
+  assert.match(tokensScript, /×3 \$\{escapeHtml\(t\('tokens\.dailyLimitTripleShort'\)\)\}/);
   assert.match(tokensCss, /\.token-row-badge--daily-double\s*\{/);
+  assert.match(tokensCss, /\.token-row-badge--daily-triple\s*\{/);
 });
 
 test('tokens 分组管理左侧摘要压成单行，整行可编辑且子弹窗层级高于父弹窗', () => {

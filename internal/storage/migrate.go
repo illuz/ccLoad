@@ -220,6 +220,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureAuthTokensDailyLimitDouble(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens daily_limit_double_day_key: %w", err)
 			}
+			if err := ensureAuthTokensDailyLimitTriple(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_tokens daily_limit_triple_day_key: %w", err)
+			}
 			if err := ensureAuthTokensCodexGuard(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens codex_guard_enabled: %w", err)
 			}

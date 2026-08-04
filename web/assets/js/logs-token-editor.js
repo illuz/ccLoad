@@ -265,6 +265,9 @@
       case 'toggle-inherit-quota':
         setEditInheritQuota(actionTarget.checked);
         return true;
+      case 'toggle-daily-limit-multiplier':
+        enforceDailyLimitMultiplierExclusivity(actionTarget);
+        return true;
       case 'toggle-inherit-channels':
         setEditInheritChannels(actionTarget.checked);
         return true;
@@ -295,6 +298,15 @@
       default:
         return false;
     }
+  }
+
+  function enforceDailyLimitMultiplierExclusivity(changedInput) {
+    if (!changedInput?.checked) return;
+    const otherID = changedInput.id === 'editDailyLimitTripleEnabled'
+      ? 'editDailyLimitDoubleEnabled'
+      : 'editDailyLimitTripleEnabled';
+    const otherInput = document.getElementById(otherID);
+    if (otherInput) otherInput.checked = false;
   }
 
   function handleTokenEditorInputAction(action, actionTarget) {
@@ -529,6 +541,10 @@
     if (editDailyLimitDoubleInput) {
       editDailyLimitDoubleInput.checked = !!token.daily_limit_double_enabled;
     }
+    const editDailyLimitTripleInput = document.getElementById('editDailyLimitTripleEnabled');
+    if (editDailyLimitTripleInput) {
+      editDailyLimitTripleInput.checked = !!token.daily_limit_triple_enabled;
+    }
 
     const costUsed = Number(token.cost_used_usd) || 0;
     const dailyCostUsed = Number(token.daily_cost_used_usd) || 0;
@@ -570,6 +586,8 @@
     if (editCodexGuardInput) editCodexGuardInput.checked = false;
     const editDailyLimitDoubleInput = document.getElementById('editDailyLimitDoubleEnabled');
     if (editDailyLimitDoubleInput) editDailyLimitDoubleInput.checked = false;
+    const editDailyLimitTripleInput = document.getElementById('editDailyLimitTripleEnabled');
+    if (editDailyLimitTripleInput) editDailyLimitTripleInput.checked = false;
 
     editAllowedModels = [];
     editRawAllowedModels = [];
@@ -1188,6 +1206,7 @@
     const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
     const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
     const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
+    const dailyLimitTripleEnabled = !!document.getElementById('editDailyLimitTripleEnabled')?.checked;
     const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
     if (editInheritQuota) {
       maxConcurrencyResult.value = editRawMaxConcurrency || 0;
@@ -1245,6 +1264,7 @@
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
           daily_limit_double_enabled: dailyLimitDoubleEnabled,
+          daily_limit_triple_enabled: dailyLimitTripleEnabled,
           max_concurrency: maxConcurrencyResult.value
         })
       });
