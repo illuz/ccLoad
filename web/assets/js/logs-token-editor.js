@@ -5,11 +5,15 @@
     'modelSelectModal',
     'tpl-token-expiry-options'
   ];
+  const TOKEN_EDITOR_REQUIRED_CONTROL_IDS = [
+    'editDailyLimitDoubleEnabled',
+    'editDailyLimitTripleEnabled'
+  ];
 
   const TOKEN_EDITOR_STYLESHEET_ID = 'log-token-editor-stylesheet';
   const TOKEN_EDITOR_STYLESHEET_PATH = '/web/assets/css/tokens.css';
 
-  let tokenEditorReadyPromise = null;
+  let tokenEditorSetupPromise = null;
   let actionsBound = false;
   let styleLoadPromise = null;
 
@@ -116,11 +120,21 @@
     return new DOMParser().parseFromString(htmlText, 'text/html');
   }
 
-  function appendNodeByID(sourceDocument, id) {
-    if (document.getElementById(id)) return;
+  function syncNodeByID(sourceDocument, id, replaceExisting) {
     const sourceNode = sourceDocument.getElementById(id);
     if (!sourceNode) throw new Error(`Missing required token editor markup: ${id}`);
-    document.body.appendChild(document.importNode(sourceNode, true));
+    const importedNode = document.importNode(sourceNode, true);
+    const existingNode = document.getElementById(id);
+    if (existingNode) {
+      if (replaceExisting) existingNode.replaceWith(importedNode);
+      return;
+    }
+    document.body.appendChild(importedNode);
+  }
+
+  function hasCompleteTokenEditorMarkup(rootDocument = document) {
+    return [...TOKEN_EDITOR_NODE_IDS, ...TOKEN_EDITOR_REQUIRED_CONTROL_IDS]
+      .every((id) => rootDocument.getElementById(id));
   }
 
   function initExpirySelects() {
@@ -135,10 +149,12 @@
   }
 
   async function ensureTokenEditorMarkup() {
-    const hasMarkup = TOKEN_EDITOR_NODE_IDS.every((id) => document.getElementById(id));
-    if (hasMarkup) return;
+    if (hasCompleteTokenEditorMarkup()) return;
     const sourceDocument = await fetchTokensDocument();
-    TOKEN_EDITOR_NODE_IDS.forEach((id) => appendNodeByID(sourceDocument, id));
+    if (!hasCompleteTokenEditorMarkup(sourceDocument)) {
+      throw new Error('Fetched token editor markup is incomplete');
+    }
+    TOKEN_EDITOR_NODE_IDS.forEach((id) => syncNodeByID(sourceDocument, id, true));
     initExpirySelects();
     if (window.i18n && typeof window.i18n.translatePage === 'function') {
       window.i18n.translatePage();
@@ -323,20 +339,21 @@
   }
 
   async function ensureLogTokenEditorReady() {
-    if (tokenEditorReadyPromise) return tokenEditorReadyPromise;
-
-    tokenEditorReadyPromise = (async () => {
-      await ensureTokenEditorMarkup();
-      bindTokenEditorActionsOnce();
-    })();
+    if (!tokenEditorSetupPromise) {
+      tokenEditorSetupPromise = (async () => {
+        await ensureTokenEditorMarkup();
+        bindTokenEditorActionsOnce();
+      })();
+    }
+    const setupPromise = tokenEditorSetupPromise;
 
     try {
-      await tokenEditorReadyPromise;
-    } catch (error) {
-      tokenEditorReadyPromise = null;
-      throw error;
+      await setupPromise;
+    } finally {
+      if (tokenEditorSetupPromise === setupPromise) {
+        tokenEditorSetupPromise = null;
+      }
     }
-    return tokenEditorReadyPromise;
   }
 
   async function loadEditorTokens() {

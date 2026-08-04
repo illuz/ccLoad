@@ -2,10 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'logs.html'), 'utf8');
 const logsScript = fs.readFileSync(path.join(__dirname, 'logs.js'), 'utf8');
 const tokenEditorScript = fs.readFileSync(path.join(__dirname, 'logs-token-editor.js'), 'utf8');
+
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  assert.ok(start >= 0, `missing function ${name}`);
+  const braceStart = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = braceStart; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    if (source[i] === '}') depth--;
+    if (depth === 0) return source.slice(start, i + 1);
+  }
+  assert.fail(`unclosed function ${name}`);
+}
 
 test('日志页接入令牌编辑器桥接脚本', () => {
   assert.match(html, /<script defer src="\/web\/assets\/js\/logs-token-editor\.js\?v=__VERSION__"><\/script>/);
@@ -30,6 +44,40 @@ test('日志页令牌编辑器复用 tokens.html 编辑弹窗标记但不加载 
   assert.match(tokenEditorScript, /'modelSelectModal'/);
   assert.match(tokenEditorScript, /'tpl-token-expiry-options'/);
   assert.doesNotMatch(tokenEditorScript, /tokens\.js/);
+});
+
+test('日志页会识别并替换缺少 3 倍开关的旧版令牌弹窗', () => {
+  const requiredNodeIDs = ['editModal', 'channelSelectModal', 'modelSelectModal', 'tpl-token-expiry-options'];
+  const requiredControlIDs = ['editDailyLimitDoubleEnabled', 'editDailyLimitTripleEnabled'];
+  const oldDocument = {
+    getElementById(id) {
+      return id === 'editDailyLimitTripleEnabled' ? null : { id };
+    }
+  };
+  const context = {
+    TOKEN_EDITOR_NODE_IDS: requiredNodeIDs,
+    TOKEN_EDITOR_REQUIRED_CONTROL_IDS: requiredControlIDs,
+    document: oldDocument
+  };
+  vm.createContext(context);
+  vm.runInContext(extractFunction(tokenEditorScript, 'hasCompleteTokenEditorMarkup'), context);
+  assert.equal(context.hasCompleteTokenEditorMarkup(), false);
+
+  const importedNode = { id: 'fresh-edit-modal' };
+  let replacement = null;
+  context.document = {
+    getElementById(id) {
+      if (id !== 'editModal') return null;
+      return { replaceWith(node) { replacement = node; } };
+    },
+    importNode() { return importedNode; },
+    body: { appendChild() { assert.fail('existing modal should be replaced'); } }
+  };
+  context.sourceDocument = { getElementById() { return { id: 'source-edit-modal' }; } };
+  vm.runInContext(extractFunction(tokenEditorScript, 'syncNodeByID'), context);
+  vm.runInContext('syncNodeByID(sourceDocument, "editModal", true)', context);
+  assert.equal(replacement, importedNode);
+  assert.match(tokenEditorScript, /tokenEditorSetupPromise = null;/);
 });
 
 test('日志页令牌编辑器同步并保存 Codex Guard 开关', () => {
