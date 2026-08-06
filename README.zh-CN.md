@@ -694,6 +694,7 @@ curl -X POST http://localhost:8080/admin/channels \
     "priority": 10,
     "rpm_limit": 0,
     "max_concurrency": 0,
+    "request_delay_seconds": 0,
     "models": ["claude-sonnet-4-6", "claude-opus-4-6"],
     "enabled": true
   }'
@@ -704,6 +705,8 @@ curl -X POST http://localhost:8080/admin/channels \
 > **RPM限制说明**：`rpm_limit` 是渠道级请求数上限，按滚动 60 秒窗口统计；`0` 表示不限制。代理转发、手动测试、单 URL 测试和定时检测都会计入，达到上限后该渠道会被跳过；多 URL 故障重试按实际发出的上游 HTTP 请求计数。计数保存在当前进程内，服务重启会清空，多实例部署时各实例独立统计。
 
 > **并发限制说明**：`max_concurrency` 是渠道级同时在飞请求上限；`0` 表示不限制。槽位从发起上游请求前占用，到响应体关闭后释放，流式请求会占用到流结束；达到上限后该渠道会被跳过，不触发冷却。计数保存在当前进程内，多实例部署时各实例独立统计。
+
+> **请求延迟说明**：`request_delay_seconds` 会在选中渠道后的首次上游尝试前等待指定秒数，`0` 表示不延迟。每次进入渠道只等待一次，同渠道 Key/URL 内部重试不会重复等待；客户端取消或超时时会立即结束。该等待计入 `end_to_end_first_byte_time`，但不会污染用于健康评分的上游 `first_byte_time`。
 
 ### 自定义请求规则（高级）
 

@@ -662,6 +662,7 @@ curl -X POST http://localhost:8080/admin/channels \
     "priority": 10,
     "rpm_limit": 0,
     "max_concurrency": 0,
+    "request_delay_seconds": 0,
     "models": ["claude-sonnet-4-6", "claude-opus-4-6"],
     "enabled": true
   }'
@@ -672,6 +673,8 @@ curl -X POST http://localhost:8080/admin/channels \
 > **RPM Limit Note**: `rpm_limit` is a per-channel request cap over a rolling 60-second window; `0` means unlimited. Proxy forwarding, manual tests, single-URL tests, and scheduled checks all count toward the cap. Multi-URL failover counts each actual upstream HTTP request. The counter is in-memory: restart clears it, and multiple instances count independently.
 
 > **Concurrency Limit Note**: `max_concurrency` is a per-channel cap on simultaneous in-flight upstream requests; `0` means unlimited. A slot is acquired before the upstream request starts and released when the response body is closed, so streaming requests hold the slot until the stream ends. Over-limit channels are skipped without cooldown. The counter is in-memory and per instance.
+
+> **Request Delay Note**: `request_delay_seconds` waits before the first upstream attempt on a selected channel; `0` disables the delay. The wait runs once per channel selection, is canceled when the client request ends, and contributes to `end_to_end_first_byte_time` without changing the upstream-only `first_byte_time` health metric.
 
 The cap can be changed independently without resubmitting the channel's URLs, models, or API keys:
 

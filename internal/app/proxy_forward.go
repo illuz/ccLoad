@@ -2292,6 +2292,7 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	maxKeyRetries := min(s.maxKeyRetries, actualKeyCount)
 
 	triedKeys := make(map[int]bool) // 本次请求内已尝试过的Key
+	delayPending := cfg.RequestDelaySeconds > 0
 
 	var lastFailure *proxyResult
 
@@ -2338,6 +2339,15 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 		// 更新活跃请求的渠道信息（用于前端显示）
 		if reqCtx.activeReqID > 0 {
 			s.activeRequests.Update(reqCtx.activeReqID, cfg.ID, cfg.Name, cfg.GetChannelType(), selectedKey, reqCtx.tokenID, cfg.CostMultiplier)
+		}
+
+		// 延迟属于客户端请求进入渠道前的等待，只执行一次；Key/URL 内部重试不重复叠加。
+		if delayPending {
+			delayPending = false
+			delay := time.Duration(cfg.RequestDelaySeconds) * time.Second
+			if err := waitForChannelRequestDelay(ctx, delay); err != nil {
+				return buildCtxDoneResult(cfg, err), nil
+			}
 		}
 
 		// URL循环（单URL时退化为单次迭代）

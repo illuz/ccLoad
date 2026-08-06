@@ -116,9 +116,10 @@ type Config struct {
 	ProtocolTransforms          []string `json:"protocol_transforms,omitempty"`
 	URL                         string   `json:"url"`
 	Priority                    int      `json:"priority"`
-	RPMLimit                    int      `json:"rpm_limit"`       // 每分钟请求数限制，0表示无限制
-	MaxConcurrency              int      `json:"max_concurrency"` // 最大并发请求数，0表示无限制
-	GroupID                     int64    `json:"group_id"`        // 所属渠道分组ID，0表示未分组（纯管理标签）
+	RPMLimit                    int      `json:"rpm_limit"`             // 每分钟请求数限制，0表示无限制
+	MaxConcurrency              int      `json:"max_concurrency"`       // 最大并发请求数，0表示无限制
+	RequestDelaySeconds         int      `json:"request_delay_seconds"` // 首次上游尝试前延迟秒数，0表示不延迟
+	GroupID                     int64    `json:"group_id"`              // 所属渠道分组ID，0表示未分组（纯管理标签）
 	GroupName                   string   `json:"group_name,omitempty"`
 	GroupColor                  string   `json:"group_color,omitempty"`
 	Enabled                     bool     `json:"enabled"`
@@ -198,6 +199,7 @@ func (c *Config) Clone() *Config {
 		Priority:                    c.Priority,
 		RPMLimit:                    c.RPMLimit,
 		MaxConcurrency:              c.MaxConcurrency,
+		RequestDelaySeconds:         c.RequestDelaySeconds,
 		GroupID:                     c.GroupID,
 		GroupName:                   c.GroupName,
 		GroupColor:                  c.GroupColor,

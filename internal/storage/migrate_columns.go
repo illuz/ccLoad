@@ -544,6 +544,12 @@ func ensureChannelsCooldownFixedSeconds(ctx context.Context, db *sql.DB, dialect
 		"INTEGER NOT NULL DEFAULT 10")
 }
 
+func ensureChannelsRequestDelaySeconds(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "channels", "request_delay_seconds",
+		"INT NOT NULL DEFAULT 0",
+		"INTEGER NOT NULL DEFAULT 0")
+}
+
 func ensureChannelsInputPriorityBonusEnabled(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "channels", "input_priority_bonus_enabled",
 		"TINYINT NOT NULL DEFAULT 0",

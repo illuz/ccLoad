@@ -213,6 +213,7 @@ function createHarness({
   elements.channelPriority = createElement({ id: 'channelPriority', value: channel ? String(channel.priority || 0) : '0' });
   elements.channelRPMLimit = createElement({ id: 'channelRPMLimit', value: channel ? String(channel.rpm_limit || 0) : '0' });
   elements.channelMaxConcurrency = createElement({ id: 'channelMaxConcurrency', value: channel ? String(channel.max_concurrency || 0) : '0' });
+  elements.channelRequestDelaySeconds = createElement({ id: 'channelRequestDelaySeconds', value: channel ? String(channel.request_delay_seconds || 0) : '0' });
   elements.channelDailyCostLimit = createElement({ id: 'channelDailyCostLimit', value: channel ? String(channel.daily_cost_limit || 0) : '0' });
   elements.channelCostMultiplier = createElement({ id: 'channelCostMultiplier', value: channel && channel.cost_multiplier ? String(channel.cost_multiplier) : '1' });
   elements.channelEnabled = createElement({ id: 'channelEnabled', type: 'checkbox', checked: channel ? channel.enabled !== false : true });
@@ -580,6 +581,7 @@ test('编辑渠道时会回填 protocol_transforms，并禁用原生协议选项
       key_strategy: 'sequential',
       priority: 9,
       max_concurrency: 4,
+      request_delay_seconds: 3,
       daily_cost_limit: 0,
       enabled: true,
       scheduled_check_enabled: false,
@@ -598,6 +600,7 @@ test('编辑渠道时会回填 protocol_transforms，并禁用原生协议选项
   assert.equal(harness.getProtocolTransformInput('openai').checked, true);
   assert.equal(harness.getProtocolTransformModeInput('upstream').checked, true);
   assert.equal(harness.elements.channelMaxConcurrency.value, '4');
+  assert.equal(harness.elements.channelRequestDelaySeconds.value, '3');
   assert.deepEqual(
     harness.getProtocolTransformValues().filter((item) => item.checked).map((item) => item.value).sort(),
     ['anthropic', 'openai']
@@ -782,6 +785,7 @@ test('保存渠道时 payload 带上 protocol_transforms', async () => {
   harness.setCheckedRadio('channelType', 'gemini');
   harness.api.renderProtocolTransformOptions('gemini', ['anthropic', 'openai']);
   harness.elements.channelMaxConcurrency.value = '6';
+  harness.elements.channelRequestDelaySeconds.value = '4';
   harness.elements.protocolTransformModeContainer.innerHTML = `
     <label><input type="radio" name="protocolTransformMode" value="local"></label>
     <label><input type="radio" name="protocolTransformMode" value="upstream" checked></label>
@@ -800,6 +804,7 @@ test('保存渠道时 payload 带上 protocol_transforms', async () => {
   assert.equal(payload.protocol_transform_mode, 'upstream');
   assert.equal(payload.channel_type, 'gemini');
   assert.equal(payload.max_concurrency, 6);
+  assert.equal(payload.request_delay_seconds, 4);
   assert.deepEqual(JSON.parse(JSON.stringify(harness.getAfterSavePayload())), {
     isNewChannel: true,
     newChannelType: 'gemini',

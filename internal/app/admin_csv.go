@@ -44,7 +44,7 @@ func (s *Server) HandleExportChannelsCSV(c *gin.Context) {
 	writer := csv.NewWriter(buf)
 	defer writer.Flush()
 
-	header := []string{"id", "name", "api_key", "url", "priority", "rpm_limit", "max_concurrency", "models", "model_redirects", "channel_type", "protocol_transforms", "protocol_transform_mode", "key_strategy", "enabled", "scheduled_check_enabled", "scheduled_check_model"}
+	header := []string{"id", "name", "api_key", "url", "priority", "rpm_limit", "max_concurrency", "request_delay_seconds", "models", "model_redirects", "channel_type", "protocol_transforms", "protocol_transform_mode", "key_strategy", "enabled", "scheduled_check_enabled", "scheduled_check_model"}
 	if err := writer.Write(header); err != nil {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
@@ -93,6 +93,7 @@ func (s *Server) HandleExportChannelsCSV(c *gin.Context) {
 			strconv.Itoa(cfg.Priority),
 			strconv.Itoa(cfg.RPMLimit),
 			strconv.Itoa(cfg.MaxConcurrency),
+			strconv.Itoa(cfg.RequestDelaySeconds),
 			strings.Join(models, ","),
 			modelRedirectsJSON,
 			cfg.GetChannelType(), // 使用GetChannelType确保默认值
@@ -385,6 +386,15 @@ func (s *Server) parseChannelImportRow(
 		maxConcurrency = parsed
 	}
 
+	requestDelaySeconds := 0
+	if raw := fetch("request_delay_seconds"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			return nil, fmt.Sprintf("第%d行请求延迟秒数格式错误: %s", lineNo, raw), true
+		}
+		requestDelaySeconds = parsed
+	}
+
 	enabled := true
 	if eRaw := fetch("enabled"); eRaw != "" {
 		if val, ok := parseImportEnabled(eRaw); ok {
@@ -448,6 +458,7 @@ func (s *Server) parseChannelImportRow(
 		Priority:              priority,
 		RPMLimit:              rpmLimit,
 		MaxConcurrency:        maxConcurrency,
+		RequestDelaySeconds:   requestDelaySeconds,
 		ModelEntries:          modelEntries,
 		ChannelType:           channelType,
 		ProtocolTransformMode: protocolTransformMode,
@@ -524,6 +535,8 @@ func normalizeCSVHeader(name string) string {
 		return "rpm_limit"
 	case "max-concurrency", "maxconcurrency", "max concurrency", "concurrency", "concurrency_limit", "concurrency-limit":
 		return "max_concurrency"
+	case "request-delay-seconds", "requestdelayseconds", "request delay seconds", "request_delay", "request-delay":
+		return "request_delay_seconds"
 	case "scheduled-check-enabled", "scheduledcheckenabled", "scheduled check enabled":
 		return "scheduled_check_enabled"
 	case "scheduled-check-model", "scheduledcheckmodel", "scheduled check model":

@@ -310,6 +310,8 @@ window.I18N_LOCALES['en'] = {
   'channels.rpmLimitPlaceholder': '0=No limit',
   'channels.maxConcurrency': 'Concurrency Limit',
   'channels.maxConcurrencyPlaceholder': '0=No limit',
+  'channels.requestDelaySeconds': 'Request Delay',
+  'channels.requestDelaySecondsPlaceholder': '0=No delay',
   'channels.costMultiplier': 'Cost Multiplier',
   'channels.costMultiplierPlaceholder': 'Default 1',
   'channels.proxyURL': 'Proxy',

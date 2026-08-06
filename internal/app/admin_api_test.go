@@ -30,9 +30,10 @@ func TestAdminAPI_ExportChannelsCSV(t *testing.T) {
 	ctx := context.Background()
 	testChannels := []*model.Config{
 		{
-			Name:     "Test-Export-1",
-			URL:      "https://api1.example.com",
-			Priority: 10,
+			Name:                "Test-Export-1",
+			URL:                 "https://api1.example.com",
+			Priority:            10,
+			RequestDelaySeconds: 2,
 			ModelEntries: []model.ModelEntry{
 				{Model: "model-1", RedirectModel: ""},
 			},
@@ -109,7 +110,7 @@ func TestAdminAPI_ExportChannelsCSV(t *testing.T) {
 		header[0] = strings.TrimPrefix(header[0], "\ufeff")
 	}
 
-	expectedHeaders := []string{"id", "name", "api_key", "url", "priority", "rpm_limit", "max_concurrency", "models", "model_redirects", "channel_type", "protocol_transforms", "protocol_transform_mode", "key_strategy", "enabled", "scheduled_check_enabled", "scheduled_check_model"}
+	expectedHeaders := []string{"id", "name", "api_key", "url", "priority", "rpm_limit", "max_concurrency", "request_delay_seconds", "models", "model_redirects", "channel_type", "protocol_transforms", "protocol_transform_mode", "key_strategy", "enabled", "scheduled_check_enabled", "scheduled_check_model"}
 	if len(header) != len(expectedHeaders) {
 		t.Errorf("Header字段数量不匹配: 期望 %d, 实际: %d\nHeader: %v", len(expectedHeaders), len(header), header)
 	}
@@ -120,9 +121,12 @@ func TestAdminAPI_ExportChannelsCSV(t *testing.T) {
 		}
 	}
 
-	// 验证数据行（应该有16个字段）
-	if len(records[1]) < 16 {
-		t.Errorf("数据行字段不足，期望至少16个字段，实际: %d", len(records[1]))
+	// 验证数据行（应该有17个字段）
+	if len(records[1]) != len(expectedHeaders) {
+		t.Fatalf("数据行字段数量不匹配，期望%d个字段，实际: %d", len(expectedHeaders), len(records[1]))
+	}
+	if got := records[1][7]; got != "2" {
+		t.Errorf("request_delay_seconds 期望 2，实际: %s", got)
 	}
 }
 
@@ -855,9 +859,10 @@ func TestAdminAPI_ExportImportRoundTrip(t *testing.T) {
 
 	// 步骤1：创建原始测试数据
 	originalConfig := &model.Config{
-		Name:     "RoundTrip-Test",
-		URL:      "https://roundtrip.example.com",
-		Priority: 15,
+		Name:                "RoundTrip-Test",
+		URL:                 "https://roundtrip.example.com",
+		Priority:            15,
+		RequestDelaySeconds: 4,
 		ModelEntries: []model.ModelEntry{
 			{Model: "model-a", RedirectModel: ""},
 			{Model: "model-b", RedirectModel: ""},
@@ -956,6 +961,9 @@ func TestAdminAPI_ExportImportRoundTrip(t *testing.T) {
 
 	if restoredConfig.Priority != originalConfig.Priority {
 		t.Errorf("Priority不匹配: 期望 %d, 实际 %d", originalConfig.Priority, restoredConfig.Priority)
+	}
+	if restoredConfig.RequestDelaySeconds != originalConfig.RequestDelaySeconds {
+		t.Errorf("RequestDelaySeconds不匹配: 期望 %d, 实际 %d", originalConfig.RequestDelaySeconds, restoredConfig.RequestDelaySeconds)
 	}
 
 	if len(restoredConfig.ModelEntries) != len(originalConfig.ModelEntries) {

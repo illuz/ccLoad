@@ -597,6 +597,7 @@ async function showAddModal() {
   setChannelCheckboxChecked('channelInputPriorityBonusEnabled', false);
   setChannelInputValue('channelInputPriorityThreshold', '12000');
   setChannelInputValue('channelInputPriorityBonus', '100');
+  setChannelInputValue('channelRequestDelaySeconds', '0');
   setChannelCheckboxChecked('channelScheduledCheckEnabled', false);
   if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
   setChannelGroupSelectValue(0);
@@ -703,6 +704,7 @@ async function editChannel(id) {
   setChannelInputValue('channelPriority', channel.priority);
   setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
   setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
+  setChannelInputValue('channelRequestDelaySeconds', String(channel.request_delay_seconds || 0));
   setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
   setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
   setChannelCheckboxChecked('channelEnabled', channel.enabled);
@@ -989,6 +991,7 @@ async function saveChannel(event) {
     priority: readChannelInputInt('channelPriority', 0) || 0,
     rpm_limit: readChannelInputInt('channelRPMLimit', 0) || 0,
     max_concurrency: readChannelInputInt('channelMaxConcurrency', 0) || 0,
+    request_delay_seconds: readChannelInputInt('channelRequestDelaySeconds', 0) || 0,
     group_id: readChannelGroupIDForSubmit(),
     daily_cost_limit: readChannelInputFloat('channelDailyCostLimit', 0) || 0,
     cost_multiplier: (function () {
@@ -1683,6 +1686,7 @@ async function copyChannel(id, name) {
   setChannelInputValue('channelPriority', channel.priority);
   setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
   setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
+  setChannelInputValue('channelRequestDelaySeconds', String(channel.request_delay_seconds || 0));
   setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
   setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
   setChannelCheckboxChecked('channelEnabled', true);

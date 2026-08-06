@@ -39,6 +39,7 @@ type testChannel struct {
 	apiKey                string
 	priority              int
 	fixedCooldownSeconds  int
+	requestDelaySeconds   int
 }
 
 // proxyTestEnv 集成测试环境
@@ -92,6 +93,7 @@ func setupProxyTestEnv(t testing.TB, channels []testChannel, upstreamURLs map[in
 			ProtocolTransforms:          ch.protocolTransforms,
 			CustomRequestRules:          ch.customRequestRules,
 			Priority:                    priority,
+			RequestDelaySeconds:         ch.requestDelaySeconds,
 			Enabled:                     true,
 			ChannelCooldownFixedEnabled: ch.fixedCooldownSeconds > 0,
 			ChannelCooldownFixedSeconds: ch.fixedCooldownSeconds,

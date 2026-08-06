@@ -180,6 +180,7 @@
             <ul class="www-check-list">
               <li><code>rpm_limit</code>: rolling 60-second request cap for the channel; <code>0</code> means unlimited.</li>
               <li><code>max_concurrency</code>: maximum in-flight requests for the channel. Streaming requests release the slot only when the stream ends.</li>
+              <li><code>request_delay_seconds</code>: delay before the first upstream attempt after selecting this channel; <code>0</code> disables the delay.</li>
               <li><code>daily_cost_limit</code>: daily channel cost limit. The channel is skipped after the limit is reached.</li>
               <li><code>cost_multiplier</code>: channel multiplier used for effective-cost limits and accounting.</li>
               <li><code>scheduled_check_enabled</code>: enables scheduled probing, usually paired with a check model.</li>

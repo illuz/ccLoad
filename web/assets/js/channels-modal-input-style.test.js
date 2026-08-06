@@ -39,6 +39,10 @@ test('编辑弹窗每日限额和成本倍率输入宽度只保留必要数字�
   );
   assert.match(
     html,
+    /id="channelRequestDelaySeconds"[\s\S]*?style="width:\s*74px;\s*min-width:\s*74px;"/
+  );
+  assert.match(
+    html,
     /id="channelDailyCostLimit"[\s\S]*?style="width:\s*74px;\s*min-width:\s*74px;"/
   );
   assert.match(

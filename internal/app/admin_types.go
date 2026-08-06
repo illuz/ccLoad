@@ -29,6 +29,7 @@ type ChannelRequest struct {
 	Priority                    int                       `json:"priority"`
 	RPMLimit                    int                       `json:"rpm_limit"`                       // 每分钟请求数限制，0表示无限制
 	MaxConcurrency              int                       `json:"max_concurrency"`                 // 最大并发请求数，0表示无限制
+	RequestDelaySeconds         int                       `json:"request_delay_seconds"`           // 首次上游尝试前延迟秒数，0表示不延迟
 	GroupID                     int64                     `json:"group_id"`                        // 渠道分组ID，0表示未分组
 	Models                      []model.ModelEntry        `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
 	ModelFixedPriceEnabled      bool                      `json:"model_fixed_price_enabled,omitempty"`
@@ -283,6 +284,9 @@ func (cr *ChannelRequest) Validate() error {
 	if cr.MaxConcurrency < 0 {
 		return fmt.Errorf("max_concurrency must be >= 0 (got %d)", cr.MaxConcurrency)
 	}
+	if cr.RequestDelaySeconds < 0 {
+		return fmt.Errorf("request_delay_seconds must be >= 0 (got %d)", cr.RequestDelaySeconds)
+	}
 	if cr.GroupID < 0 {
 		return fmt.Errorf("group_id must be >= 0 (got %d)", cr.GroupID)
 	}
@@ -326,6 +330,7 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		Priority:                    cr.Priority,
 		RPMLimit:                    cr.RPMLimit,
 		MaxConcurrency:              cr.MaxConcurrency,
+		RequestDelaySeconds:         cr.RequestDelaySeconds,
 		GroupID:                     cr.GroupID,
 		ModelEntries:                normalizedModels,
 		ModelFixedPriceEnabled:      cr.ModelFixedPriceEnabled,

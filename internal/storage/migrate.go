@@ -112,6 +112,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsMaxConcurrency(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels max_concurrency: %w", err)
 			}
+			if err := ensureChannelsRequestDelaySeconds(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels request_delay_seconds: %w", err)
+			}
 			if err := ensureChannelsGroupID(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels group_id: %w", err)
 			}

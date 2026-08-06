@@ -301,6 +301,7 @@ func TestChannelRequest_ToConfigCopiesScheduledCheckModel(t *testing.T) {
 	req.ScheduledCheckModel = "model-1"
 	req.RPMLimit = 60
 	req.MaxConcurrency = 3
+	req.RequestDelaySeconds = 4
 
 	got := req.ToConfig()
 	if got.ScheduledCheckModel != "model-1" {
@@ -311,6 +312,9 @@ func TestChannelRequest_ToConfigCopiesScheduledCheckModel(t *testing.T) {
 	}
 	if got.MaxConcurrency != 3 {
 		t.Fatalf("MaxConcurrency = %d, want 3", got.MaxConcurrency)
+	}
+	if got.RequestDelaySeconds != 4 {
+		t.Fatalf("RequestDelaySeconds = %d, want 4", got.RequestDelaySeconds)
 	}
 }
 
@@ -376,6 +380,33 @@ func TestChannelRequestValidation_MaxConcurrency(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "max_concurrency") {
 			t.Fatalf("expected max_concurrency error, got %v", err)
+		}
+	})
+}
+
+func TestChannelRequestValidation_RequestDelaySeconds(t *testing.T) {
+	t.Run("zero disables delay", func(t *testing.T) {
+		req := newValidChannelRequest()
+		if err := req.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("positive delay allowed", func(t *testing.T) {
+		req := newValidChannelRequest()
+		req.RequestDelaySeconds = 5
+		if err := req.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("negative delay rejected", func(t *testing.T) {
+		req := newValidChannelRequest()
+		req.RequestDelaySeconds = -1
+
+		err := req.Validate()
+		if err == nil || !strings.Contains(err.Error(), "request_delay_seconds") {
+			t.Fatalf("Validate() error = %v, want request_delay_seconds error", err)
 		}
 	})
 }
