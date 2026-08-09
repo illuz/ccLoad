@@ -483,6 +483,10 @@
       flex: 0 1 134px;
     }
 
+    .logs-filter-group--checkbox {
+      flex: 0 1 auto;
+    }
+
     .logs-filter-group .filter-input,
     .logs-filter-group .filter-select {
       width: 100%;
@@ -1237,6 +1241,11 @@
         text-align: right;
       }
 
+      .logs-filter-group.logs-filter-group--checkbox {
+        display: flex;
+        justify-content: flex-end;
+      }
+
       .logs-filter-summary-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -1408,6 +1417,34 @@
 
     .model-tag.model-redirected.model-thinking .redirect-badge {
       right: 78px;
+    }
+
+    .model-display {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+    }
+
+    .model-tag.model-upstream-mismatch {
+      background: var(--error-50);
+      border: 1px solid var(--error-200);
+      color: var(--error-700);
+    }
+
+    .model-audit-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      margin-left: 4px;
+      border-radius: 50%;
+      background: var(--error-600);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      vertical-align: middle;
     }
 
     @media (max-width: 768px) {

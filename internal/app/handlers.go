@@ -296,6 +296,7 @@ func BindAndValidate(c *gin.Context, obj RequestValidator) error {
 // - channel_name_like: 模糊匹配渠道名称
 // - model: 精确匹配模型名称
 // - model_like: 模糊匹配模型名称
+// - upstream_model_mismatch: 仅筛选上游响应模型与实际发送模型不一致的日志
 func BuildLogFilter(c *gin.Context) model.LogFilter {
 	var lf model.LogFilter
 
@@ -342,6 +343,12 @@ func BuildLogFilter(c *gin.Context) model.LogFilter {
 	if tidStr := strings.TrimSpace(c.Query("auth_token_id")); tidStr != "" {
 		if id, err := strconv.ParseInt(tidStr, 10, 64); err == nil && id > 0 {
 			lf.AuthTokenID = &id
+		}
+	}
+
+	if mismatchStr := strings.TrimSpace(c.Query("upstream_model_mismatch")); mismatchStr != "" {
+		if mismatch, err := strconv.ParseBool(mismatchStr); err == nil {
+			lf.UpstreamModelMismatch = &mismatch
 		}
 	}
 

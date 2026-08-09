@@ -124,6 +124,11 @@ type fwResult struct {
 	// ThinkingEffort 记录请求或上游响应声明的思考等级；上游响应非空时覆盖请求值。
 	ThinkingEffort string
 
+	// UpstreamResponseModel is the model declared by the raw upstream response.
+	// It is observational and never changes forwarding, billing, or cooldowns.
+	UpstreamResponseModel         string
+	UpstreamResponseModelConflict bool
+
 	// Debug日志数据（debug开启时填充，传递到日志写入管道）
 	DebugData *model.DebugLogEntry
 }
@@ -964,6 +969,11 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		if effort := normalizeThinkingEffort(p.Result.ThinkingEffort); effort != "" {
 			entry.ThinkingEffort = effort
 		}
+		entry.UpstreamResponseModel = p.Result.UpstreamResponseModel
+		entry.UpstreamModelMismatch = upstreamResponseModelMismatch(
+			upstreamSentModel(p.RequestModel, p.ActualModel),
+			p.Result.UpstreamResponseModel,
+		)
 	}
 	if p.TimingSummary != "" {
 		entry.Message = appendTimingSummary(entry.Message, p.TimingSummary)

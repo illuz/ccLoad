@@ -343,6 +343,24 @@ func TestBuildLogFilter(t *testing.T) {
 			},
 		},
 		{
+			name:  "upstream_model_mismatch_true",
+			query: "upstream_model_mismatch=true",
+			check: func(t *testing.T, lf model.LogFilter) {
+				if lf.UpstreamModelMismatch == nil || !*lf.UpstreamModelMismatch {
+					t.Error("expected UpstreamModelMismatch=true")
+				}
+			},
+		},
+		{
+			name:  "upstream_model_mismatch_false",
+			query: "upstream_model_mismatch=0",
+			check: func(t *testing.T, lf model.LogFilter) {
+				if lf.UpstreamModelMismatch == nil || *lf.UpstreamModelMismatch {
+					t.Error("expected UpstreamModelMismatch=false")
+				}
+			},
+		},
+		{
 			name:  "default_log_source_proxy",
 			query: "",
 			check: func(t *testing.T, lf model.LogFilter) {

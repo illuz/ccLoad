@@ -154,6 +154,9 @@ func (s *Server) logProxyResult(
 	if reqCtx.codexGuardTraceID != "" {
 		codexGuardMaxRetries = codexGuardMaxRetriesForRequest(reqCtx)
 	}
+	if res != nil && res.UpstreamResponseModelConflict {
+		log.Printf("[WARN] [上游响应模型审计] 渠道ID=%d 实际模型=%q 上游响应模型声明冲突", cfg.ID, actualModel)
+	}
 
 	s.AddLogAsync(buildLogEntry(logEntryParams{
 		RequestID:               reqCtx.requestID,

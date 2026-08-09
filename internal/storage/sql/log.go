@@ -32,13 +32,15 @@ func scanLogEntry(scanner interface {
 	var clientIP sql.NullString
 	var baseURL sql.NullString
 	var actualModel sql.NullString
+	var upstreamResponseModel sql.NullString
+	var upstreamModelMismatch sql.NullBool
 	var serviceTier sql.NullString
 	var thinkingEffort sql.NullString
 	var inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheCreationTokens, cache5mTokens, cache1hTokens sql.NullInt64
 	var cost sql.NullFloat64
 	var costMultiplier sql.NullFloat64
 
-	if err := scanner.Scan(&e.ID, &timeMs, &e.Model, &actualModel, &logSource, &e.ChannelID,
+	if err := scanner.Scan(&e.ID, &timeMs, &e.Model, &actualModel, &upstreamResponseModel, &upstreamModelMismatch, &logSource, &e.ChannelID,
 		&e.StatusCode, &e.Message, &duration, &isStreamingInt, &firstByteTime, &requestID, &attemptNumber, &endToEndFirstByteTime, &apiKeyUsed, &apiKeyHash, &e.AuthTokenID, &clientIP, &baseURL, &serviceTier, &thinkingEffort,
 		&inputTokens, &outputTokens, &reasoningTokens, &cacheReadTokens, &cacheCreationTokens, &cache5mTokens, &cache1hTokens, &cost, &costMultiplier); err != nil {
 		return nil, err
@@ -48,6 +50,13 @@ func scanLogEntry(scanner interface {
 
 	if actualModel.Valid {
 		e.ActualModel = actualModel.String
+	}
+	if upstreamResponseModel.Valid {
+		e.UpstreamResponseModel = upstreamResponseModel.String
+	}
+	if upstreamModelMismatch.Valid {
+		value := upstreamModelMismatch.Bool
+		e.UpstreamModelMismatch = &value
 	}
 	e.LogSource = model.NormalizeStoredLogSource(logSource.String)
 	if duration.Valid {
@@ -168,10 +177,10 @@ func (s *SQLStore) AddLog(ctx context.Context, e *model.LogEntry) error {
 	return s.BatchAddLogs(ctx, []*model.LogEntry{e})
 }
 
-const logsInsertColumns = `INSERT INTO logs(time, minute_bucket, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
+const logsInsertColumns = `INSERT INTO logs(time, minute_bucket, model, actual_model, upstream_response_model, upstream_model_mismatch, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
 			input_tokens, output_tokens, reasoning_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_5m_input_tokens, cache_1h_input_tokens, cost, cost_multiplier) VALUES `
 
-const logRowParams = 30
+const logRowParams = 32
 
 var logRowPlaceholders = "(" + strings.TrimSuffix(strings.Repeat("?, ", logRowParams), ", ") + ")"
 
@@ -293,7 +302,7 @@ func logRowArgs(e *model.LogEntry) []any {
 	}
 
 	return []any{
-		timeMs, minuteBucket, e.Model, e.ActualModel,
+		timeMs, minuteBucket, e.Model, e.ActualModel, nullableLogString(e.UpstreamResponseModel), nullableLogBool(e.UpstreamModelMismatch),
 		model.NormalizeStoredLogSource(e.LogSource),
 		e.ChannelID, e.StatusCode, e.Message, e.Duration,
 		e.IsStreaming, e.FirstByteTime, e.RequestID, e.AttemptNumber, e.EndToEndFirstByteTime, maskedKey, apiKeyHash,
@@ -304,12 +313,26 @@ func logRowArgs(e *model.LogEntry) []any {
 	}
 }
 
+func nullableLogString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableLogBool(value *bool) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
 // ListLogs 查询日志列表
 func (s *SQLStore) ListLogs(ctx context.Context, since time.Time, limit, offset int, filter *model.LogFilter) ([]*model.LogEntry, error) {
 	// 使用查询构建器构建复杂查询
 	// 消除 N+1：渠道过滤/名称解析用一次批量查询完成
 	baseQuery := `
-			SELECT id, time, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
+			SELECT id, time, model, actual_model, upstream_response_model, upstream_model_mismatch, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
 				input_tokens, output_tokens, reasoning_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_5m_input_tokens, cache_1h_input_tokens, cost, cost_multiplier
 			FROM logs`
 
@@ -391,7 +414,7 @@ func (s *SQLStore) CountLogs(ctx context.Context, since time.Time, filter *model
 // ListLogsRange 查询指定时间范围内的日志（支持精确日期范围如"昨日"）
 func (s *SQLStore) ListLogsRange(ctx context.Context, since, until time.Time, limit, offset int, filter *model.LogFilter) ([]*model.LogEntry, error) {
 	baseQuery := `
-		SELECT id, time, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
+		SELECT id, time, model, actual_model, upstream_response_model, upstream_model_mismatch, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
 			input_tokens, output_tokens, reasoning_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_5m_input_tokens, cache_1h_input_tokens, cost, cost_multiplier
 		FROM logs`
 
@@ -560,7 +583,7 @@ func (s *SQLStore) ListLogsRangeWithCount(ctx context.Context, since, until time
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		qb := NewQueryBuilder(`SELECT id, time, model, actual_model, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
+		qb := NewQueryBuilder(`SELECT id, time, model, actual_model, upstream_response_model, upstream_model_mismatch, log_source, channel_id, status_code, message, duration, is_streaming, first_byte_time, request_id, attempt_number, end_to_end_first_byte_time, api_key_used, api_key_hash, auth_token_id, client_ip, base_url, service_tier, thinking_effort,
 			input_tokens, output_tokens, reasoning_tokens, cache_read_input_tokens, cache_creation_input_tokens, cache_5m_input_tokens, cache_1h_input_tokens, cost, cost_multiplier
 			FROM logs`).
 			Where("time >= ?", sinceMs).

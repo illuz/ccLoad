@@ -910,6 +910,7 @@ window.I18N_LOCALES['en'] = {
   'logs.codexGuardBadge': 'Guard',
   'logs.codexGuardRetriedBadge': 'Retried',
   'logs.codexGuardLastAttemptPassthroughBadge': 'Last-pass',
+  'logs.upstreamModelMismatchOnly': 'Upstream model mismatches only',
   'logs.colTime': 'Time',
   'logs.colIP': 'IP',
   'logs.colTokenDesc': 'Token',

@@ -131,6 +131,14 @@ test('logs.js 将 Codex Guard 模式纳入筛选状态和请求参数定义', ()
   assert.match(logsSource, /id:\s*'f_codex_guard'/);
 });
 
+test('logs.js 将上游响应模型不一致纳入筛选状态和请求参数定义', () => {
+  assert.match(logsSource, /key:\s*'upstreamModelMismatch'/);
+  assert.match(logsSource, /queryKeys:\s*\['upstream_model_mismatch'\]/);
+  assert.match(logsSource, /requestKey:\s*'upstream_model_mismatch'/);
+  assert.match(logsSource, /defaultValue:\s*false/);
+  assert.match(logsSource, /function isLogsUpstreamModelMismatchEnabled\(/);
+});
+
 test('logs.html、stats.html 和 trend.html 在页面脚本前加载共享请求参数 helper', () => {
   assert.match(
     logsHtmlSource,

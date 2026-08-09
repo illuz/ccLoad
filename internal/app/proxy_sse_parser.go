@@ -58,6 +58,8 @@ type sseUsageParser struct {
 	// Anthropic: event: message_stop
 	streamComplete bool
 
+	responseModelObserver *upstreamResponseModelObserver
+
 	// hasStreamOutput 表示已经看到应转发给客户端的非心跳流事件。
 	// ping 只是上游保活，不能让 200 空流被误判为成功。
 	hasStreamOutput bool
@@ -74,6 +76,9 @@ type jsonUsageParser struct {
 	truncated   bool
 	channelType string // 渠道类型(anthropic/openai/codex/gemini),用于精确平台判断
 	hasBody     bool
+
+	responseModelObserver *upstreamResponseModelObserver
+	responseModelObserved bool
 
 	scanInString       bool
 	scanEscape         bool
@@ -147,9 +152,12 @@ const (
 
 // newSSEUsageParser 创建SSE usage解析器
 // channelType: 渠道类型(anthropic/openai/codex/gemini),用于精确识别平台usage格式
-func newSSEUsageParser(channelType string) *sseUsageParser {
+func newSSEUsageParser(channelType string, observers ...*upstreamResponseModelObserver) *sseUsageParser {
 	p := &sseUsageParser{
 		channelType: channelType,
+	}
+	if len(observers) > 0 {
+		p.responseModelObserver = observers[0]
 	}
 	p.scanner.channelType = channelType
 	return p
@@ -157,8 +165,12 @@ func newSSEUsageParser(channelType string) *sseUsageParser {
 
 // newJSONUsageParser 创建JSON响应的usage解析器
 // channelType: 渠道类型(anthropic/openai/codex/gemini),用于精确识别平台usage格式
-func newJSONUsageParser(channelType string) *jsonUsageParser {
-	return &jsonUsageParser{channelType: channelType}
+func newJSONUsageParser(channelType string, observers ...*upstreamResponseModelObserver) *jsonUsageParser {
+	p := &jsonUsageParser{channelType: channelType}
+	if len(observers) > 0 {
+		p.responseModelObserver = observers[0]
+	}
+	return p
 }
 
 // Feed 喂入数据进行解析（供streamCopySSE调用）
@@ -478,6 +490,9 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	// 返回 200 OK + 失败终态。它不是正常输出，必须在首个客户端写入前中止本次尝试，
 	// 否则会被误记为 ok，且无法切换到其他 Key/渠道。
 	if isSSEFailureEvent(eventType, data) {
+		if p.responseModelObserver != nil {
+			p.responseModelObserver.ObserveJSON([]byte(data), eventType)
+		}
 		log.Printf("[WARN]  [SSE错误事件] 上游返回失败事件: %s", data)
 		// [INFO] 存储错误事件的完整JSON（用于流结束后触发冷却/重试逻辑）
 		p.lastError = []byte(data)
@@ -507,6 +522,10 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	if err := json.Unmarshal([]byte(data), &event); err != nil {
 		return fmt.Errorf("json unmarshal failed: %w", err)
 	}
+	if p.responseModelObserver != nil {
+		p.responseModelObserver.ObservePayload(event, eventType)
+	}
+
 	payloadType, _ := event["type"].(string)
 	if eventType == "message_stop" || (eventType == "response.completed" && payloadType == "response.completed") {
 		p.streamComplete = true
@@ -958,7 +977,7 @@ func (p *jsonUsageParser) GetUsage() (inputTokens, outputTokens, cacheRead, cach
 
 	// 兼容 text/plain SSE 回退：上游偶尔用 text/plain 发送 SSE 事件
 	if looksLikeSSE(data) {
-		sseParser := newSSEUsageParser(p.channelType)
+		sseParser := newSSEUsageParser(p.channelType, p.responseModelObserver)
 		if err := sseParser.Feed(data); err != nil {
 			log.Printf("[WARN] 类 SSE 格式的 usage 解析失败: %v", err)
 		} else {
@@ -974,6 +993,12 @@ func (p *jsonUsageParser) GetUsage() (inputTokens, outputTokens, cacheRead, cach
 	if err := json.Unmarshal(data, &payload); err != nil {
 		log.Printf("[WARN] usage JSON 解析失败: %v", err)
 		return 0, 0, 0, 0
+	}
+	if !p.responseModelObserved {
+		if p.responseModelObserver != nil {
+			p.responseModelObserver.ObservePayload(payload, "")
+		}
+		p.responseModelObserved = true
 	}
 
 	usage := extractUsage(payload)

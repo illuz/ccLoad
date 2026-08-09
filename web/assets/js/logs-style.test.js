@@ -182,6 +182,19 @@ test('日志页提供 Codex Guard 筛选和命中/重试/最后放行 badge 契�
   assert.match(enLocale, /'logs\.codexGuardLastAttemptPassthroughBadge':\s*'Last-pass'/);
 });
 
+test('日志页提供上游响应模型不一致筛选和模型审计标记', () => {
+  const filtersHtml = renderLogsFilters();
+  assert.match(filtersHtml, /id="f_upstream_model_mismatch"/);
+  assert.match(logsSource, /upstream_response_model/);
+  assert.match(logsSource, /upstream_model_mismatch/);
+  assert.match(logsSource, /model-upstream-mismatch/);
+  assert.match(logsSource, /model-audit-badge/);
+  assert.match(css, /\.model-tag\.model-upstream-mismatch\s*\{/);
+  assert.match(css, /\.model-audit-badge\s*\{/);
+  assert.match(zhLocale, /'logs\.upstreamModelMismatchOnly': '仅看上游模型不一致'/);
+  assert.match(enLocale, /'logs\.upstreamModelMismatchOnly': 'Upstream model mismatches only'/);
+});
+
 test('日志页桌面筛选按钮固定在筛选栏最右侧', () => {
   const desktopCss = css.split(/@media\s*\(max-width:\s*768px\)/)[0];
   const summaryMatch = desktopCss.match(/\.logs-filter-summary-row\s*\{[^}]+\}/);

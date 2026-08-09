@@ -102,6 +102,64 @@ func TestLog_AddAndListPersistsReasoningTokens(t *testing.T) {
 	}
 }
 
+func TestLog_UpstreamResponseModelAuditPersistenceAndFilter(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t, "logs_upstream_model_audit.db")
+	ctx := context.Background()
+	channelID := createTestChannel(t, ctx, store, "log-upstream-model-audit-channel")
+	now := time.Now()
+	mismatch := true
+	matched := false
+
+	if err := store.BatchAddLogs(ctx, []*model.LogEntry{
+		{
+			Time:                  newJSONTime(now),
+			Model:                 "gpt-5.4",
+			ActualModel:           "gpt-5.4-upstream",
+			UpstreamResponseModel: "gpt-5.4-fallback",
+			UpstreamModelMismatch: &mismatch,
+			ChannelID:             channelID,
+			StatusCode:            200,
+			Message:               "mismatch",
+		},
+		{
+			Time:                  newJSONTime(now.Add(time.Millisecond)),
+			Model:                 "gpt-5.4",
+			UpstreamResponseModel: "gpt-5.4",
+			UpstreamModelMismatch: &matched,
+			ChannelID:             channelID,
+			StatusCode:            200,
+			Message:               "match",
+		},
+	}); err != nil {
+		t.Fatalf("add logs: %v", err)
+	}
+
+	logs, err := store.ListLogs(ctx, now.Add(-time.Hour), 10, 0, &model.LogFilter{UpstreamModelMismatch: &mismatch})
+	if err != nil {
+		t.Fatalf("list mismatches: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("mismatch logs=%d, want 1", len(logs))
+	}
+	got := logs[0]
+	if got.UpstreamResponseModel != "gpt-5.4-fallback" {
+		t.Fatalf("upstream_response_model=%q", got.UpstreamResponseModel)
+	}
+	if got.UpstreamModelMismatch == nil || !*got.UpstreamModelMismatch {
+		t.Fatalf("upstream_model_mismatch=%v, want true", got.UpstreamModelMismatch)
+	}
+
+	logs, err = store.ListLogs(ctx, now.Add(-time.Hour), 10, 0, &model.LogFilter{UpstreamModelMismatch: &matched})
+	if err != nil {
+		t.Fatalf("list matches: %v", err)
+	}
+	if len(logs) != 1 || logs[0].UpstreamModelMismatch == nil || *logs[0].UpstreamModelMismatch {
+		t.Fatalf("matched logs=%+v, want one false audit result", logs)
+	}
+}
+
 func TestLog_AddLogWithDebugDataAssignsIDWithoutPersistingBody(t *testing.T) {
 	t.Parallel()
 

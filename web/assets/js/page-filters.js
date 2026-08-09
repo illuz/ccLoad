@@ -118,9 +118,15 @@
                 <option value="all" data-i18n="logs.codexGuardAll">Guard 全部</option>
                 <option value="hit" data-i18n="logs.codexGuardHits">Guard 命中</option>
                 <option value="retry_success" data-i18n="logs.codexGuardRetrySuccess">重试成功</option>
-              `, 'filter-control--compact')}`,
+        `, 'filter-control--compact')}`,
         groupClass
       ),
+      upstreamModelMismatch: `<div class="${joinClasses('filter-group', 'filter-group--checkbox', 'logs-filter-group--checkbox', checkboxGroupClass)}">
+              <label class="filter-checkbox-label">
+                <input type="checkbox" id="f_upstream_model_mismatch">
+                <span data-i18n="logs.upstreamModelMismatchOnly">仅看上游模型不一致</span>
+              </label>
+            </div>`,
       logSource: buildFilterGroup(
         `${buildFilterLabel('f_log_source', 'logs.logSource', '日志来源')}
         ${buildSelect('f_log_source', `
@@ -161,7 +167,7 @@
       authTokenControlClass: 'logs-filter-control--token',
       infoClass: 'filter-info logs-filter-info',
       actionsClass: 'logs-filter-actions',
-      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'codexGuard', 'authToken', 'logsSummary']
+      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'codexGuard', 'upstreamModelMismatch', 'authToken', 'logsSummary']
     },
     trend: {
       barClass: 'filter-bar mt-2',

@@ -158,6 +158,10 @@ function normalizeLogsFilterValue(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function isLogsUpstreamModelMismatchEnabled(value) {
+  return value === true || value === 'true' || value === '1' || value === 1;
+}
+
 function logsFilterMatchesOption(value, options) {
   const normalizedValue = normalizeLogsFilterValue(value);
   if (!normalizedValue) return false;
@@ -427,12 +431,14 @@ function buildThinkingEffortBadge(thinkingEffort, reasoningTokens) {
   return `<sup class="thinking-effort-badge" title="${title}">${escapeHtml(text)}</sup>`;
 }
 
-function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningTokens) {
+function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningTokens, upstreamResponseModel, upstreamModelMismatch) {
   if (!model) {
     return '<span style="color: var(--neutral-500);">-</span>';
   }
 
   const redirected = actualModel && actualModel !== model;
+  const responseModel = String(upstreamResponseModel || '').trim();
+  const auditMismatch = upstreamModelMismatch === true && responseModel !== '';
   const effort = normalizeThinkingEffortDisplay(thinkingEffort);
   const tokens = normalizeReasoningTokens(reasoningTokens);
   const classes = ['model-tag'];
@@ -441,6 +447,14 @@ function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningToken
     classes.push('model-redirected');
     titleParts.push(`请求模型: ${escapeHtml(model)}`);
     titleParts.push(`实际模型: ${escapeHtml(actualModel)}`);
+  }
+  if (auditMismatch) {
+    classes.push('model-upstream-mismatch');
+    if (!redirected) {
+      titleParts.push(`请求模型: ${escapeHtml(model)}`);
+      titleParts.push(`实际发送模型: ${escapeHtml(actualModel || model)}`);
+    }
+    titleParts.push(`上游声明模型: ${escapeHtml(responseModel)}`);
   }
   if (effort) {
     classes.push('model-thinking');
@@ -452,14 +466,17 @@ function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningToken
   }
   const title = titleParts.length > 0 ? ` title="${titleParts.join('&#10;')}"` : '';
   const redirectBadge = redirected ? '<sup class="redirect-badge">↪</sup>' : '';
-  const badgeHtml = redirectBadge || effort || tokens > 0
-    ? `<span class="model-badges">${redirectBadge}${buildThinkingEffortBadge(effort, tokens)}</span>`
+  const auditBadge = auditMismatch
+    ? `<sup class="model-audit-badge" title="上游响应模型与实际发送模型不一致">!</sup>`
+    : '';
+  const badgeHtml = redirectBadge || effort || tokens > 0 || auditMismatch
+    ? `<span class="model-badges">${redirectBadge}${buildThinkingEffortBadge(effort, tokens)}${auditBadge}</span>`
     : '';
 
-  return `<span class="${classes.join(' ')}"${title}>
+  return `<span class="model-display"><span class="${classes.join(' ')}"${title}>
       <span class="model-text">${escapeHtml(model)}</span>
       ${badgeHtml}
-    </span>`;
+    </span></span>`;
 }
 
 function getLogMobileLabels() {
@@ -774,6 +791,7 @@ async function load(skipLoading = false) {
 // 根据当前筛选条件过滤活跃请求
 function filterActiveRequests(requests) {
   const filters = getLogsFilters();
+  if (isLogsUpstreamModelMismatchEnabled(filters.upstreamModelMismatch)) return [];
   const channelName = normalizeLogsFilterValue(filters.channelName);
   const model = normalizeLogsFilterValue(filters.model);
   const channelNameExact = filters.channelNameExact;
@@ -804,10 +822,11 @@ function filterActiveRequests(requests) {
   });
 }
 
-function shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard) {
+function shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard, upstreamModelMismatch) {
   if (hours && hours !== 'today') return true;
   if (status) return true;
   if (codexGuard) return true;
+  if (isLogsUpstreamModelMismatchEnabled(upstreamModelMismatch)) return true;
   return logSource !== 'proxy' && logSource !== 'all';
 }
 
@@ -831,7 +850,8 @@ function handleActiveRequestsData(rawActiveRequests) {
     : (document.getElementById('f_status')?.value || '').trim();
   const logSource = (document.getElementById('f_log_source')?.value || 'proxy').trim();
   const codexGuard = (document.getElementById('f_codex_guard')?.value || '').trim();
-  if (shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard)) {
+  const upstreamModelMismatch = document.getElementById('f_upstream_model_mismatch')?.checked === true;
+  if (shouldSkipActiveRequestsFetch(hours, status, logSource, codexGuard, upstreamModelMismatch)) {
     clearActiveRequestsRows();
     lastActiveRequestStates = null;
     return;
@@ -1042,7 +1062,14 @@ function renderLogs(data) {
     const statusCode = entry.status_code;
 
     // 3. 模型显示（支持重定向与思考等级角标）
-    const modelDisplay = buildLogModelDisplay(entry.model, entry.actual_model, entry.thinking_effort, entry.reasoning_tokens);
+    const modelDisplay = buildLogModelDisplay(
+      entry.model,
+      entry.actual_model,
+      entry.thinking_effort,
+      entry.reasoning_tokens,
+      entry.upstream_response_model,
+      entry.upstream_model_mismatch
+    );
 
     // 4. 响应时间显示(流式/非流式)
     const hasDuration = entry.duration !== undefined && entry.duration !== null;
@@ -1321,6 +1348,11 @@ function applyLogsFilterValues(filters) {
     authToken: 'f_auth_token'
   });
 
+  const upstreamModelMismatch = document.getElementById('f_upstream_model_mismatch');
+  if (upstreamModelMismatch) {
+    upstreamModelMismatch.checked = isLogsUpstreamModelMismatchEnabled(filters.upstreamModelMismatch);
+  }
+
   // 渠道名通过 combobox 恢复
   if (logsChannelNameCombobox && filters.channelName !== undefined) {
     logsChannelNameCombobox.setValue(filters.channelName || '', filters.channelName || t('stats.allChannels'));
@@ -1561,6 +1593,7 @@ async function initFilters(restoredFilters) {
   document.getElementById('btn_clear_filters')?.addEventListener('click', resetLogsFilters);
   document.getElementById('f_log_source')?.addEventListener('change', applyFilter);
   document.getElementById('f_codex_guard')?.addEventListener('change', applyFilter);
+  document.getElementById('f_upstream_model_mismatch')?.addEventListener('change', applyFilter);
 
   window.bindFilterApplyInputs({
     apply: applyFilter,
@@ -2262,6 +2295,24 @@ const LOGS_FILTER_FIELDS = [
       return Boolean(value);
     }
   },
+  {
+    key: 'upstreamModelMismatch',
+    queryKeys: ['upstream_model_mismatch'],
+    requestKey: 'upstream_model_mismatch',
+    defaultValue: false,
+    includeInQuery(value) {
+      return isLogsUpstreamModelMismatchEnabled(value);
+    },
+    includeInRequest(value) {
+      return isLogsUpstreamModelMismatchEnabled(value);
+    },
+    serialize(value) {
+      return isLogsUpstreamModelMismatchEnabled(value) ? 'true' : 'false';
+    },
+    serializeForRequest(value) {
+      return isLogsUpstreamModelMismatchEnabled(value) ? 'true' : 'false';
+    }
+  },
   { key: 'authToken', queryKeys: ['auth_token_id'], defaultValue: '' },
   {
     key: 'channelType',
@@ -2302,6 +2353,7 @@ function getLogsFilters() {
     channelNameExact: isExactLogsChannelNameFilter(channelName),
     logSource,
     channelType: document.getElementById('f_channel_type')?.value || 'all',
+    upstreamModelMismatch: document.getElementById('f_upstream_model_mismatch')?.checked === true,
   };
 }
 

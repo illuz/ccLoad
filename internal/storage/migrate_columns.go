@@ -147,7 +147,10 @@ func ensureLogsNewColumns(ctx context.Context, db *sql.DB, dialect Dialect) erro
 		if err := ensureLogsRequestTraceMySQL(ctx, db); err != nil {
 			return err
 		}
-		return ensureLogsLogSourceMySQL(ctx, db)
+		if err := ensureLogsLogSourceMySQL(ctx, db); err != nil {
+			return err
+		}
+		return ensureLogsUpstreamResponseModelAuditMySQL(ctx, db)
 	}
 	// SQLite: 使用PRAGMA table_info检查列
 	return ensureLogsColumnsSQLite(ctx, db)
@@ -173,6 +176,8 @@ func ensureLogsColumnsSQLite(ctx context.Context, db *sql.DB) error {
 		{name: "cache_5m_input_tokens", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "cache_1h_input_tokens", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "actual_model", definition: "TEXT NOT NULL DEFAULT ''"}, // 实际转发的模型
+		{name: "upstream_response_model", definition: "TEXT"},
+		{name: "upstream_model_mismatch", definition: "INTEGER"},
 		{name: "log_source", definition: "TEXT NOT NULL DEFAULT 'proxy'"},
 		{name: "api_key_hash", definition: "TEXT NOT NULL DEFAULT ''"}, // API Key SHA256（用于精确定位 key_index）
 		{name: "base_url", definition: "TEXT NOT NULL DEFAULT ''"},     // 请求使用的上游URL（多URL场景）
@@ -316,6 +321,13 @@ func ensureLogsMinuteBucketMySQL(ctx context.Context, db *sql.DB) error {
 func ensureLogsActualModelMySQL(ctx context.Context, db *sql.DB) error {
 	return ensureMySQLColumns(ctx, db, "logs", []mysqlColumnDef{
 		{name: "actual_model", definition: "VARCHAR(191) NOT NULL DEFAULT '' COMMENT '实际转发的模型(空表示未重定向)'"},
+	})
+}
+
+func ensureLogsUpstreamResponseModelAuditMySQL(ctx context.Context, db *sql.DB) error {
+	return ensureMySQLColumns(ctx, db, "logs", []mysqlColumnDef{
+		{name: "upstream_response_model", definition: "VARCHAR(191) NULL COMMENT '上游响应声明的模型'"},
+		{name: "upstream_model_mismatch", definition: "TINYINT NULL COMMENT '上游响应模型是否与实际发送模型不一致'"},
 	})
 }
 

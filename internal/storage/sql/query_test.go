@@ -13,6 +13,7 @@ func TestWhereBuilder_ApplyLogFilter(t *testing.T) {
 	channelID := int64(42)
 	statusCode := 500
 	authTokenID := int64(7)
+	upstreamModelMismatch := true
 
 	tests := []struct {
 		name          string
@@ -62,6 +63,13 @@ func TestWhereBuilder_ApplyLogFilter(t *testing.T) {
 			name: "auth_token_id filter",
 			filter: &model.LogFilter{
 				AuthTokenID: &authTokenID,
+			},
+			expectArgsLen: 2,
+		},
+		{
+			name: "upstream model mismatch filter",
+			filter: &model.LogFilter{
+				UpstreamModelMismatch: &upstreamModelMismatch,
 			},
 			expectArgsLen: 2,
 		},

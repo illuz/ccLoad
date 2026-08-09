@@ -28,6 +28,7 @@ type requestContext struct {
 	nonStreamTimeout                   time.Duration
 	firstByteTimer                     *time.Timer
 	firstByteTimedOut                  atomic.Bool
+	responseModelObserver              *upstreamResponseModelObserver
 }
 
 // newRequestContext 创建请求上下文（处理超时控制）
@@ -62,12 +63,13 @@ func (s *Server) newRequestContextWithTimeouts(parentCtx context.Context, reques
 	}
 
 	reqCtx := &requestContext{
-		ctx:              ctx,
-		cancel:           cancel, // [INFO] 总是非 nil，无需检查
-		startTime:        time.Now(),
-		isStreaming:      isStreaming,
-		firstByteTimeout: timeouts.FirstByteTimeout,
-		nonStreamTimeout: timeouts.NonStreamTimeout,
+		ctx:                   ctx,
+		cancel:                cancel, // [INFO] 总是非 nil，无需检查
+		startTime:             time.Now(),
+		isStreaming:           isStreaming,
+		firstByteTimeout:      timeouts.FirstByteTimeout,
+		nonStreamTimeout:      timeouts.NonStreamTimeout,
+		responseModelObserver: newUpstreamResponseModelObserver(),
 	}
 
 	// 流式请求的首字节超时定时器

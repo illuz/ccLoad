@@ -218,6 +218,8 @@ func DefineLogsTable() *TableBuilder {
 		Column("minute_bucket BIGINT NOT NULL DEFAULT 0"). // time/60000，用于RPM类聚合避免运行时FLOOR
 		Column("model VARCHAR(191) NOT NULL DEFAULT ''").
 		Column("actual_model VARCHAR(191) NOT NULL DEFAULT ''"). // 实际转发的模型（空表示未重定向）
+		Column("upstream_response_model VARCHAR(191) NULL").
+		Column("upstream_model_mismatch TINYINT NULL").
 		Column("log_source VARCHAR(32) NOT NULL DEFAULT 'proxy'").
 		Column("channel_id INT NOT NULL DEFAULT 0").
 		Column("status_code INT NOT NULL").
@@ -253,7 +255,8 @@ func DefineLogsTable() *TableBuilder {
 		Index("idx_logs_channel_model_time_id", "channel_id, model, time, id").
 		Index("idx_logs_time_auth_token", "time, auth_token_id").  // 按时间+令牌查询
 		Index("idx_logs_time_actual_model", "time, actual_model"). // 按时间+实际模型查询
-		Index("idx_logs_request_id", "request_id").                // 按请求 UUID 聚合重试链
+		Index("idx_logs_upstream_model_mismatch_time", "upstream_model_mismatch, time, id").
+		Index("idx_logs_request_id", "request_id"). // 按请求 UUID 聚合重试链
 		Index("idx_logs_source_time", "log_source, time").
 		Index("idx_logs_source_minute", "log_source, minute_bucket")
 }

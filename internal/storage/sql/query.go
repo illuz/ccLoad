@@ -79,6 +79,9 @@ func (wb *WhereBuilder) ApplyLogFilter(filter *model.LogFilter) *WhereBuilder {
 	if filter.AuthTokenID != nil {
 		wb.AddCondition("auth_token_id = ?", *filter.AuthTokenID)
 	}
+	if filter.UpstreamModelMismatch != nil {
+		wb.AddCondition("upstream_model_mismatch = ?", *filter.UpstreamModelMismatch)
+	}
 	switch model.NormalizeCodexGuardFilterMode(filter.CodexGuardMode) {
 	case model.CodexGuardFilterAll:
 		wb.AddCondition("(status_code = ? OR message LIKE ? OR message LIKE ? OR message LIKE ?)",

@@ -910,6 +910,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.codexGuardBadge': 'Guard',
   'logs.codexGuardRetriedBadge': '已重试',
   'logs.codexGuardLastAttemptPassthroughBadge': '最后放行',
+  'logs.upstreamModelMismatchOnly': '仅看上游模型不一致',
   'logs.colTime': '时间',
   'logs.colIP': 'IP',
   'logs.colTokenDesc': '令牌',

@@ -232,6 +232,7 @@ func (s *Server) handleErrorResponse(
 	}
 
 	duration := reqCtx.Duration().Seconds()
+	reqCtx.observeUpstreamResponseModelJSON(rb, "")
 
 	return &fwResult{
 		Status:         resp.StatusCode,
@@ -252,6 +253,7 @@ func streamAndParseResponse(
 	contentType string,
 	channelType string,
 	isStreaming bool,
+	responseModelObserver *upstreamResponseModelObserver,
 	beforeWrite func(usageParser) error,
 ) (usageParser, error) {
 	makeFeed := func(parser usageParser) func([]byte) error {
@@ -291,7 +293,7 @@ func streamAndParseResponse(
 
 	// SSE流式响应
 	if strings.Contains(contentType, "text/event-stream") {
-		parser := newSSEUsageParser(channelType)
+		parser := newSSEUsageParser(channelType, responseModelObserver)
 		streamErr := copySSE(body, parser)
 		return parser, streamErr
 	}
@@ -303,17 +305,17 @@ func streamAndParseResponse(
 		streamBody := readerWithCloser{Reader: reader, Closer: body}
 
 		if isSSE {
-			parser := newSSEUsageParser(channelType)
+			parser := newSSEUsageParser(channelType, responseModelObserver)
 			sseErr := copySSE(streamBody, parser)
 			return parser, sseErr
 		}
-		parser := newJSONUsageParser(channelType)
+		parser := newJSONUsageParser(channelType, responseModelObserver)
 		copyErr := streamCopy(ctx, streamBody, w, makeFeed(parser))
 		return parser, copyErr
 	}
 
 	// 非SSE响应：边转发边缓存
-	parser := newJSONUsageParser(channelType)
+	parser := newJSONUsageParser(channelType, responseModelObserver)
 	copyErr := streamCopy(ctx, body, w, makeFeed(parser))
 	return parser, copyErr
 }
@@ -481,6 +483,8 @@ func maybePrepareDynamicStreamTransform(reqCtx *requestContext, resp *http.Respo
 	prefix, err := readSSEPrefixThroughFirstEvent(resp.Body)
 	if len(prefix) > 0 {
 		prependToBody(resp, prefix)
+		eventType, data := parseSSEEventChunk(prefix)
+		reqCtx.observeUpstreamResponseModelJSON(data, eventType)
 	}
 	if err != nil {
 		return "", false, err
@@ -501,6 +505,7 @@ func maybePrepareDynamicNonStreamTransform(reqCtx *requestContext, resp *http.Re
 	rawBody, err := io.ReadAll(resp.Body)
 	if len(rawBody) > 0 {
 		prependToBody(resp, rawBody)
+		reqCtx.observeUpstreamResponseModelJSON(rawBody, "")
 	}
 	if err != nil {
 		return "", false, err
@@ -801,6 +806,7 @@ func (s *Server) handleSuccessResponse(
 	contentType := resp.Header.Get("Content-Type")
 	parser, streamErr := streamAndParseResponse(
 		reqCtx.ctx, resp.Body, streamWriter, contentType, channelType, reqCtx.isStreaming,
+		reqCtx.ensureUpstreamResponseModelObserver(),
 		func(parser usageParser) error {
 			if deferredWriter == nil || deferredWriter.Committed() {
 				if parser.HasTextOutput() {
@@ -924,7 +930,7 @@ func (s *Server) handleTranslatedNonStreamSuccessResponse(
 		readStats.readCount = 1
 	}
 
-	parser := newJSONUsageParser(channelType)
+	parser := newJSONUsageParser(channelType, reqCtx.ensureUpstreamResponseModelObserver())
 	if err := parser.Feed(rawBody); err != nil {
 		return &fwResult{
 			Status:        resp.StatusCode,
@@ -1029,7 +1035,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 	filterAndWriteResponseHeaders(deferredWriter, resp.Header)
 	deferredWriter.WriteHeader(resp.StatusCode)
 
-	parser := newSSEUsageParser(channelType)
+	parser := newSSEUsageParser(channelType, reqCtx.ensureUpstreamResponseModelObserver())
 	var translatedComplete bool
 	var state any
 	streamErr := streamTransformSSEEventsUntil(
@@ -1539,6 +1545,7 @@ func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey
 	var res *fwResult
 	var duration float64
 	res, duration, err = s.handleResponse(reqCtx, resp, w, string(reqCtx.upstreamProtocol), cfg, apiKey, observer)
+	applyUpstreamResponseModelAudit(reqCtx, res)
 
 	// [FIX] 2025-12: 流式传输过程中首字节超时的错误修正
 	// 场景：响应头已收到(200 OK)，但在读取响应体时超时定时器触发

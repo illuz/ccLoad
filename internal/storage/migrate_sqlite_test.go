@@ -1039,6 +1039,8 @@ func TestEnsureLogsNewColumns_SQLite(t *testing.T) {
 		"auth_token_id",
 		"client_ip",
 		"actual_model",
+		"upstream_response_model",
+		"upstream_model_mismatch",
 		"log_source",
 		"request_id",
 		"attempt_number",
@@ -1046,6 +1048,42 @@ func TestEnsureLogsNewColumns_SQLite(t *testing.T) {
 	} {
 		if !cols[col] {
 			t.Errorf("column %s not found in logs", col)
+		}
+	}
+}
+
+func TestEnsureLogsNewColumnsSQLiteAddsUpstreamModelAuditToLegacyTable(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE schema_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at INTEGER NOT NULL
+		);
+		CREATE TABLE logs (
+			id INTEGER PRIMARY KEY,
+			time INTEGER NOT NULL,
+			model TEXT NOT NULL DEFAULT '',
+			status_code INTEGER NOT NULL DEFAULT 0,
+			message TEXT NOT NULL DEFAULT '',
+			cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0
+		);
+	`); err != nil {
+		t.Fatalf("create legacy logs table: %v", err)
+	}
+
+	if err := ensureLogsNewColumns(ctx, db, DialectSQLite); err != nil {
+		t.Fatalf("ensureLogsNewColumns: %v", err)
+	}
+
+	cols, err := sqliteExistingColumns(ctx, db, "logs")
+	if err != nil {
+		t.Fatalf("sqliteExistingColumns: %v", err)
+	}
+	for _, col := range []string{"upstream_response_model", "upstream_model_mismatch"} {
+		if !cols[col] {
+			t.Errorf("legacy logs migration did not add %s", col)
 		}
 	}
 }
@@ -1062,6 +1100,7 @@ func TestMigrate_SQLite_LogsHotPathIndexes(t *testing.T) {
 		"idx_logs_channel_time_id",
 		"idx_logs_channel_model_time_id",
 		"idx_logs_minute_auth_token_status",
+		"idx_logs_upstream_model_mismatch_time",
 		"idx_logs_request_id",
 		"idx_logs_source_time",
 		"idx_logs_source_minute",
@@ -1117,6 +1156,7 @@ func TestLoadAllExistingIndexes_SQLite(t *testing.T) {
 		"idx_logs_channel_model_time_id",
 		"idx_logs_time_auth_token",
 		"idx_logs_time_actual_model",
+		"idx_logs_upstream_model_mismatch_time",
 		"idx_logs_source_time",
 		"idx_logs_source_minute",
 	}

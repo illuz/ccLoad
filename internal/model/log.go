@@ -98,6 +98,8 @@ type LogEntry struct {
 	Time                  JSONTime `json:"time"`
 	Model                 string   `json:"model"`
 	ActualModel           string   `json:"actual_model,omitempty"` // 实际转发的模型（空表示未重定向）
+	UpstreamResponseModel string   `json:"upstream_response_model,omitempty"`
+	UpstreamModelMismatch *bool    `json:"upstream_model_mismatch,omitempty"`
 	LogSource             string   `json:"log_source,omitempty"`
 	ChannelID             int64    `json:"channel_id"`
 	ChannelName           string   `json:"channel_name,omitempty"`
@@ -137,16 +139,17 @@ type LogEntry struct {
 
 // LogFilter 日志查询过滤条件
 type LogFilter struct {
-	ChannelID       *int64
-	ChannelName     string
-	ChannelNameLike string
-	Model           string
-	ModelLike       string
-	StatusCode      *int
-	ChannelType     string // 渠道类型过滤（anthropic/openai/gemini/codex）
-	AuthTokenID     *int64 // API令牌ID过滤
-	LogSource       string
-	CodexGuardMode  string // Codex Guard 日志筛选：all/hit/retry_success
+	ChannelID             *int64
+	ChannelName           string
+	ChannelNameLike       string
+	Model                 string
+	ModelLike             string
+	StatusCode            *int
+	ChannelType           string // 渠道类型过滤（anthropic/openai/gemini/codex）
+	AuthTokenID           *int64 // API令牌ID过滤
+	LogSource             string
+	CodexGuardMode        string // Codex Guard 日志筛选：all/hit/retry_success
+	UpstreamModelMismatch *bool
 }
 
 // ChannelURLLogStat 是基于持久化日志聚合出的 URL 启动快照。
