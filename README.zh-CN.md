@@ -934,6 +934,7 @@ ccLoad 使用的核心技术栈：
 | `CCLOAD_TLS_CERT_FILE` | 无 | ccLoad HTTPS 服务器使用的 PEM 证书文件路径 |
 | `CCLOAD_TLS_KEY_FILE` | 无 | ccLoad HTTPS 服务器使用的 PEM 私钥文件路径 |
 | `PORT` | `8080` | 服务端口 |
+| `CCLOAD_READ_TIMEOUT_SEC` | `120` | HTTP 请求头与请求体读取总超时（正整数秒；大请求或慢速网络可适当提高） |
 | `GIN_MODE` | `release` | 运行模式（`debug`/`release`） |
 | `GIN_LOG` | `true` | Gin 访问日志开关（`false`/`0`/`no`/`off` 关闭） |
 | `CCLOAD_THEME_COLOR` | `#3b82f6` | 管理后台品牌色，影响按钮、强调色和 SVG Logo；支持十六进制或 `green`/`red` 等名称，修改后需重启 |

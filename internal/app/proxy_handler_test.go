@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type requestBodyTimeoutError struct{}
+
+func (requestBodyTimeoutError) Error() string   { return "i/o timeout" }
+func (requestBodyTimeoutError) Timeout() bool   { return true }
+func (requestBodyTimeoutError) Temporary() bool { return true }
+
+type timeoutReadCloser struct {
+	data []byte
+	sent bool
+}
+
+func (r *timeoutReadCloser) Read(p []byte) (int, error) {
+	if r.sent {
+		return 0, requestBodyTimeoutError{}
+	}
+	r.sent = true
+	return copy(p, r.data), nil
+}
+
+func (*timeoutReadCloser) Close() error { return nil }
 
 func TestHandleProxyRequest_UnknownPathReturns404(t *testing.T) {
 	srv := &Server{
@@ -165,6 +188,61 @@ func TestParseIncomingRequest_BodyTooLarge(t *testing.T) {
 
 	if err != errBodyTooLarge {
 		t.Errorf("期望errBodyTooLarge错误, 实际: %v", err)
+	}
+}
+
+func TestParseIncomingRequest_ReadTimeoutIncludesDiagnostics(t *testing.T) {
+	reader := &timeoutReadCloser{data: []byte(`{"model":"gpt-4"}`)}
+	req := newRequest(http.MethodPost, "/v1/responses", reader)
+	req.ContentLength = 4096
+	req.TransferEncoding = []string{"chunked"}
+	c, _ := newTestContext(t, req)
+
+	_, _, _, err := parseIncomingRequest(c)
+	if err == nil {
+		t.Fatal("expected request body read error")
+	}
+	if got := incomingRequestErrorStatus(err); got != http.StatusRequestTimeout {
+		t.Fatalf("incomingRequestErrorStatus() = %d, want %d", got, http.StatusRequestTimeout)
+	}
+
+	var readErr *requestBodyReadError
+	if !errors.As(err, &readErr) {
+		t.Fatalf("error type = %T, want *requestBodyReadError", err)
+	}
+	if readErr.bytesRead != int64(len(reader.data)) {
+		t.Fatalf("bytesRead = %d, want %d", readErr.bytesRead, len(reader.data))
+	}
+	for _, diagnostic := range []string{
+		"method=POST",
+		"path=/v1/responses",
+		"content_length=4096",
+		"bytes_read=17",
+		"transfer_encoding=chunked",
+	} {
+		if !strings.Contains(err.Error(), diagnostic) {
+			t.Fatalf("error %q missing diagnostic %q", err, diagnostic)
+		}
+	}
+}
+
+func TestIncomingRequestErrorStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "body too large", err: errBodyTooLarge, want: http.StatusRequestEntityTooLarge},
+		{name: "read timeout", err: requestBodyTimeoutError{}, want: http.StatusRequestTimeout},
+		{name: "other", err: errors.New("unexpected EOF"), want: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := incomingRequestErrorStatus(tt.err); got != tt.want {
+				t.Fatalf("incomingRequestErrorStatus() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

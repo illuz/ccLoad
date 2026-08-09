@@ -4,17 +4,20 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"ccLoad/internal/app"
+	"ccLoad/internal/config"
 	"ccLoad/internal/storage"
 	"ccLoad/internal/util"
 	"ccLoad/internal/version"
@@ -80,6 +83,19 @@ func (c serverTLSConfig) validate() error {
 		return errors.New("CCLOAD_TLS_ENABLED requires both CCLOAD_TLS_CERT_FILE and CCLOAD_TLS_KEY_FILE")
 	}
 	return nil
+}
+
+func loadHTTPReadTimeout(getenv func(string) string) (time.Duration, error) {
+	raw := strings.TrimSpace(getenv("CCLOAD_READ_TIMEOUT_SEC"))
+	if raw == "" {
+		return config.HTTPServerReadTimeout, nil
+	}
+
+	seconds, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || seconds <= 0 {
+		return 0, fmt.Errorf("CCLOAD_READ_TIMEOUT_SEC must be a positive integer number of seconds: %q", raw)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 // getTrustedProxies 获取可信代理配置
@@ -214,17 +230,22 @@ func main() {
 	// 使用http.Server支持优雅关闭
 	// WriteTimeout 动态计算：确保 >= nonStreamTimeout，避免传输层截断业务层超时
 	writeTimeout := srv.GetWriteTimeout()
+	readTimeout, err := loadHTTPReadTimeout(os.Getenv)
+	if err != nil {
+		log.Fatalf("[FATAL] HTTP 读取超时配置无效: %v", err)
+	}
 	httpServer := &http.Server{
 		Addr:    addr,
 		Handler: r,
 
 		// ✅ 深度防御：传输层超时保护（抵御slowloris等慢速攻击）
 		// 即使绕过应用层并发控制，也会在HTTP层被杀死
-		ReadHeaderTimeout: 5 * time.Second,   // 防止慢速发送header（slowloris攻击）
-		ReadTimeout:       120 * time.Second, // 防止慢速发送body（兼容长请求）
-		WriteTimeout:      writeTimeout,      // 动态值，>= nonStreamTimeout
-		IdleTimeout:       60 * time.Second,  // 防止keep-alive连接占用fd
+		ReadHeaderTimeout: 5 * time.Second,  // 防止慢速发送header（slowloris攻击）
+		ReadTimeout:       readTimeout,      // 防止慢速发送body；可按大请求上传耗时调整
+		WriteTimeout:      writeTimeout,     // 动态值，>= nonStreamTimeout
+		IdleTimeout:       60 * time.Second, // 防止keep-alive连接占用fd
 	}
+	log.Printf("[CONFIG] HTTP ReadTimeout: %v", readTimeout)
 	log.Printf("[CONFIG] HTTP WriteTimeout: %v", writeTimeout)
 
 	// 启动HTTP服务器（在goroutine中）

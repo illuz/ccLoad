@@ -9,6 +9,7 @@ import (
 	"log"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -27,6 +28,57 @@ import (
 
 var errUnknownChannelType = errors.New("unknown channel type for path")
 var errBodyTooLarge = errors.New("request body too large")
+
+type requestBodyReadError struct {
+	cause            error
+	method           string
+	path             string
+	contentLength    int64
+	bytesRead        int64
+	transferEncoding []string
+}
+
+func (e *requestBodyReadError) Error() string {
+	transferEncoding := "identity"
+	if len(e.transferEncoding) > 0 {
+		transferEncoding = strings.Join(e.transferEncoding, ",")
+	}
+	return fmt.Sprintf(
+		"failed to read body: method=%s path=%s content_length=%d bytes_read=%d transfer_encoding=%s: %v",
+		e.method,
+		e.path,
+		e.contentLength,
+		e.bytesRead,
+		transferEncoding,
+		e.cause,
+	)
+}
+
+func (e *requestBodyReadError) Unwrap() error {
+	return e.cause
+}
+
+type countingReader struct {
+	reader    io.Reader
+	bytesRead int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.bytesRead += int64(n)
+	return n, err
+}
+
+func incomingRequestErrorStatus(err error) int {
+	if errors.Is(err, errBodyTooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return http.StatusRequestTimeout
+	}
+	return http.StatusBadRequest
+}
 
 // ErrAllKeysUnavailable 表示所有渠道密钥都不可用
 var ErrAllKeysUnavailable = errors.New("all channel keys unavailable")
@@ -170,12 +222,20 @@ func parseIncomingRequest(c *gin.Context) (string, []byte, bool, error) {
 			maxBody = int64(n)
 		}
 	}
-	limited := io.LimitReader(c.Request.Body, maxBody+1)
+	counted := &countingReader{reader: c.Request.Body}
+	limited := io.LimitReader(counted, maxBody+1)
 	all, err := io.ReadAll(limited)
-	if err != nil {
-		return "", nil, false, fmt.Errorf("failed to read body: %w", err)
-	}
 	_ = c.Request.Body.Close()
+	if err != nil {
+		return "", nil, false, &requestBodyReadError{
+			cause:            err,
+			method:           requestMethod,
+			path:             requestPath,
+			contentLength:    c.Request.ContentLength,
+			bytesRead:        counted.bytesRead,
+			transferEncoding: append([]string(nil), c.Request.TransferEncoding...),
+		}
+	}
 	if int64(len(all)) > maxBody {
 		return "", nil, false, errBodyTooLarge
 	}
@@ -313,10 +373,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 
 	originalModel, all, isStreaming, err := parseIncomingRequest(c)
 	if err != nil {
-		statusCode := http.StatusBadRequest
-		if errors.Is(err, errBodyTooLarge) {
-			statusCode = http.StatusRequestEntityTooLarge
-		}
+		statusCode := incomingRequestErrorStatus(err)
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 		s.recordProxyRejection(c, startTime, "", statusCode, err.Error(), false, "")
 		return

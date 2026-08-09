@@ -910,6 +910,7 @@ Check out the awesome admin dashboard 👇
 | `CCLOAD_TLS_CERT_FILE` | none | PEM certificate file path for the ccLoad HTTPS server |
 | `CCLOAD_TLS_KEY_FILE` | none | PEM private key file path for the ccLoad HTTPS server |
 | `PORT` | `8080` | Service port |
+| `CCLOAD_READ_TIMEOUT_SEC` | `120` | Total timeout in positive integer seconds for reading HTTP request headers and body (increase for large uploads or slow networks) |
 | `GIN_MODE` | `release` | Run mode (`debug`/`release`) |
 | `GIN_LOG` | `true` | Gin access log switch (`false`/`0`/`no`/`off` to disable) |
 | `CCLOAD_THEME_COLOR` | `#3b82f6` | Admin UI brand color for buttons, accents, and SVG logo. Supports hex colors or names such as `green`/`red`; restart required |

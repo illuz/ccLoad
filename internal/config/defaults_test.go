@@ -101,6 +101,7 @@ func TestConfigRelationships(t *testing.T) {
 func TestHTTPTimeoutValues(t *testing.T) {
 	// 所有HTTP超时应该大于0
 	timeouts := map[string]time.Duration{
+		"HTTPServerReadTimeout":   HTTPServerReadTimeout,
 		"HTTPDialTimeout":         HTTPDialTimeout,
 		"HTTPKeepAliveInterval":   HTTPKeepAliveInterval,
 		"HTTPTLSHandshakeTimeout": HTTPTLSHandshakeTimeout,

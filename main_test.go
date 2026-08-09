@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestGetServerTLSConfig(t *testing.T) {
 	tests := []struct {
@@ -54,6 +57,34 @@ func TestGetServerTLSConfig(t *testing.T) {
 			}
 			if (got.validate() != nil) != tt.wantError {
 				t.Fatalf("validate() error = %v, want error=%v", got.validate(), tt.wantError)
+			}
+		})
+	}
+}
+
+func TestLoadHTTPReadTimeout(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		want      time.Duration
+		wantError bool
+	}{
+		{name: "default", want: 120 * time.Second},
+		{name: "custom", value: "300", want: 300 * time.Second},
+		{name: "trimmed", value: " 45 ", want: 45 * time.Second},
+		{name: "zero", value: "0", wantError: true},
+		{name: "negative", value: "-1", wantError: true},
+		{name: "invalid", value: "five", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := loadHTTPReadTimeout(func(string) string { return tt.value })
+			if (err != nil) != tt.wantError {
+				t.Fatalf("loadHTTPReadTimeout() error = %v, want error=%v", err, tt.wantError)
+			}
+			if got != tt.want {
+				t.Fatalf("loadHTTPReadTimeout() = %v, want %v", got, tt.want)
 			}
 		})
 	}

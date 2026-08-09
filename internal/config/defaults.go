@@ -16,6 +16,9 @@ const (
 
 	// DefaultMaxImageBodyBytes Images API 默认最大请求体字节数（支持图片上传）
 	DefaultMaxImageBodyBytes = 20 * 1024 * 1024 // 20MB
+
+	// HTTPServerReadTimeout HTTP 服务读取请求头和请求体的默认总超时。
+	HTTPServerReadTimeout = 120 * time.Second
 )
 
 // HTTP客户端配置常量
