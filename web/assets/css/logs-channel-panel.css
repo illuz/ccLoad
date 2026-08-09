@@ -45,6 +45,7 @@
 .logs-channel-panel__icon-btn:focus-visible,
 .logs-channel-panel__group-toggle:focus-visible,
 .logs-channel-panel__drag:focus-visible,
+.logs-channel-panel__edit:focus-visible,
 .logs-channel-panel__switch:focus-visible,
 .logs-channel-panel__retry:focus-visible {
   outline: 2px solid var(--primary-500);
@@ -132,7 +133,8 @@
 }
 
 .logs-channel-panel__icon-btn,
-.logs-channel-panel__drag {
+.logs-channel-panel__drag,
+.logs-channel-panel__edit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -147,7 +149,8 @@
 }
 
 .logs-channel-panel__icon-btn:hover,
-.logs-channel-panel__drag:hover {
+.logs-channel-panel__drag:hover,
+.logs-channel-panel__edit:hover {
   color: var(--neutral-900);
   background: var(--surface-hover);
 }
@@ -273,7 +276,7 @@
 
 .logs-channel-panel__row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 38px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
   min-height: 54px;
@@ -322,6 +325,22 @@
 .logs-channel-panel__drag > svg {
   width: 18px;
   height: 18px;
+}
+
+.logs-channel-panel__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.logs-channel-panel__edit {
+  width: 30px;
+  height: 30px;
+}
+
+.logs-channel-panel__edit > svg {
+  width: 16px;
+  height: 16px;
 }
 
 .logs-channel-panel__info {

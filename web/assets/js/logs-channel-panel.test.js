@@ -113,6 +113,13 @@ test('快捷启停复用批量接口并在失败时回滚本地状态', () => {
   assert.match(source, /role="switch"[\s\S]*?aria-checked=/);
 });
 
+test('渠道行提供快速编辑图标并复用日志页渠道编辑器', () => {
+  assert.match(source, /data-channel-panel-action="edit-channel"/);
+  assert.match(source, /\$\{ICONS\.edit\}/);
+  assert.match(source, /window\.openLogChannelEditor\(actionTarget\.dataset\.channelId\)/);
+  assert.match(css, /\.logs-channel-panel__row-actions\s*\{[\s\S]*?display:\s*flex;/);
+});
+
 test('排序复用批量优先级接口且限制为同组拖放', () => {
   assert.match(source, /\/admin\/channels\/batch-priority/);
   assert.match(source, /list\s*!==\s*state\.nativeDrag\.list/);
@@ -124,7 +131,7 @@ test('排序复用批量优先级接口且限制为同组拖放', () => {
 test('渠道浮窗文案同时提供中英文键值', () => {
   const requiredKeys = [
     'title', 'open', 'collapse', 'refresh', 'loading', 'loadFailed',
-    'enabledSummary', 'dragHandle', 'toggleFailed', 'orderSaved', 'orderFailed'
+    'enabledSummary', 'dragHandle', 'editChannel', 'toggleFailed', 'orderSaved', 'orderFailed'
   ];
   for (const suffix of requiredKeys) {
     const key = `logs.channelPanel.${suffix}`;

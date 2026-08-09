@@ -183,6 +183,9 @@
         if (typeof load === 'function') {
           await load(true);
         }
+        if (window.LogsChannelQuickPanel && typeof window.LogsChannelQuickPanel.refresh === 'function') {
+          await window.LogsChannelQuickPanel.refresh();
+        }
       }
     };
   }

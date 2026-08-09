@@ -939,6 +939,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.channelPanel.priority': '优先级 {priority}',
   'logs.channelPanel.cooldown': '冷却中',
   'logs.channelPanel.dragHandle': '调整 {name} 的顺序',
+  'logs.channelPanel.editChannel': '编辑 {name}',
   'logs.channelPanel.toggleEnabled': '已启用 {name}',
   'logs.channelPanel.toggleDisabled': '已禁用 {name}',
   'logs.channelPanel.toggleFailed': '{name} 状态更新失败',

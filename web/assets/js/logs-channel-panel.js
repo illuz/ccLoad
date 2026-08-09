@@ -23,6 +23,7 @@
     'logs.channelPanel.priority': 'Priority {priority}',
     'logs.channelPanel.cooldown': 'Cooling down',
     'logs.channelPanel.dragHandle': 'Reorder {name}',
+    'logs.channelPanel.editChannel': 'Edit {name}',
     'logs.channelPanel.toggleEnabled': '{name} enabled',
     'logs.channelPanel.toggleDisabled': '{name} disabled',
     'logs.channelPanel.toggleFailed': 'Failed to update {name}',
@@ -35,7 +36,8 @@
 
   const ICONS = Object.freeze({
     chevron: '<svg class="logs-channel-panel__group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>',
-    grip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg>'
+    grip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg>'
   });
 
   const state = {
@@ -326,6 +328,7 @@
     const type = String(channel.channel_type || '--');
     const priority = normalizePriority(channel.priority);
     const dragLabel = translate('logs.channelPanel.dragHandle', { name });
+    const editLabel = translate('logs.channelPanel.editChannel', { name });
     const switchLabel = translate(enabled ? 'channels.toggleDisable' : 'channels.toggleEnable');
     const cooldownHTML = coolingDown
       ? `<span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span><span class="logs-channel-panel__cooldown">${escapeHTML(translate('logs.channelPanel.cooldown'))}</span>`
@@ -345,7 +348,10 @@
             ${cooldownHTML}
           </div>
         </div>
-        <button type="button" class="logs-channel-panel__switch" data-channel-panel-action="toggle-channel" data-channel-id="${id}" role="switch" aria-checked="${enabled}" aria-disabled="${pending}" title="${escapeHTML(switchLabel)}" aria-label="${escapeHTML(switchLabel)}"></button>
+        <div class="logs-channel-panel__row-actions">
+          <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-channel" data-channel-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
+          <button type="button" class="logs-channel-panel__switch" data-channel-panel-action="toggle-channel" data-channel-id="${id}" role="switch" aria-checked="${enabled}" aria-disabled="${pending}" title="${escapeHTML(switchLabel)}" aria-label="${escapeHTML(switchLabel)}"></button>
+        </div>
       </div>`;
   }
 
@@ -752,6 +758,8 @@
       void refreshPanel();
     } else if (action === 'toggle-channel') {
       void toggleChannel(actionTarget.dataset.channelId);
+    } else if (action === 'edit-channel' && typeof window.openLogChannelEditor === 'function') {
+      void window.openLogChannelEditor(actionTarget.dataset.channelId);
     } else if (action === 'toggle-group') {
       const key = normalizeGroupKey(actionTarget.dataset.groupId);
       if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key);

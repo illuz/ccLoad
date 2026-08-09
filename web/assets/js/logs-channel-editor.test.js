@@ -56,6 +56,12 @@ test('日志页初始化渠道编辑器时会绑定弹窗静态动作', () => {
   assert.match(logsChannelEditorScript, /initChannelEditorActions\(\);/);
 });
 
+test('日志页渠道编辑保存后会刷新渠道快捷浮窗', () => {
+  const logsChannelEditorScript = fs.readFileSync(path.join(__dirname, 'logs-channel-editor.js'), 'utf8');
+
+  assert.match(logsChannelEditorScript, /window\.LogsChannelQuickPanel\.refresh\(\)/);
+});
+
 test('日志页动态加载渠道编辑器会注入自定义规则弹窗及脚本', () => {
   const logsChannelEditorScript = fs.readFileSync(path.join(__dirname, 'logs-channel-editor.js'), 'utf8');
 

@@ -939,6 +939,7 @@ window.I18N_LOCALES['en'] = {
   'logs.channelPanel.priority': 'Priority {priority}',
   'logs.channelPanel.cooldown': 'Cooling down',
   'logs.channelPanel.dragHandle': 'Reorder {name}',
+  'logs.channelPanel.editChannel': 'Edit {name}',
   'logs.channelPanel.toggleEnabled': '{name} enabled',
   'logs.channelPanel.toggleDisabled': '{name} disabled',
   'logs.channelPanel.toggleFailed': 'Failed to update {name}',
