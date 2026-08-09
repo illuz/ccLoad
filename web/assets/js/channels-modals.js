@@ -304,26 +304,28 @@ function syncInputPriorityBonusState() {
   });
 }
 
-async function syncScheduledCheckVisibility() {
+async function syncScheduledCheckVisibility(enabledOverride) {
   const scheduledCheckWrapper = document.getElementById('channelScheduledCheckEnabledWrapper');
   const scheduledCheckModelWrapper = document.getElementById('channelScheduledCheckModelWrapper');
   if (!scheduledCheckWrapper) return false;
 
-  let scheduledCheckEnabledByConfig = false;
-  try {
-    const setting = await fetchDataWithAuth('/admin/settings/channel_check_interval_hours');
-    const intervalHours = Number(setting && setting.value);
-    scheduledCheckEnabledByConfig = Number.isFinite(intervalHours) && intervalHours > 0;
-  } catch (error) {
-    console.warn('Failed to load channel check interval setting', error);
+  let enabled = enabledOverride === true;
+  if (typeof enabledOverride !== 'boolean') {
+    try {
+      const setting = await fetchDataWithAuth('/admin/settings/channel_check_interval_hours');
+      const intervalHours = Number(setting && setting.value);
+      enabled = Number.isFinite(intervalHours) && intervalHours > 0;
+    } catch (error) {
+      console.warn('Failed to load channel check interval setting', error);
+    }
   }
 
-  scheduledCheckWrapper.hidden = !scheduledCheckEnabledByConfig;
+  scheduledCheckWrapper.hidden = !enabled;
   if (scheduledCheckModelWrapper) {
-    scheduledCheckModelWrapper.hidden = !scheduledCheckEnabledByConfig;
+    scheduledCheckModelWrapper.hidden = !enabled;
   }
   syncScheduledCheckModelState();
-  return scheduledCheckEnabledByConfig;
+  return enabled;
 }
 
 function setScheduledCheckModelHint(i18nKey) {
@@ -404,16 +406,6 @@ function syncScheduledCheckModelState() {
   }
 
   input.disabled = wrapper.hidden || !checkbox.checked;
-}
-
-async function resolveEditableChannel(id) {
-  const cachedChannel = Array.isArray(channels) ? channels.find(c => c.id === id) : null;
-  try {
-    return await fetchDataWithAuth(`/admin/channels/${id}`);
-  } catch (error) {
-    console.error('Failed to fetch channel', error);
-    return cachedChannel || null;
-  }
 }
 
 async function handleChannelSaveSuccess({ isNewChannel, newChannelType, savedChannelId, response }) {
@@ -642,14 +634,45 @@ async function showAddModal() {
 }
 
 async function editChannel(id) {
-  const channel = await resolveEditableChannel(id);
-  if (!channel) return;
+  let editorData;
+  try {
+    editorData = await fetchDataWithAuth(`/admin/channels/${id}/editor`);
+  } catch (error) {
+    console.error('Failed to fetch channel editor data', error);
+    if (window.showError) window.showError(window.t('channels.loadChannelsFailed'));
+    return;
+  }
 
-  const scheduledVisibilityPromise = syncScheduledCheckVisibility();
-  const apiKeysPromise = fetchEditableChannelKeys(id);
-  const modelStatsPromise = fetchEditableChannelModelStats(id);
+  const channel = editorData && editorData.channel;
+  const apiKeys = editorData && Array.isArray(editorData.keys) ? editorData.keys : null;
+  if (!channel || apiKeys === null) {
+    console.error('Invalid channel editor data', editorData);
+    if (window.showError) window.showError(window.t('channels.loadChannelsFailed'));
+    return;
+  }
+
+  const modelStatsData = editorData.model_stats || {};
+  const modelStats = modelStatsData.available === false
+    ? null
+    : new Map((Array.isArray(modelStatsData.items) ? modelStatsData.items : []).map(entry => [
+      normalizeModelStatsKey(entry.model),
+      entry
+    ]));
+  const urlStatsData = editorData.url_stats || {};
+  const urlStats = Array.isArray(urlStatsData.items) ? urlStatsData.items : [];
+  const scheduledCheckEnabled = Boolean(
+    editorData.features && editorData.features.scheduled_check_enabled
+  );
+
+  if (typeof resetModalKeyStatusFilter === 'function') {
+    resetModalKeyStatusFilter();
+  }
+
+  const scheduledVisibilityPromise = syncScheduledCheckVisibility(scheduledCheckEnabled);
   const channelType = channel.channel_type || 'anthropic';
-  const channelTypeRenderPromise = window.ChannelTypeManager.renderChannelTypeRadios('channelTypeRadios', channelType);
+  const channelTypeRenderPromise = window.ChannelTypeManager && typeof window.ChannelTypeManager.renderChannelTypeRadios === 'function'
+    ? window.ChannelTypeManager.renderChannelTypeRadios('channelTypeRadios', channelType)
+    : Promise.resolve();
 
   editingChannelId = id;
   clearChannelDuplicateHint();
@@ -657,16 +680,9 @@ async function editChannel(id) {
   setChannelModalTitle('channels.editChannel');
   document.getElementById('channelName').value = channel.name;
   setInlineURLTableData(channel.url);
+  applyURLStats(urlStats);
 
-  // 多URL时异步加载URL实时状态（延迟、冷却）
-  const urlCount = getValidInlineURLs().length;
-  if (urlCount > 1) {
-    fetchURLStats(id);
-  }
-
-  const [apiKeys, modelStats] = await Promise.all([
-    apiKeysPromise,
-    modelStatsPromise,
+  await Promise.all([
     scheduledVisibilityPromise,
     channelTypeRenderPromise
   ]);
@@ -760,30 +776,8 @@ async function editChannel(id) {
   document.getElementById('channelModal').classList.add('show');
 }
 
-async function fetchEditableChannelKeys(id) {
-  try {
-    return (await fetchDataWithAuth(`/admin/channels/${id}/keys`)) || [];
-  } catch (e) {
-    console.error('Failed to fetch API Keys', e);
-    return [];
-  }
-}
-
 function normalizeModelStatsKey(modelName) {
   return String(modelName || '').trim().toLowerCase();
-}
-
-async function fetchEditableChannelModelStats(id) {
-  try {
-    const stats = await fetchDataWithAuth(`/admin/channels/${id}/model-stats`);
-    return new Map((Array.isArray(stats) ? stats : []).map(entry => [
-      normalizeModelStatsKey(entry.model),
-      entry
-    ]));
-  } catch (error) {
-    console.error('Failed to fetch channel model stats', error);
-    return null;
-  }
 }
 
 function closeModal() {

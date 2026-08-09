@@ -109,6 +109,56 @@ func (s *SQLStore) AggregateRangeWithFilter(ctx context.Context, since, until ti
 	return s.finalizeMetricPoints(ctx, mapp, helperMap, channelIDsToFetch, since, until, bucket), nil
 }
 
+// GetModelUsage aggregates token usage and effective cost by requested model.
+func (s *SQLStore) GetModelUsage(ctx context.Context, since, until time.Time, filter *model.LogFilter) ([]model.ModelUsageStat, error) {
+	baseQuery := `
+		SELECT
+			COALESCE(model, '') AS model,
+			SUM(
+				COALESCE(input_tokens, 0) +
+				COALESCE(output_tokens, 0) +
+				COALESCE(cache_read_input_tokens, 0) +
+				COALESCE(cache_creation_input_tokens, 0)
+			) AS total_tokens,
+			SUM(COALESCE(cost, 0.0) * COALESCE(cost_multiplier, 1)) AS effective_cost
+		FROM logs`
+
+	qb := NewQueryBuilder(baseQuery).
+		Where("time >= ?", since.UnixMilli()).
+		Where("time <= ?", until.UnixMilli()).
+		Where("status_code != 499").
+		Where("channel_id > 0")
+
+	_, isEmpty, err := s.applyChannelFilter(ctx, qb, filter)
+	if err != nil {
+		return nil, fmt.Errorf("resolve model usage channel filter: %w", err)
+	}
+	if isEmpty {
+		return []model.ModelUsageStat{}, nil
+	}
+	qb.ApplyFilter(filter)
+
+	query, args := qb.BuildWithSuffix("GROUP BY model ORDER BY total_tokens DESC, effective_cost DESC, model ASC")
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]model.ModelUsageStat, 0)
+	for rows.Next() {
+		var item model.ModelUsageStat
+		if err := rows.Scan(&item.Model, &item.TotalTokens, &item.EffectiveCost); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // resolveChannelFilter 解析渠道筛选条件，返回符合条件的渠道ID列表
 // 返回值：channelIDs（空切片表示不限制）、isEmpty（true表示无匹配结果）、error
 func (s *SQLStore) resolveChannelFilter(ctx context.Context, filter *model.LogFilter) ([]int64, bool, error) {

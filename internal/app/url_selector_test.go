@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"net"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"ccLoad/internal/util"
 )
 
 func TestURLSelector_SingleURL(t *testing.T) {
@@ -231,6 +234,42 @@ func TestURLSelector_RecordLatencyClearsCooldownWindow(t *testing.T) {
 	sel.RecordLatency(channelID, url, 20*time.Millisecond)
 	if sel.IsCooledDown(channelID, url) {
 		t.Fatalf("expected cooldown cleared after successful latency record")
+	}
+}
+
+func TestURLSelector_HealthSignalsDoNotCountRequests(t *testing.T) {
+	sel := NewURLSelector()
+	channelID := int64(1)
+	url := "https://a.example"
+
+	sel.RecordLatency(channelID, url, 20*time.Millisecond)
+	sel.CooldownURL(channelID, url)
+
+	stats := sel.GetURLStats(channelID, []string{url})
+	if len(stats) != 1 || stats[0].Requests != 0 || stats[0].Failures != 0 {
+		t.Fatalf("延迟和冷却是健康信号，不应伪造调用次数: %+v", stats)
+	}
+}
+
+func TestURLSelector_RecordRequestResultMatchesLogAggregation(t *testing.T) {
+	sel := NewURLSelector()
+	channelID := int64(1)
+	url := "https://a.example"
+
+	sel.RecordRequestResult(channelID, url, http.StatusOK)
+	sel.RecordRequestResult(channelID, url, http.StatusNoContent)
+	sel.RecordRequestResult(channelID, url, 0)
+	sel.RecordRequestResult(channelID, url, http.StatusUnauthorized)
+	sel.RecordRequestResult(channelID, url, util.StatusClientClosedRequest)
+	sel.RecordRequestResult(channelID, "   ", http.StatusOK)
+
+	stats := sel.GetURLStats(channelID, []string{url})
+	if len(stats) != 1 || stats[0].Requests != 2 || stats[0].Failures != 2 {
+		t.Fatalf("URL 调用统计必须与日志聚合口径一致: %+v", stats)
+	}
+	blankStats := sel.GetURLStats(channelID, []string{"   "})
+	if len(blankStats) != 1 || blankStats[0].Requests != 0 || blankStats[0].Failures != 0 {
+		t.Fatalf("空白 URL 不应产生调用统计: %+v", blankStats)
 	}
 }
 

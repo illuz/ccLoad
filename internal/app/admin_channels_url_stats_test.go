@@ -48,6 +48,37 @@ func TestHandleChannelURLStats_NilSelectorReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestHandleChannelURLStats_SingleURLReturnsStats(t *testing.T) {
+	srv := newInMemoryServer(t)
+
+	cfg, err := srv.store.CreateConfig(context.Background(), &model.Config{
+		Name:         "url-stats-single",
+		URL:          "https://single.example",
+		Priority:     1,
+		ChannelType:  "anthropic",
+		ModelEntries: []model.ModelEntry{{Model: "claude-sonnet-4-20250514"}},
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig failed: %v", err)
+	}
+	srv.urlSelector.RecordLatency(cfg.ID, cfg.URL, 125*time.Millisecond)
+	srv.urlSelector.RecordRequestResult(cfg.ID, cfg.URL, http.StatusOK)
+
+	target := fmt.Sprintf("/admin/channels/%d/url-stats", cfg.ID)
+	c, w := newTestContext(t, newRequest(http.MethodGet, target, nil))
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", cfg.ID)}}
+	srv.HandleChannelURLStats(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := mustParseAPIResponse[[]URLStat](t, w.Body.Bytes())
+	if len(resp.Data) != 1 || resp.Data[0].Requests != 1 || resp.Data[0].Failures != 0 {
+		t.Fatalf("single URL stats=%+v, want one successful request", resp.Data)
+	}
+}
+
 func TestNewServer_LoadsTodayURLStatsFromLogsOnStartup(t *testing.T) {
 	store, err := storage.CreateSQLiteStore(":memory:")
 	if err != nil {

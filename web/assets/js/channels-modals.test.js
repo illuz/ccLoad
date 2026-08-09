@@ -3,12 +3,12 @@ const assert = require('node:assert/strict');
 
 const { selectFirstEnabledInlineKey } = require('./channels-keys.js');
 
-function loadChannelModals() {
+function loadChannelModals(windowOverrides = {}) {
   const previousWindow = Object.getOwnPropertyDescriptor(global, 'window');
   Object.defineProperty(global, 'window', {
     configurable: true,
     writable: true,
-    value: { ChannelProtocolConfig: {} }
+    value: { ChannelProtocolConfig: {}, ...windowOverrides }
   });
   const modulePath = require.resolve('./channels-modals.js');
   delete require.cache[modulePath];
@@ -27,6 +27,104 @@ function loadChannelModals() {
     else delete global.window;
     throw error;
   }
+}
+
+function installEditChannelGlobals(channel, { editorError = null } = {}) {
+  const requests = [];
+  const errors = [];
+  const appliedURLStats = [];
+  const elements = new Map();
+  const makeElement = () => {
+    const classes = new Set();
+    return {
+      value: '',
+      checked: false,
+      disabled: false,
+      hidden: false,
+      style: {},
+      dataset: {},
+      classList: {
+        add: (...names) => names.forEach(name => classes.add(name)),
+        remove: (...names) => names.forEach(name => classes.delete(name)),
+        contains: name => classes.has(name)
+      },
+      setAttribute() {},
+      addEventListener() {},
+      appendChild() {}
+    };
+  };
+  const getElement = id => {
+    if ([
+      'channelGroup',
+      'channelScheduledCheckEnabledWrapper',
+      'channelScheduledCheckModelWrapper',
+      'protocolTransformsContainer',
+      'protocolTransformModeContainer'
+    ].includes(id)) return null;
+    if (!elements.has(id)) elements.set(id, makeElement());
+    return elements.get(id);
+  };
+  const globals = {
+    document: {
+      getElementById: getElement,
+      querySelector: () => null,
+      querySelectorAll: () => []
+    },
+    editingChannelId: null,
+    currentChannelKeyCooldowns: [],
+    inlineKeyTableData: [{ api_key: '' }],
+    inlineKeyVisible: false,
+    selectedModelIndices: new Set(),
+    currentModelFilter: '',
+    console: { ...console, error() {} },
+    TemplateEngine: { render: () => null },
+    fetchDataWithAuth: async url => {
+      requests.push(url);
+      if (editorError) throw editorError;
+      return {
+        channel,
+        keys: [],
+        model_stats: { available: true, items: [] },
+        url_stats: {
+          available: true,
+          items: [{ url: channel.url, latency_ms: 125, requests: 1, failures: 0 }]
+        },
+        features: { scheduled_check_enabled: true }
+      };
+    },
+    clearChannelDuplicateHint() {},
+    setInlineURLTableData() {},
+    applyURLStats(stats) { appliedURLStats.push(stats); },
+    setInlineKeyTableDataFromAPI() {
+      global.inlineKeyTableData = [{ api_key: '' }];
+    },
+    renderInlineKeyTable() {},
+    renderRedirectTable() {},
+    resetChannelFormDirty() {}
+  };
+  const previous = new Map();
+  for (const [name, value] of Object.entries(globals)) {
+    previous.set(name, Object.getOwnPropertyDescriptor(global, name));
+    Object.defineProperty(global, name, { configurable: true, writable: true, value });
+  }
+
+  return {
+    appliedURLStats,
+    errors,
+    getElement,
+    requests,
+    window: {
+      t: key => key,
+      showError: message => errors.push(message),
+      ChannelTypeManager: { renderChannelTypeRadios: async () => {} }
+    },
+    restore() {
+      for (const [name, descriptor] of previous) {
+        if (descriptor) Object.defineProperty(global, name, descriptor);
+        else delete global[name];
+      }
+    }
+  };
 }
 
 test('mergeCommonModels de-duplicates remote models and preserves existing rows', () => {
@@ -203,4 +301,52 @@ test('fetchModelsFromAPI rejects a channel whose keys are all disabled', async (
 
   assert.equal(fetchCalled, false);
   assert.equal(shownError, 'channels.addAtLeastOneEnabledKey');
+});
+
+test('editing a channel loads one complete editor snapshot', async () => {
+  const channel = {
+    id: 73,
+    name: 'single-url',
+    url: 'https://single.test',
+    channel_type: 'anthropic',
+    request_delay_seconds: 7,
+    models: [],
+    priority: 100,
+    enabled: true
+  };
+  const fixture = installEditChannelGlobals(channel);
+  const runtime = loadChannelModals(fixture.window);
+
+  try {
+    await runtime.mod.editChannel(channel.id);
+
+    assert.deepEqual(fixture.requests, [`/admin/channels/${channel.id}/editor`]);
+    assert.equal(fixture.getElement('channelRequestDelaySeconds').value, '7');
+    assert.equal(fixture.getElement('channelModal').classList.contains('show'), true);
+    assert.equal(fixture.appliedURLStats.length, 1);
+  } finally {
+    runtime.restore();
+    fixture.restore();
+  }
+});
+
+test('editing a channel does not open a partial editor when bootstrap fails', async () => {
+  const channel = {
+    id: 74,
+    url: 'https://failed-bootstrap.test',
+    models: []
+  };
+  const fixture = installEditChannelGlobals(channel, { editorError: new Error('database unavailable') });
+  const runtime = loadChannelModals(fixture.window);
+
+  try {
+    await runtime.mod.editChannel(channel.id);
+
+    assert.deepEqual(fixture.requests, [`/admin/channels/${channel.id}/editor`]);
+    assert.deepEqual(fixture.errors, ['channels.loadChannelsFailed']);
+    assert.equal(fixture.getElement('channelModal').classList.contains('show'), false);
+  } finally {
+    runtime.restore();
+    fixture.restore();
+  }
 });

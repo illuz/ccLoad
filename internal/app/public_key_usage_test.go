@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -49,6 +50,30 @@ func TestPublicKeyUsageRequiresAValidKey(t *testing.T) {
 			Cost:                     0.05,
 			CostMultiplier:           2,
 		},
+		{
+			Time:                     model.JSONTime{Time: now},
+			Model:                    "claude-test",
+			ChannelID:                1,
+			StatusCode:               http.StatusOK,
+			AuthTokenID:              token.ID,
+			InputTokens:              20,
+			OutputTokens:             10,
+			CacheReadInputTokens:     8,
+			CacheCreationInputTokens: 5,
+			Cost:                     0.05,
+			CostMultiplier:           1,
+		},
+		{
+			Time:           model.JSONTime{Time: now},
+			Model:          "gpt-test",
+			ChannelID:      1,
+			StatusCode:     499,
+			AuthTokenID:    token.ID,
+			InputTokens:    9999,
+			OutputTokens:   9999,
+			Cost:           99,
+			CostMultiplier: 1,
+		},
 	}); err != nil {
 		t.Fatalf("BatchAddLogs failed: %v", err)
 	}
@@ -68,16 +93,17 @@ func TestPublicKeyUsageRequiresAValidKey(t *testing.T) {
 		var response struct {
 			Success bool `json:"success"`
 			Data    struct {
-				Today     PublicKeyTodayUsage        `json:"today"`
-				CostQuota PublicKeyCostQuota         `json:"cost_quota"`
-				Trend     []PublicKeyUsageTrendPoint `json:"trend"`
+				Today      PublicKeyTodayUsage        `json:"today"`
+				CostQuota  PublicKeyCostQuota         `json:"cost_quota"`
+				ModelUsage []PublicKeyModelUsage      `json:"model_usage"`
+				Trend      []PublicKeyUsageTrendPoint `json:"trend"`
 			} `json:"data"`
 		}
 		mustUnmarshalJSON(t, w.Body.Bytes(), &response)
 		if !response.Success {
 			t.Fatalf("unexpected response: %+v", response)
 		}
-		if response.Data.Today.RequestCount != 1 || response.Data.Today.TotalTokens != 57 || response.Data.Today.EffectiveCost != 0.1 {
+		if response.Data.Today.RequestCount != 2 || response.Data.Today.TotalTokens != 100 || math.Abs(response.Data.Today.EffectiveCost-0.15) > 1e-9 {
 			t.Fatalf("unexpected today stats: %+v", response.Data.Today)
 		}
 		if response.Data.CostQuota.LimitUSD == nil || *response.Data.CostQuota.LimitUSD != 2 {
@@ -88,13 +114,26 @@ func TestPublicKeyUsageRequiresAValidKey(t *testing.T) {
 		}
 		nonEmptyPoint := false
 		for _, point := range response.Data.Trend {
-			if point.TotalTokens == 57 && point.EffectiveCost == 0.1 {
+			if point.TotalTokens == 100 && math.Abs(point.EffectiveCost-0.15) <= 1e-9 {
 				nonEmptyPoint = true
 				break
 			}
 		}
 		if !nonEmptyPoint {
 			t.Fatalf("trend missing expected usage point: %+v", response.Data.Trend)
+		}
+		modelUsage := make(map[string]PublicKeyModelUsage, len(response.Data.ModelUsage))
+		for _, item := range response.Data.ModelUsage {
+			modelUsage[item.Model] = item
+		}
+		if len(modelUsage) != 2 {
+			t.Fatalf("unexpected model usage: %+v", response.Data.ModelUsage)
+		}
+		if got := modelUsage["gpt-test"]; got.TotalTokens != 57 || math.Abs(got.EffectiveCost-0.1) > 1e-9 {
+			t.Fatalf("unexpected gpt model usage: %+v", got)
+		}
+		if got := modelUsage["claude-test"]; got.TotalTokens != 43 || math.Abs(got.EffectiveCost-0.05) > 1e-9 {
+			t.Fatalf("unexpected claude model usage: %+v", got)
 		}
 		if body := w.Body.String(); containsAny(body, `"history"`, `"total"`, `"success_count"`, `"recent_rpm"`) {
 			t.Fatalf("response contains removed statistics: %s", body)

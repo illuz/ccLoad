@@ -95,6 +95,7 @@ function createHarness({
   channelCheckIntervalHours = 24,
   channelCheckIntervalResponse = null,
   apiKeysResponse = null,
+  editorResponse = null,
   saveResponse = null,
   duplicateResponses = null,
   disableChannelModalHooks = false
@@ -292,6 +293,7 @@ function createHarness({
         sandbox.inlineKeyTableData = [{ api_key: '', note: '' }];
       }
     },
+    applyURLStats() {},
     getValidInlineKeyRows() {
       return sandbox.inlineKeyTableData.filter((row) => row.api_key);
     },
@@ -312,6 +314,18 @@ function createHarness({
     },
     fetchDataWithAuth: async (requestPath) => {
       dataFetchCalls.push(requestPath);
+      if (channel && requestPath === `/admin/channels/${channel.id}/editor`) {
+        if (editorResponse) {
+          return await editorResponse;
+        }
+        return {
+          channel,
+          keys: apiKeys,
+          model_stats: { available: true, items: [] },
+          url_stats: { available: true, items: [] },
+          features: { scheduled_check_enabled: channelCheckIntervalHours > 0 }
+        };
+      }
       if (requestPath === '/admin/settings/channel_check_interval_hours') {
         if (channelCheckIntervalResponse) {
           return await channelCheckIntervalResponse;
@@ -638,41 +652,42 @@ test('编辑渠道时会回填 API Key 禁用状态', async () => {
   ]);
 });
 
-test('编辑渠道会并行读取定时检测配置和 API Keys，避免串行等待', async () => {
-  const setting = createDeferred();
-  const keys = createDeferred();
+test('编辑渠道只读取一次聚合编辑器快照', async () => {
+  const editor = createDeferred();
+  const channel = {
+    id: 7,
+    name: 'edited-channel',
+    url: 'https://api.example.com',
+    channel_type: 'gemini',
+    protocol_transform_mode: 'upstream',
+    protocol_transforms: ['openai'],
+    key_strategy: 'sequential',
+    priority: 9,
+    daily_cost_limit: 0,
+    enabled: true,
+    scheduled_check_enabled: false,
+    scheduled_check_model: '',
+    models: [{ model: 'gpt-5.4', redirect_model: '' }]
+  };
   const harness = createHarness({
-    channel: {
-      id: 7,
-      name: 'edited-channel',
-      url: 'https://api.example.com',
-      channel_type: 'gemini',
-      protocol_transform_mode: 'upstream',
-      protocol_transforms: ['openai'],
-      key_strategy: 'sequential',
-      priority: 9,
-      daily_cost_limit: 0,
-      enabled: true,
-      scheduled_check_enabled: false,
-      scheduled_check_model: '',
-      models: [{ model: 'gpt-5.4', redirect_model: '' }]
-    },
-    channelCheckIntervalResponse: setting.promise,
-    apiKeysResponse: keys.promise
+    channel,
+    editorResponse: editor.promise
   });
 
   const editPromise = harness.api.editChannel(7);
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(Array.from(harness.dataFetchCalls), [
-    '/admin/channels/7',
-    '/admin/settings/channel_check_interval_hours',
-    '/admin/channels/7/keys',
-    '/admin/channels/7/model-stats'
+    '/admin/channels/7/editor'
   ]);
 
-  setting.resolve({ value: 24 });
-  keys.resolve([{ api_key: 'sk-live' }]);
+  editor.resolve({
+    channel,
+    keys: [{ api_key: 'sk-live' }],
+    model_stats: { available: true, items: [] },
+    url_stats: { available: true, items: [] },
+    features: { scheduled_check_enabled: true }
+  });
   await editPromise;
 });
 

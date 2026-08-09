@@ -7,9 +7,21 @@
   const todayMetrics = document.getElementById('todayMetrics');
   const updatedAt = document.getElementById('updatedAt');
   const chartElement = document.getElementById('usageChart');
+  const modelTokenChartElement = document.getElementById('modelTokenChart');
+  const modelCostChartElement = document.getElementById('modelCostChart');
+
+  const MODEL_COLORS = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+    '#14b8a6', '#a855f7', '#eab308', '#22c55e', '#0ea5e9'
+  ];
 
   let loading = false;
   let usageChart = null;
+  let modelTokenChart = null;
+  let modelCostChart = null;
+  let latestTrend = [];
+  let latestModelUsage = [];
 
   if (!key) {
     window.location.replace('/key-usage');
@@ -95,8 +107,146 @@
       cost: styles.getPropertyValue('--warning-500').trim() || '#f59e0b',
       token: styles.getPropertyValue('--primary-400').trim() || '#3ca3ff',
       text: styles.getPropertyValue('--neutral-600').trim() || '#d1d5db',
-      grid: styles.getPropertyValue('--surface-border').trim() || 'rgba(255,255,255,0.12)'
+      strongText: styles.getPropertyValue('--neutral-900').trim() || '#f9fafb',
+      grid: styles.getPropertyValue('--surface-border').trim() || 'rgba(255,255,255,0.12)',
+      surface: styles.getPropertyValue('--surface-bg').trim() || '#ffffff',
+      tooltip: styles.getPropertyValue('--surface-bg-strong').trim() || '#ffffff'
     };
+  }
+
+  function truncateLabel(value, maxLength) {
+    const characters = Array.from(String(value));
+    return characters.length > maxLength
+      ? `${characters.slice(0, maxLength).join('')}…`
+      : characters.join('');
+  }
+
+  function buildModelColorMap(rows) {
+    const names = Array.from(new Set(rows.map((row) => String(row.model || '未知模型'))));
+    names.sort((left, right) => left.localeCompare(right, 'zh-CN'));
+    return new Map(names.map((name, index) => [name, MODEL_COLORS[index % MODEL_COLORS.length]]));
+  }
+
+  function renderModelPie(chart, element, rows, colorMap, config) {
+    if (!window.echarts || !element) return chart;
+    if (!chart) chart = window.echarts.init(element);
+
+    const colors = chartColors();
+    const data = rows
+      .map((row) => ({
+        name: String(row.model || '未知模型'),
+        value: Number(row[config.field]) || 0
+      }))
+      .filter((item) => Number.isFinite(item.value) && item.value > 0)
+      .sort((left, right) => right.value - left.value)
+      .map((item) => ({
+        ...item,
+        itemStyle: { color: colorMap.get(item.name) }
+      }));
+
+    if (data.length === 0) {
+      chart.clear();
+      chart.setOption({
+        animation: false,
+        title: {
+          text: '暂无用量数据',
+          left: 'center',
+          top: 'middle',
+          textStyle: { color: colors.text, fontSize: 13, fontWeight: 400 }
+        }
+      }, true);
+      return chart;
+    }
+
+    const total = data.reduce((sum, item) => sum + item.value, 0);
+    const valuesByName = new Map(data.map((item) => [item.name, item.value]));
+    chart.setOption({
+      animationDuration: 250,
+      animationDurationUpdate: 250,
+      aria: { enabled: true },
+      title: {
+        text: config.formatTotal(total),
+        subtext: config.totalLabel,
+        left: 'center',
+        top: '32%',
+        textStyle: { color: colors.strongText, fontSize: 16, fontWeight: 600 },
+        subtextStyle: { color: colors.text, fontSize: 11, lineHeight: 18 }
+      },
+      tooltip: {
+        trigger: 'item',
+        renderMode: 'richText',
+        backgroundColor: colors.tooltip,
+        borderColor: colors.grid,
+        textStyle: { color: colors.strongText, fontSize: 12 },
+        formatter(params) {
+          return `${params.name}\n${config.valueLabel}: ${config.formatValue(params.value)}\n占比: ${number(params.percent, 1)}%`;
+        }
+      },
+      legend: {
+        type: 'scroll',
+        orient: 'horizontal',
+        left: 12,
+        right: 12,
+        bottom: 8,
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: { color: colors.text, fontSize: 11 },
+        pageIconColor: colors.text,
+        pageIconInactiveColor: colors.grid,
+        pageTextStyle: { color: colors.text },
+        formatter(name) {
+          const value = valuesByName.get(name) || 0;
+          const percentage = total > 0 ? value * 100 / total : 0;
+          return `${truncateLabel(name, 16)}  ${config.formatValue(value)}  ${number(percentage, 1)}%`;
+        }
+      },
+      series: [{
+        name: config.valueLabel,
+        type: 'pie',
+        radius: ['45%', '70%'],
+        center: ['50%', '40%'],
+        avoidLabelOverlap: true,
+        stillShowZeroSum: false,
+        itemStyle: {
+          borderRadius: 4,
+          borderColor: colors.surface,
+          borderWidth: 2
+        },
+        label: {
+          show: true,
+          position: 'inside',
+          color: '#ffffff',
+          fontSize: 11,
+          fontWeight: 600,
+          textBorderColor: 'rgba(0, 0, 0, 0.35)',
+          textBorderWidth: 2,
+          formatter: (params) => params.percent >= 7 ? `${number(params.percent, 0)}%` : ''
+        },
+        labelLine: { show: false },
+        emphasis: { scaleSize: 4 },
+        data
+      }]
+    }, true);
+    return chart;
+  }
+
+  function renderModelCharts(rows) {
+    const usage = Array.isArray(rows) ? rows : [];
+    const colorMap = buildModelColorMap(usage);
+    modelTokenChart = renderModelPie(modelTokenChart, modelTokenChartElement, usage, colorMap, {
+      field: 'total_tokens',
+      valueLabel: 'Token',
+      totalLabel: '总 Token',
+      formatValue: (value) => number(value),
+      formatTotal: (value) => number(value)
+    });
+    modelCostChart = renderModelPie(modelCostChart, modelCostChartElement, usage, colorMap, {
+      field: 'effective_cost',
+      valueLabel: '费用',
+      totalLabel: '总费用',
+      formatValue: (value) => currency(value),
+      formatTotal: (value) => currency(value)
+    });
   }
 
   function renderChart(points) {
@@ -173,8 +323,11 @@
   }
 
   function render(data) {
+    latestTrend = Array.isArray(data.trend) ? data.trend : [];
+    latestModelUsage = Array.isArray(data.model_usage) ? data.model_usage : [];
     renderMetrics(data);
-    renderChart(Array.isArray(data.trend) ? data.trend : []);
+    renderModelCharts(latestModelUsage);
+    renderChart(latestTrend);
     updatedAt.textContent = `更新于 ${new Intl.DateTimeFormat('zh-CN', {
       hour: '2-digit',
       minute: '2-digit',
@@ -209,7 +362,15 @@
   }
 
   refreshButton.addEventListener('click', load);
-  window.addEventListener('resize', () => usageChart?.resize());
+  window.addEventListener('resize', () => {
+    usageChart?.resize();
+    modelTokenChart?.resize();
+    modelCostChart?.resize();
+  });
+  window.addEventListener('ccload:themechange', () => {
+    renderModelCharts(latestModelUsage);
+    renderChart(latestTrend);
+  });
   window.setInterval(load, REFRESH_INTERVAL_MS);
   load();
 })();

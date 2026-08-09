@@ -588,6 +588,16 @@ func (s *Server) handleGetChannel(c *gin.Context, id int64) {
 		RespondError(c, http.StatusNotFound, fmt.Errorf("channel not found"))
 		return
 	}
+	detail, _, err := s.buildChannelDetail(c.Request.Context(), id, cfg)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	RespondJSON(c, http.StatusOK, detail)
+}
+
+func (s *Server) buildChannelDetail(ctx context.Context, id int64, cfg *model.Config) (ChannelWithCooldown, []*model.APIKey, error) {
 	// 填充空的重定向模型为请求模型（方便前端编辑时显示）
 	for i := range cfg.ModelEntries {
 		if cfg.ModelEntries[i].RedirectModel == "" {
@@ -595,12 +605,14 @@ func (s *Server) handleGetChannel(c *gin.Context, id int64) {
 		}
 	}
 
-	apiKeys, err := s.getAPIKeys(c.Request.Context(), id)
+	apiKeys, err := s.getAPIKeys(ctx, id)
 	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
-		return
+		return ChannelWithCooldown{}, nil, err
 	}
-	allModelCooldowns, err := s.getAllModelCooldowns(c.Request.Context())
+	if apiKeys == nil {
+		apiKeys = make([]*model.APIKey, 0)
+	}
+	allModelCooldowns, err := s.getAllModelCooldowns(ctx)
 	if err != nil {
 		log.Printf("[WARN] 查询渠道模型冷却状态失败 (channel=%d): %v", id, err)
 		allModelCooldowns = make(map[int64]map[string]time.Time)
@@ -613,7 +625,7 @@ func (s *Server) handleGetChannel(c *gin.Context, id int64) {
 		ModelCooldowns: activeModelCooldownInfos(allModelCooldowns[id], time.Now()),
 	}
 	s.attachChannelBalanceInfo(&response, cfg)
-	RespondJSON(c, http.StatusOK, response)
+	return response, apiKeys, nil
 }
 
 // handleGetChannelKeys 获取渠道的所有 API Keys
@@ -643,16 +655,27 @@ func (s *Server) HandleChannelModelStats(c *gin.Context) {
 		return
 	}
 
+	result, err := s.getChannelModelStats(c.Request.Context(), id)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	RespondJSON(c, http.StatusOK, result)
+}
+
+func (s *Server) getChannelModelStats(ctx context.Context, id int64) ([]ChannelModelStats, error) {
+	if s == nil || s.statsCache == nil {
+		return nil, fmt.Errorf("stats cache unavailable")
+	}
 	params := &PaginationParams{Range: "today"}
 	startTime, endTime := params.GetTimeRange()
 	filter := &model.LogFilter{
 		ChannelID: &id,
 		LogSource: model.LogSourceProxy,
 	}
-	stats, err := s.statsCache.GetStatsLite(c.Request.Context(), startTime, endTime, filter)
+	stats, err := s.statsCache.GetStatsLite(ctx, startTime, endTime, filter)
 	if err != nil {
-		RespondError(c, http.StatusInternalServerError, err)
-		return
+		return nil, err
 	}
 
 	result := make([]ChannelModelStats, 0, len(stats))
@@ -666,7 +689,7 @@ func (s *Server) HandleChannelModelStats(c *gin.Context) {
 			AvgDurationSeconds:      entry.AvgDurationSeconds,
 		})
 	}
-	RespondJSON(c, http.StatusOK, result)
+	return result, nil
 }
 
 // HandleChannelURLStats 返回多URL渠道各URL的实时状态（延迟、冷却）
@@ -685,7 +708,7 @@ func (s *Server) HandleChannelURLStats(c *gin.Context) {
 	}
 
 	urls := cfg.GetURLs()
-	if len(urls) <= 1 || s.urlSelector == nil {
+	if len(urls) == 0 || s.urlSelector == nil {
 		RespondJSON(c, http.StatusOK, []URLStat{})
 		return
 	}

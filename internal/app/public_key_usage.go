@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,16 +33,23 @@ type PublicKeyUsageTrendPoint struct {
 	TotalTokens   int64   `json:"total_tokens"`
 }
 
+type PublicKeyModelUsage struct {
+	Model         string  `json:"model"`
+	TotalTokens   int64   `json:"total_tokens"`
+	EffectiveCost float64 `json:"effective_cost"`
+}
+
 // PublicKeyUsageResponse intentionally omits token metadata and channel data.
 type PublicKeyUsageResponse struct {
 	TodayStart int64                      `json:"today_start"`
 	Today      PublicKeyTodayUsage        `json:"today"`
 	CostQuota  PublicKeyCostQuota         `json:"cost_quota"`
+	ModelUsage []PublicKeyModelUsage      `json:"model_usage"`
 	Trend      []PublicKeyUsageTrendPoint `json:"trend"`
 	UpdatedAt  int64                      `json:"updated_at"`
 }
 
-// HandlePublicKeyUsage returns only today's live totals and half-hour trend.
+// HandlePublicKeyUsage returns today's live totals, model breakdown, and half-hour trend.
 // GET /public/key-usage?key=...
 func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
@@ -56,9 +64,16 @@ func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 	now := time.Now()
 	todayStart := beginningOfDay(now)
 	authTokenID := token.ID
-	points, err := s.store.AggregateRangeWithFilter(ctx, todayStart, now, publicKeyUsageBucket, &model.LogFilter{
+	filter := &model.LogFilter{
 		AuthTokenID: &authTokenID,
-	})
+		LogSource:   model.LogSourceAll,
+	}
+	points, err := s.store.AggregateRangeWithFilter(ctx, todayStart, now, publicKeyUsageBucket, filter)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	modelRows, err := s.store.GetModelUsage(ctx, todayStart, now, filter)
 	if err != nil {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
@@ -71,6 +86,7 @@ func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 		TodayStart: todayStart.UnixMilli(),
 		Today:      today,
 		CostQuota:  costQuota,
+		ModelUsage: buildPublicKeyModelUsage(modelRows),
 		Trend:      trend,
 		UpdatedAt:  now.UnixMilli(),
 	})
@@ -128,6 +144,50 @@ func buildPublicKeyTodayUsage(points []model.MetricPoint) (PublicKeyTodayUsage, 
 		})
 	}
 	return today, trend
+}
+
+func buildPublicKeyModelUsage(rows []model.ModelUsageStat) []PublicKeyModelUsage {
+	type totals struct {
+		tokens int64
+		cost   float64
+	}
+
+	byModel := make(map[string]*totals, len(rows))
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Model)
+		if name == "" {
+			name = "未知模型"
+		}
+		item := byModel[name]
+		if item == nil {
+			item = &totals{}
+			byModel[name] = item
+		}
+		item.tokens += row.TotalTokens
+		item.cost += row.EffectiveCost
+	}
+
+	usage := make([]PublicKeyModelUsage, 0, len(byModel))
+	for name, item := range byModel {
+		if item.tokens <= 0 && item.cost <= 0 {
+			continue
+		}
+		usage = append(usage, PublicKeyModelUsage{
+			Model:         name,
+			TotalTokens:   item.tokens,
+			EffectiveCost: item.cost,
+		})
+	}
+	sort.Slice(usage, func(i, j int) bool {
+		if usage[i].TotalTokens != usage[j].TotalTokens {
+			return usage[i].TotalTokens > usage[j].TotalTokens
+		}
+		if usage[i].EffectiveCost != usage[j].EffectiveCost {
+			return usage[i].EffectiveCost > usage[j].EffectiveCost
+		}
+		return usage[i].Model < usage[j].Model
+	})
+	return usage
 }
 
 func (s *Server) buildPublicKeyCostQuota(ctx context.Context, token *model.AuthToken) PublicKeyCostQuota {

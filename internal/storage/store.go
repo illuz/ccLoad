@@ -84,6 +84,7 @@ type Store interface {
 
 	// === Metrics & Statistics ===
 	AggregateRangeWithFilter(ctx context.Context, since, until time.Time, bucket time.Duration, filter *model.LogFilter) ([]model.MetricPoint, error)
+	GetModelUsage(ctx context.Context, since, until time.Time, filter *model.LogFilter) ([]model.ModelUsageStat, error)
 	GetDistinctModels(ctx context.Context, since, until time.Time, channelType string, filter *model.LogFilter) ([]string, error)
 	GetDistinctStatusCodes(ctx context.Context, since, until time.Time, channelType string, filter *model.LogFilter) ([]int, error)
 	GetDistinctChannels(ctx context.Context, since, until time.Time, channelType string, filter *model.LogFilter) ([]model.ChannelNameID, error)

@@ -20,6 +20,13 @@ type MetricPoint struct {
 	Channels                map[string]ChannelMetric `json:"channels,omitempty"`
 }
 
+// ModelUsageStat is an aggregate of token and effective-cost usage by model.
+type ModelUsageStat struct {
+	Model         string
+	TotalTokens   int64
+	EffectiveCost float64
+}
+
 // ChannelMetric 单个渠道的指标
 type ChannelMetric struct {
 	Success                 int      `json:"success"`

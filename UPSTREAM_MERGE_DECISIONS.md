@@ -101,3 +101,20 @@ The upstream v4 protocol refactor is not present in this fork, so the selected c
 | One-click channel import | Selective adaptation | Ported | `38c4126c` (reviewed together with the earlier protocol behavior in `2dd34360`) | `a77f9afc`; retains the existing local quick-create workflow with multiple keys, priorities, channel/auth-token groups, source-channel model copying, and direct backend creation. Adds broader JSON/environment/Bearer parsing, terminal `/v1` removal, and atomic model discovery when no model source is supplied. Protocol remains an explicit channel-type choice because a successful Models API call does not prove the chat protocol. |
 
 For the next upstream check, use `898552b2` as the content-review checkpoint. Do not re-propose the full `38c4126c` UI or its OpenAI-to-Anthropic Models API probing; only review later fixes that provide a reliable protocol capability signal or improve the retained local quick-create workflow.
+
+## 2026-08-06 selected upstream batch
+
+Upstream range reviewed: `898552b2..f35bdfde`. Latest checked upstream commit: `f35bdfde` (`v4.6.3-beta.3`, `fix(storage): restore nullable Codex credentials`).
+
+The selected fixes were ported by behavior because this fork retains its string-based exact-URL marker, local channel type manager, channel groups, balance display, fixed-price fields, and request-delay setting.
+
+| Review item | Decision | Status | Upstream source commit | Local adaptation notes |
+| --- | --- | --- | --- | --- |
+| Restore full URL checkbox state | Accept | Ported | `b8f6ffc7` | Restores the checkbox from the persisted trailing `#` marker by setting the DOM `checked` property after template rendering. |
+| Unified channel editor snapshot and URL request statistics | Accept | Ported | `3879fb5b` | Adds `/admin/channels/:id/editor`, loads the editor atomically with one request, includes single-URL runtime state, and counts URL successes/failures from actual log entry points rather than latency or cooldown health signals. |
+
+## 2026-08-06 explicitly not selected
+
+Every other upstream change in `898552b2..f35bdfde` is explicitly not selected. This includes the release/update automation, retry and preferred-session behavior, additional channel editor/import work, automatic protocol preference, CLIProxy core sync, debug-log cleanup, and the Codex OAuth/credential/quota feature series.
+
+Do not recommend those rejected changes again unless the user explicitly asks for one or a later accepted fix strictly depends on it. For the next upstream check, use `f35bdfde` as the content-review checkpoint and only review commits after it; verify ancestry first if upstream history is rewritten again.

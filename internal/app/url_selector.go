@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"ccLoad/internal/model"
+	"ccLoad/internal/util"
 )
 
 const (
@@ -313,13 +315,33 @@ func (s *URLSelector) RecordLatency(channelID int64, url string, ttfb time.Durat
 
 	// 成功请求：清除冷却状态，立即恢复可用
 	delete(s.cooldowns, key)
+}
 
-	// 递增成功计数
-	if rc := s.requests[key]; rc != nil {
-		rc.success++
-	} else {
-		s.requests[key] = &urlRequestCount{success: 1}
+// RecordRequestResult 按持久化日志的聚合口径记录一次 URL 调用结果。
+// 延迟、探测和冷却只代表健康状态，不应增加真实调用次数。
+func (s *URLSelector) RecordRequestResult(channelID int64, url string, statusCode int) {
+	url = strings.TrimSpace(url)
+	if channelID <= 0 || url == "" || statusCode == util.StatusClientClosedRequest {
+		return
 	}
+
+	key := urlKey{channelID: channelID, url: url}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.maybeCleanupLocked(time.Now())
+
+	rc := s.requests[key]
+	if rc == nil {
+		rc = &urlRequestCount{}
+		s.requests[key] = rc
+	}
+	if statusCode >= 200 && statusCode < 300 {
+		rc.success++
+		return
+	}
+	rc.failure++
 }
 
 // LoadPersistedStats 将启动时聚合出的 URL 日志快照灌入内存态。
@@ -381,13 +403,6 @@ func (s *URLSelector) CooldownURL(channelID int64, url string) {
 
 	cd.until = now.Add(duration)
 	s.cooldowns[key] = cd
-
-	// 递增失败计数
-	if rc := s.requests[key]; rc != nil {
-		rc.failure++
-	} else {
-		s.requests[key] = &urlRequestCount{failure: 1}
-	}
 }
 
 // IsCooledDown 检查URL是否在冷却中

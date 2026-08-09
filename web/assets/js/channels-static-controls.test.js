@@ -89,7 +89,7 @@ test('channels 页定时检测开关默认隐藏，由系统设置控制显示',
   assert.match(channelsCss, /channel-editor-checkbox-label\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
   assert.match(channelsCss, /channel-editor-inline-field\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
   assert.match(modalsScript, /fetchDataWithAuth\('\/admin\/settings\/channel_check_interval_hours'\)/);
-  assert.match(modalsScript, /scheduledCheckWrapper\.hidden = !scheduledCheckEnabledByConfig;/);
+  assert.match(modalsScript, /scheduledCheckWrapper\.hidden = !enabled;/);
   assert.match(modalsScript, /createSearchableCombobox\(\{/);
   assert.match(modalsScript, /inputId:\s*'channelScheduledCheckModelInput'/);
   assert.match(modalsScript, /dropdownId:\s*'channelScheduledCheckModelDropdown'/);
