@@ -102,6 +102,51 @@ func TestHandleListChannels(t *testing.T) {
 	}
 }
 
+func TestHandleListAndGetChannelIncludeDailyCostUsed(t *testing.T) {
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+
+	created, err := store.CreateConfig(context.Background(), &model.Config{
+		Name:         "daily-cost-channel",
+		URL:          "https://api.example.com",
+		Priority:     10,
+		ChannelType:  "openai",
+		ModelEntries: []model.ModelEntry{{Model: "model-1"}},
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig failed: %v", err)
+	}
+	server.costCache = NewCostCache()
+	server.costCache.Add(created.ID, 1.23456)
+
+	cList, wList := newTestContext(t, newRequest(http.MethodGet, "/admin/channels", nil))
+	server.handleListChannels(cList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list status=%d, want %d body=%s", wList.Code, http.StatusOK, wList.Body.String())
+	}
+	if !strings.Contains(wList.Body.String(), `"daily_cost_used":1.23456`) {
+		t.Fatalf("list response is missing daily_cost_used: %s", wList.Body.String())
+	}
+	listResp := mustParseAPIResponse[[]ChannelWithCooldown](t, wList.Body.Bytes())
+	if len(listResp.Data) != 1 {
+		t.Fatalf("len(list)=%d, want 1", len(listResp.Data))
+	}
+	if math.Abs(listResp.Data[0].DailyCostUsed-1.23456) > 1e-9 {
+		t.Fatalf("list daily_cost_used=%v, want 1.23456", listResp.Data[0].DailyCostUsed)
+	}
+
+	cGet, wGet := newTestContext(t, newRequest(http.MethodGet, "/admin/channels/1", nil))
+	server.handleGetChannel(cGet, created.ID)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("detail status=%d, want %d body=%s", wGet.Code, http.StatusOK, wGet.Body.String())
+	}
+	detailResp := mustParseAPIResponse[ChannelWithCooldown](t, wGet.Body.Bytes())
+	if math.Abs(detailResp.Data.DailyCostUsed-1.23456) > 1e-9 {
+		t.Fatalf("detail daily_cost_used=%v, want 1.23456", detailResp.Data.DailyCostUsed)
+	}
+}
+
 func TestHandleListChannelsExactAndFuzzyFilters(t *testing.T) {
 	server, store, cleanup := setupAdminTestServer(t)
 	defer cleanup()

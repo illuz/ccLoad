@@ -363,6 +363,7 @@
   gap: 5px;
   min-width: 0;
   margin-top: 3px;
+  overflow: hidden;
   color: var(--neutral-500);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -376,9 +377,26 @@
   white-space: nowrap;
 }
 
+.logs-channel-panel__meta-item {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .logs-channel-panel__priority,
 .logs-channel-panel__cooldown {
   flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.logs-channel-panel__daily-cost {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -486,6 +504,35 @@
 
   .logs-channel-panel__row {
     min-height: 56px;
+  }
+
+  .logs-channel-panel__meta {
+    display: grid;
+    grid-template-areas:
+      "priority daily-cost"
+      "type cooldown";
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 2px 5px;
+  }
+
+  .logs-channel-panel__type {
+    grid-area: type;
+  }
+
+  .logs-channel-panel__meta-item--priority {
+    grid-area: priority;
+  }
+
+  .logs-channel-panel__meta-item--priority > .logs-channel-panel__meta-separator {
+    display: none;
+  }
+
+  .logs-channel-panel__meta-item--daily-cost {
+    grid-area: daily-cost;
+  }
+
+  .logs-channel-panel__meta-item--cooldown {
+    grid-area: cooldown;
   }
 }
 

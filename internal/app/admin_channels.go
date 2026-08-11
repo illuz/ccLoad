@@ -108,6 +108,12 @@ func (s *Server) handleListChannels(c *gin.Context) {
 		allAPIKeys = make(map[int64][]*model.APIKey) // 降级：使用空map
 	}
 
+	// 成本缓存已包含启动时加载的当日历史值与运行期增量；一次取快照供整页复用。
+	dailyCosts := make(map[int64]float64)
+	if s.costCache != nil {
+		dailyCosts = s.costCache.GetAll()
+	}
+
 	// 健康度模式检查
 	healthEnabled := s.healthCache != nil && s.healthCache.Config().Enabled
 
@@ -130,6 +136,7 @@ func (s *Server) handleListChannels(c *gin.Context) {
 		channelCooldownsMap: allChannelCooldowns,
 		keyCooldownsMap:     allKeyCooldowns,
 		apiKeysMap:          allAPIKeys,
+		dailyCostsMap:       dailyCosts,
 	}
 	out := make([]ChannelWithCooldown, 0, len(cfgs))
 	for _, cfg := range cfgs {
@@ -305,12 +312,16 @@ type channelEnrichmentContext struct {
 	channelCooldownsMap map[int64]time.Time
 	keyCooldownsMap     map[int64]map[int]time.Time
 	apiKeysMap          map[int64][]*model.APIKey
+	dailyCostsMap       map[int64]float64
 }
 
 // enrichChannel 把单个 cfg 拼装为 ChannelWithCooldown：
 // 渠道冷却剩余时间、健康度模式下的有效优先级与成功率、Key 策略与各 Key 冷却详情。
 func (ectx *channelEnrichmentContext) enrichChannel(cfg *model.Config) ChannelWithCooldown {
-	oc := ChannelWithCooldown{Config: cfg}
+	oc := ChannelWithCooldown{
+		Config:        cfg,
+		DailyCostUsed: ectx.dailyCostsMap[cfg.ID],
+	}
 
 	// 渠道级别冷却：使用批量查询结果（性能提升：N -> 1 次查询）
 	if until, cooled := ectx.channelCooldownsMap[cfg.ID]; cooled && until.After(ectx.now) {
@@ -617,11 +628,16 @@ func (s *Server) buildChannelDetail(ctx context.Context, id int64, cfg *model.Co
 		log.Printf("[WARN] 查询渠道模型冷却状态失败 (channel=%d): %v", id, err)
 		allModelCooldowns = make(map[int64]map[string]time.Time)
 	}
+	dailyCostUsed := 0.0
+	if s.costCache != nil {
+		dailyCostUsed = s.costCache.Get(id)
+	}
 
 	// 渠道详情返回配置和策略，但仍不返回明文 Key；API Keys 继续走 /keys 端点。
 	response := ChannelWithCooldown{
 		Config:         cfg,
 		KeyStrategy:    channelKeyStrategy(apiKeys),
+		DailyCostUsed:  dailyCostUsed,
 		ModelCooldowns: activeModelCooldownInfos(allModelCooldowns[id], time.Now()),
 	}
 	s.attachChannelBalanceInfo(&response, cfg)

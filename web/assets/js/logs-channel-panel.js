@@ -21,6 +21,7 @@
     'logs.channelPanel.ungrouped': 'Ungrouped',
     'logs.channelPanel.enabledSummary': '{enabled}/{total} enabled',
     'logs.channelPanel.priority': 'Priority {priority}',
+    'logs.channelPanel.dailyCost': 'Today {cost}',
     'logs.channelPanel.cooldown': 'Cooling down',
     'logs.channelPanel.dragHandle': 'Reorder {name}',
     'logs.channelPanel.editChannel': 'Edit {name}',
@@ -102,6 +103,16 @@
   function normalizePriority(value) {
     const priority = Number(value);
     return Number.isFinite(priority) ? Math.trunc(priority) : 0;
+  }
+
+  function formatDailyCost(value) {
+    const numericValue = Number(value);
+    const cost = Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0;
+    if (typeof window.formatCost === 'function') {
+      const formatted = window.formatCost(cost);
+      if (formatted) return String(formatted);
+    }
+    return cost === 0 ? '$0' : `$${cost.toFixed(3)}`;
   }
 
   function normalizeGroupColor(value) {
@@ -327,11 +338,12 @@
     const name = String(channel.name || `#${id}`);
     const type = String(channel.channel_type || '--');
     const priority = normalizePriority(channel.priority);
+    const dailyCost = translate('logs.channelPanel.dailyCost', { cost: formatDailyCost(channel.daily_cost_used) });
     const dragLabel = translate('logs.channelPanel.dragHandle', { name });
     const editLabel = translate('logs.channelPanel.editChannel', { name });
     const switchLabel = translate(enabled ? 'channels.toggleDisable' : 'channels.toggleEnable');
     const cooldownHTML = coolingDown
-      ? `<span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span><span class="logs-channel-panel__cooldown">${escapeHTML(translate('logs.channelPanel.cooldown'))}</span>`
+      ? `<span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--cooldown"><span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span><span class="logs-channel-panel__cooldown">${escapeHTML(translate('logs.channelPanel.cooldown'))}</span></span>`
       : '';
 
     return `
@@ -343,8 +355,14 @@
           <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
           <div class="logs-channel-panel__meta">
             <span class="logs-channel-panel__type">${escapeHTML(type)}</span>
-            <span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>
-            <span class="logs-channel-panel__priority">${escapeHTML(translate('logs.channelPanel.priority', { priority }))}</span>
+            <span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--priority">
+              <span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>
+              <span class="logs-channel-panel__priority">${escapeHTML(translate('logs.channelPanel.priority', { priority }))}</span>
+            </span>
+            <span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--daily-cost">
+              <span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>
+              <span class="logs-channel-panel__daily-cost" title="${escapeHTML(dailyCost)}">${escapeHTML(dailyCost)}</span>
+            </span>
             ${cooldownHTML}
           </div>
         </div>
@@ -876,7 +894,9 @@
       buildChannelGroups,
       buildPriorityUpdatesAfterGroupReorder,
       compareChannelsByPriority,
-      normalizeGroupKey
+      formatDailyCost,
+      normalizeGroupKey,
+      renderChannelRow
     })
   });
 })();

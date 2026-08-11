@@ -542,6 +542,7 @@ type ChannelModelStats struct {
 type ChannelWithCooldown struct {
 	*model.Config
 	KeyStrategy         string                  `json:"key_strategy,omitempty"` // [INFO] 修复 (2025-10-11): 添加key_strategy字段
+	DailyCostUsed       float64                 `json:"daily_cost_used"`        // 当日已使用费用（美元，倍率后成本）
 	CooldownUntil       *time.Time              `json:"cooldown_until,omitempty"`
 	CooldownRemainingMS int64                   `json:"cooldown_remaining_ms,omitempty"`
 	KeyCooldowns        []KeyCooldownInfo       `json:"key_cooldowns,omitempty"`

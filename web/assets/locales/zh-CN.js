@@ -937,6 +937,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.channelPanel.ungrouped': '未分组',
   'logs.channelPanel.enabledSummary': '{enabled}/{total} 已启用',
   'logs.channelPanel.priority': '优先级 {priority}',
+  'logs.channelPanel.dailyCost': '当日 {cost}',
   'logs.channelPanel.cooldown': '冷却中',
   'logs.channelPanel.dragHandle': '调整 {name} 的顺序',
   'logs.channelPanel.editChannel': '编辑 {name}',

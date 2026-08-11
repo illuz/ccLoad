@@ -16,12 +16,12 @@ const css = fs.readFileSync(cssPath, 'utf8');
 const zhLocale = fs.readFileSync(zhPath, 'utf8');
 const enLocale = fs.readFileSync(enPath, 'utf8');
 
-function loadTestAPI() {
+function loadTestAPI(windowOverrides = {}) {
   const sandbox = {
     console,
     clearTimeout,
     setTimeout,
-    window: {}
+    window: { ...windowOverrides }
   };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
@@ -120,6 +120,28 @@ test('渠道行提供快速编辑图标并复用日志页渠道编辑器', () =>
   assert.match(css, /\.logs-channel-panel__row-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
+test('渠道行在优先级旁展示格式化的当日使用费用', () => {
+  const api = loadTestAPI();
+  assert.equal(api.formatDailyCost(0), '$0');
+  assert.equal(api.formatDailyCost(1.23456), '$1.235');
+  assert.equal(api.formatDailyCost(undefined), '$0');
+
+  const customAPI = loadTestAPI({ formatCost: (value) => `USD ${value.toFixed(2)}` });
+  assert.equal(customAPI.formatDailyCost(1.23456), 'USD 1.23');
+
+  const row = api.renderChannelRow({
+    id: 7,
+    name: 'Test channel',
+    channel_type: 'openai',
+    priority: 30,
+    daily_cost_used: 0.125,
+    enabled: true
+  }, '1');
+  assert.match(row, /logs-channel-panel__priority[^>]*>Priority 30<\/span>[\s\S]*?logs-channel-panel__daily-cost[^>]*>Today \$0\.125<\/span>/);
+  assert.match(css, /\.logs-channel-panel__daily-cost\s*\{[\s\S]*?overflow:\s*hidden;[\s\S]*?white-space:\s*nowrap;/);
+  assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*?grid-template-areas:\s*"priority daily-cost"\s*"type cooldown";/);
+});
+
 test('排序复用批量优先级接口且限制为同组拖放', () => {
   assert.match(source, /\/admin\/channels\/batch-priority/);
   assert.match(source, /list\s*!==\s*state\.nativeDrag\.list/);
@@ -131,7 +153,7 @@ test('排序复用批量优先级接口且限制为同组拖放', () => {
 test('渠道浮窗文案同时提供中英文键值', () => {
   const requiredKeys = [
     'title', 'open', 'collapse', 'refresh', 'loading', 'loadFailed',
-    'enabledSummary', 'dragHandle', 'editChannel', 'toggleFailed', 'orderSaved', 'orderFailed'
+    'enabledSummary', 'dailyCost', 'dragHandle', 'editChannel', 'toggleFailed', 'orderSaved', 'orderFailed'
   ];
   for (const suffix of requiredKeys) {
     const key = `logs.channelPanel.${suffix}`;

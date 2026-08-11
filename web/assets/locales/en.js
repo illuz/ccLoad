@@ -937,6 +937,7 @@ window.I18N_LOCALES['en'] = {
   'logs.channelPanel.ungrouped': 'Ungrouped',
   'logs.channelPanel.enabledSummary': '{enabled}/{total} enabled',
   'logs.channelPanel.priority': 'Priority {priority}',
+  'logs.channelPanel.dailyCost': 'Today {cost}',
   'logs.channelPanel.cooldown': 'Cooling down',
   'logs.channelPanel.dragHandle': 'Reorder {name}',
   'logs.channelPanel.editChannel': 'Edit {name}',
