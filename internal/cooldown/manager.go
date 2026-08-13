@@ -313,12 +313,16 @@ func (m *Manager) applyFixedChannelCooldown(
 
 func (m *Manager) promoteExhaustedResources(ctx context.Context, in ErrorInput) bool {
 	now := time.Now()
-	keyUntil, allKeysCooled := m.allEnabledKeysCooldownUntil(ctx, in.ChannelID, now)
+	keyUntil, cooledKeyIndexes, allKeysCooled := m.allEnabledKeysCooldownUntil(ctx, in.ChannelID, now)
 	modelUntil, allModelsCooled := m.allConfiguredModelsCooldownUntil(ctx, in, now)
 	if !allKeysCooled && !allModelsCooled {
 		return false
 	}
-	if _, applied := m.applyFixedChannelCooldown(ctx, in.ChannelID, "resources_exhausted"); applied {
+	if fixedUntil, applied := m.applyFixedChannelCooldown(ctx, in.ChannelID, "resources_exhausted"); applied {
+		if allKeysCooled {
+			// 候选筛选也会检查 Key；同步截止时间，确保渠道在固定窗口后真正恢复可用。
+			m.alignKeyCooldownsWithFixedChannel(ctx, in.ChannelID, cooledKeyIndexes, fixedUntil)
+		}
 		return true
 	}
 
@@ -344,29 +348,44 @@ func (m *Manager) promoteExhaustedResources(ctx context.Context, in ErrorInput) 
 	return true
 }
 
-func (m *Manager) allEnabledKeysCooldownUntil(ctx context.Context, channelID int64, now time.Time) (time.Time, bool) {
+func (m *Manager) alignKeyCooldownsWithFixedChannel(
+	ctx context.Context,
+	channelID int64,
+	keyIndexes []int,
+	until time.Time,
+) {
+	for _, keyIndex := range keyIndexes {
+		if err := m.store.SetKeyCooldown(ctx, channelID, keyIndex, until); err != nil {
+			log.Printf("[WARN] 对齐 Key 与渠道固定冷却失败 (channel=%d, key=%d, until=%v): %v",
+				channelID, keyIndex, until, err)
+		}
+	}
+}
+
+func (m *Manager) allEnabledKeysCooldownUntil(ctx context.Context, channelID int64, now time.Time) (time.Time, []int, bool) {
 	keys, err := m.store.GetAPIKeys(ctx, channelID)
 	if err != nil {
 		log.Printf("[WARN] 查询 Key 冷却状态失败 (channel=%d): %v", channelID, err)
-		return time.Time{}, false
+		return time.Time{}, nil, false
 	}
 
 	var earliest time.Time
-	enabledCount := 0
+	enabledKeyIndexes := make([]int, 0, len(keys))
 	for _, key := range keys {
 		if key == nil || key.Disabled {
 			continue
 		}
-		enabledCount++
+		enabledKeyIndexes = append(enabledKeyIndexes, key.KeyIndex)
 		until := time.Unix(key.CooldownUntil, 0)
 		if !until.After(now) {
-			return time.Time{}, false
+			return time.Time{}, nil, false
 		}
 		if earliest.IsZero() || until.Before(earliest) {
 			earliest = until
 		}
 	}
-	return earliest, enabledCount > 0 && !earliest.IsZero()
+	allCooled := len(enabledKeyIndexes) > 0 && !earliest.IsZero()
+	return earliest, enabledKeyIndexes, allCooled
 }
 
 func (m *Manager) allConfiguredModelsCooldownUntil(ctx context.Context, in ErrorInput, now time.Time) (time.Time, bool) {

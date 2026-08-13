@@ -807,6 +807,69 @@ func TestHandleError_LastKeyCooldownPromotionHonorsFixedChannelCooldown(t *testi
 	if !cooldownWithinDuration(channelUntil, before, after, 7*time.Second) {
 		t.Fatalf("channel cooldown until=%s, want fixed 7s", channelUntil)
 	}
+	for keyIndex := range 2 {
+		keyUntil, exists := getKeyCooldownUntil(ctx, store, cfg.ID, keyIndex)
+		if !exists {
+			t.Fatalf("key-%d should remain cooled until the fixed channel deadline", keyIndex)
+		}
+		if !keyUntil.Equal(channelUntil) {
+			t.Fatalf("key-%d cooldown until=%s, channel cooldown until=%s; want identical deadlines",
+				keyIndex, keyUntil, channelUntil)
+		}
+	}
+}
+
+func TestHandleError_SingleKeyDailyLimitHonorsFixedChannelCooldown(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+	manager := NewManager(store, nil)
+	ctx := context.Background()
+
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:                        "test-fixed-single-key-daily-limit",
+		URL:                         "https://api.example.com",
+		Priority:                    10,
+		Enabled:                     true,
+		ChannelCooldownFixedEnabled: true,
+		ChannelCooldownFixedSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	if err := store.CreateAPIKeysBatch(ctx, []*model.APIKey{
+		{ChannelID: cfg.ID, KeyIndex: 0, APIKey: "sk-only"},
+	}); err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	before := time.Now()
+	action := manager.HandleError(ctx, ErrorInput{
+		ChannelID:  cfg.ID,
+		KeyIndex:   0,
+		StatusCode: 429,
+		ErrorBody:  []byte(`{"code":"USAGE_LIMIT_EXCEEDED","message":"error: code=429 reason=\"DAILY_LIMIT_EXCEEDED\" message=\"daily usage limit exceeded\" metadata=map[]"}`),
+	})
+	after := time.Now()
+
+	if action != ActionRetryChannel {
+		t.Fatalf("action=%v, want ActionRetryChannel", action)
+	}
+	channelCfg, err := store.GetConfig(ctx, cfg.ID)
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	channelUntil := time.Unix(channelCfg.CooldownUntil, 0)
+	if !cooldownWithinDuration(channelUntil, before, after, 5*time.Second) {
+		t.Fatalf("channel cooldown until=%s, want fixed 5s", channelUntil)
+	}
+	keyUntil, exists := getKeyCooldownUntil(ctx, store, cfg.ID, 0)
+	if !exists {
+		t.Fatal("key should remain cooled until the fixed channel deadline")
+	}
+	if !keyUntil.Equal(channelUntil) {
+		t.Fatalf("key cooldown until=%s, channel cooldown until=%s; want identical deadlines",
+			keyUntil, channelUntil)
+	}
 }
 
 // TestHandleError_SingleKeyUpgrade 测试单Key渠道的Key级错误自动升级
