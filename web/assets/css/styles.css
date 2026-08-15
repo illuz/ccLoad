@@ -2808,6 +2808,7 @@ html[data-theme="system"][data-resolved-theme="dark"] .login-button {
 
   .settings-save-actions {
     justify-content: stretch;
+    flex-direction: column;
   }
 
   .settings-save-btn {

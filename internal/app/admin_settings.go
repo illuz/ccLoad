@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -151,18 +152,9 @@ func (s *Server) AdminBatchUpdateSettings(c *gin.Context) {
 		return
 	}
 
-	// 验证所有配置
-	for key, value := range req {
-		setting := s.configService.GetSetting(key)
-		if setting == nil {
-			RespondErrorMsg(c, http.StatusBadRequest, fmt.Sprintf("unknown setting: %s", key))
-			return
-		}
-
-		if err := validateSettingValue(key, setting.ValueType, value); err != nil {
-			RespondErrorMsg(c, http.StatusBadRequest, fmt.Sprintf("invalid value for %s: %v", key, err))
-			return
-		}
+	if err := validateSettingsUpdates(s, req); err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	// 批量更新(事务保护)
@@ -173,6 +165,51 @@ func (s *Server) AdminBatchUpdateSettings(c *gin.Context) {
 	}
 
 	respondAfterSettingsUpdate(c, s, req, gin.H{})
+}
+
+// AdminSaveAndRestartSettings 保存可选的设置变更，并始终触发程序重启。
+// 空对象也视为有效请求，用于用户明确要求重启但没有修改设置的场景。
+// POST /admin/settings/save-restart
+func (s *Server) AdminSaveAndRestartSettings(c *gin.Context) {
+	req := make(map[string]string)
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		RespondErrorMsg(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+		return
+	}
+
+	if err := validateSettingsUpdates(s, req); err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if len(req) > 0 {
+		if err := s.configService.BatchUpdateSettings(c.Request.Context(), req); err != nil {
+			log.Printf("[ERROR] AdminSaveAndRestartSettings 保存失败: %v", err)
+			RespondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		s.ApplyHotReloadableSettings(req)
+	}
+
+	log.Printf("[INFO] 已保存 %d 项配置，用户请求立即重启", len(req))
+	RespondJSON(c, http.StatusOK, gin.H{
+		"message":    fmt.Sprintf("已保存 %d 项配置，程序将立即重启", len(req)),
+		"restarting": true,
+	})
+	go triggerRestart()
+}
+
+func validateSettingsUpdates(s *Server, updates map[string]string) error {
+	for key, value := range updates {
+		setting := s.configService.GetSetting(key)
+		if setting == nil {
+			return fmt.Errorf("unknown setting: %s", key)
+		}
+		if err := validateSettingValue(key, setting.ValueType, value); err != nil {
+			return fmt.Errorf("invalid value for %s: %v", key, err)
+		}
+	}
+	return nil
 }
 
 func respondAfterSettingsUpdate(c *gin.Context, s *Server, updates map[string]string, response gin.H) {

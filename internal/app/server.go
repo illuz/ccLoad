@@ -1043,6 +1043,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.GET("/settings/:key", s.AdminGetSetting)
 		admin.PUT("/settings/:key", s.AdminUpdateSetting)
 		admin.POST("/settings/:key/reset", s.AdminResetSetting)
+		admin.POST("/settings/save-restart", s.AdminSaveAndRestartSettings)
 		admin.POST("/settings/batch", s.AdminBatchUpdateSettings)
 	}
 

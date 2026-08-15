@@ -1138,6 +1138,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'settings.configItem': '配置项',
   'settings.currentValue': '当前值',
   'settings.saveAll': '保存所有更改',
+  'settings.saveAndRestart': '保存并重启',
   'settings.resetToDefault': '重置为默认值',
   // 分组名称
   'settings.group.channel': '渠道与测试',
@@ -1209,6 +1210,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'settings.msg.invalidResponse': '响应格式错误',
   'settings.msg.noChanges': '没有需要保存的更改',
   'settings.msg.savedCount': '已保存 {count} 项配置',
+  'settings.msg.saveAndRestartSuccess': '设置已保存，程序将立即重启',
   'settings.msg.restartRequired': '以下配置需要重启服务才能生效',
   'settings.msg.confirmReset': '确定要重置 "{key}" 为默认值吗?',
   'settings.msg.resetSuccess': '配置 {key} 已重置为默认值',

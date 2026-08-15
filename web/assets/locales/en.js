@@ -1138,6 +1138,7 @@ window.I18N_LOCALES['en'] = {
   'settings.configItem': 'Configuration',
   'settings.currentValue': 'Current Value',
   'settings.saveAll': 'Save All Changes',
+  'settings.saveAndRestart': 'Save and Restart',
   'settings.resetToDefault': 'Reset to default',
   // Group names
   'settings.group.channel': 'Channel & Testing',
@@ -1209,6 +1210,7 @@ window.I18N_LOCALES['en'] = {
   'settings.msg.invalidResponse': 'Invalid response format',
   'settings.msg.noChanges': 'No changes to save',
   'settings.msg.savedCount': 'Saved {count} configuration(s)',
+  'settings.msg.saveAndRestartSuccess': 'Settings saved. The program will restart now',
   'settings.msg.restartRequired': 'The following settings require a restart to take effect',
   'settings.msg.confirmReset': 'Are you sure you want to reset "{key}" to default?',
   'settings.msg.resetSuccess': 'Configuration {key} has been reset to default',

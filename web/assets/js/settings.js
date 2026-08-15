@@ -20,12 +20,20 @@ function renderHotReloadBadge(setting) {
 
 function bindSettingsPageActions() {
   const saveAllBtn = document.getElementById('save-all-btn');
-  if (!saveAllBtn || saveAllBtn.dataset.bound) return;
+  if (saveAllBtn && !saveAllBtn.dataset.bound) {
+    saveAllBtn.addEventListener('click', () => {
+      saveAllSettings();
+    });
+    saveAllBtn.dataset.bound = '1';
+  }
 
-  saveAllBtn.addEventListener('click', () => {
-    saveAllSettings();
-  });
-  saveAllBtn.dataset.bound = '1';
+  const saveRestartBtn = document.getElementById('save-restart-btn');
+  if (saveRestartBtn && !saveRestartBtn.dataset.bound) {
+    saveRestartBtn.addEventListener('click', () => {
+      saveAndRestartSettings();
+    });
+    saveRestartBtn.dataset.bound = '1';
+  }
 }
 
 function getSettingGroupInfo(key) {
@@ -312,18 +320,7 @@ function syncSettingState(key, value) {
 }
 
 async function saveAllSettings() {
-  // 收集所有变更
-  const updates = {};
-
-  for (const key of Object.keys(originalSettings)) {
-    const control = getSettingControl(key);
-    if (!control) continue;
-
-    const currentValue = control.value;
-    if (currentValue !== originalSettings[key]) {
-      updates[key] = currentValue;
-    }
-  }
+  const updates = collectSettingUpdates();
 
   if (Object.keys(updates).length === 0) {
     window.showNotification(t('settings.msg.noChanges'), 'info');
@@ -345,6 +342,31 @@ async function saveAllSettings() {
     showSuccess(result?.message || t('settings.msg.savedCount', { count: Object.keys(updates).length }));
   } catch (err) {
     console.error('保存异常:', err);
+    showError(t('settings.msg.saveFailed') + ': ' + err.message);
+  }
+}
+
+function collectSettingUpdates() {
+  const updates = {};
+  for (const key of Object.keys(originalSettings)) {
+    const control = getSettingControl(key);
+    if (control && control.value !== originalSettings[key]) updates[key] = control.value;
+  }
+  return updates;
+}
+
+async function saveAndRestartSettings() {
+  const updates = collectSettingUpdates();
+  try {
+    const result = await fetchDataWithAuth('/admin/settings/save-restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    for (const [key, value] of Object.entries(updates)) syncSettingState(key, value);
+    showSuccess(result?.message || t('settings.msg.saveAndRestartSuccess'));
+  } catch (err) {
+    console.error('保存并重启异常:', err);
     showError(t('settings.msg.saveFailed') + ': ' + err.message);
   }
 }

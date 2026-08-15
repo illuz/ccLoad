@@ -340,6 +340,25 @@ func TestAdminSettingsHandlers(t *testing.T) {
 			t.Fatalf("hot_reloaded=%v, want true", resp.Data["hot_reloaded"])
 		}
 	})
+
+	t.Run("AdminSaveAndRestartSettings_empty_body_triggers_restart", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPost, "/admin/settings/save-restart", []byte(`{}`)))
+
+		server.AdminSaveAndRestartSettings(c)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+		resp := mustParseAPIResponse[map[string]any](t, w.Body.Bytes())
+		if restarting, _ := resp.Data["restarting"].(bool); !restarting {
+			t.Fatalf("restarting=%v, want true", resp.Data["restarting"])
+		}
+		select {
+		case <-restartCh:
+		case <-time.After(time.Second):
+			t.Fatal("expected restart triggered")
+		}
+	})
 }
 
 func TestValidateDebugLogPreserveAuthTokenID(t *testing.T) {
