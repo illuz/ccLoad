@@ -174,10 +174,27 @@ test('tokens 页当日 3 倍开关会把每日限额按 3 倍展示并优先于�
   );
 });
 
+test('tokens 页当日临时限额会覆盖基础限额和倍率', () => {
+  const sandbox = {};
+  vm.runInNewContext(joinFunctions([
+    'getTokenEffectiveDailyCostLimit'
+  ]), sandbox);
+
+  assert.equal(
+    sandbox.getTokenEffectiveDailyCostLimit({
+      daily_cost_limit_usd: 3,
+      daily_limit_triple_enabled: true,
+      daily_limit_override_usd: 7.5
+    }),
+    7.5
+  );
+});
+
 test('tokens 页当日 2 倍和 3 倍开关互斥', () => {
   const inputs = {
     editDailyLimitDoubleEnabled: { id: 'editDailyLimitDoubleEnabled', checked: true },
-    editDailyLimitTripleEnabled: { id: 'editDailyLimitTripleEnabled', checked: true }
+    editDailyLimitTripleEnabled: { id: 'editDailyLimitTripleEnabled', checked: true },
+    editDailyLimitOverrideUSD: { id: 'editDailyLimitOverrideUSD', value: '8' }
   };
   const sandbox = {
     document: {
@@ -192,8 +209,31 @@ test('tokens 页当日 2 倍和 3 倍开关互斥', () => {
 
   sandbox.enforceDailyLimitMultiplierExclusivity(inputs.editDailyLimitTripleEnabled);
   assert.equal(inputs.editDailyLimitDoubleEnabled.checked, false);
+  assert.equal(inputs.editDailyLimitOverrideUSD.value, '0');
 
   inputs.editDailyLimitDoubleEnabled.checked = true;
   sandbox.enforceDailyLimitMultiplierExclusivity(inputs.editDailyLimitDoubleEnabled);
+  assert.equal(inputs.editDailyLimitTripleEnabled.checked, false);
+});
+
+test('tokens 页填写当日临时限额会清除 2 倍和 3 倍开关', () => {
+  const inputs = {
+    editDailyLimitDoubleEnabled: { checked: true },
+    editDailyLimitTripleEnabled: { checked: true },
+    editDailyLimitOverrideUSD: { value: '8' }
+  };
+  const sandbox = {
+    document: {
+      getElementById(id) {
+        return inputs[id];
+      }
+    }
+  };
+  vm.runInNewContext(joinFunctions([
+    'enforceDailyLimitOverrideExclusivity'
+  ]), sandbox);
+
+  sandbox.enforceDailyLimitOverrideExclusivity(inputs.editDailyLimitOverrideUSD);
+  assert.equal(inputs.editDailyLimitDoubleEnabled.checked, false);
   assert.equal(inputs.editDailyLimitTripleEnabled.checked, false);
 });

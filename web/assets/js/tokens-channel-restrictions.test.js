@@ -97,6 +97,7 @@ test('tokens 编辑弹窗新增渠道限制区域并使用 90% 桌面宽度和�
   assert.match(html, /data-token-edit-section="channels"/);
   assert.match(html, /id="editDailyLimitDoubleEnabled"/);
   assert.match(html, /id="editDailyLimitTripleEnabled"/);
+  assert.match(html, /id="editDailyLimitOverrideUSD"[^>]*data-input-action="set-daily-limit-override"/);
   assert.match(html, /id="editAllowedChannelsCount"/);
   assert.match(html, /id="allowedChannelsTableBody"/);
   assert.match(html, /id="editChannelRestrictionMode"[^>]*data-change-action="change-channel-restriction-mode"/);
@@ -117,6 +118,7 @@ test('tokens 移动端编辑弹窗退化为纵向 B 方案', () => {
   assert.match(css, /@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.token-edit-channels-actions,[\s\S]*?\.token-edit-models-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?overflow-x:\s*visible;/);
   assert.match(css, /#editModal \.token-edit-channels-meta,[\s\S]*?#editModal \.token-edit-models-meta\s*\{[\s\S]*?white-space:\s*normal;[\s\S]*?overflow-wrap:\s*anywhere;/);
   assert.match(css, /#editModal \.token-edit-section--quota \.token-limit-input-line\s*\{[\s\S]*?grid-template-columns:\s*14px minmax\(0,\s*1fr\);/);
+  assert.match(css, /\.token-edit-field--daily-override \.form-label\s*\{[\s\S]*?flex-basis:\s*76px;[\s\S]*?min-width:\s*76px;/);
 });
 
 test('tokens.js 保存并渲染 allowed_channel_ids', () => {
@@ -133,7 +135,9 @@ test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /channel_restriction_mode:\s*tokenGroupChannelRestrictionMode/);
   assert.match(script, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
   assert.match(script, /daily_limit_triple_enabled:\s*dailyLimitTripleEnabled,/);
+  assert.match(script, /daily_limit_override_usd:\s*dailyLimitOverrideUSD,/);
   assert.match(script, /function enforceDailyLimitMultiplierExclusivity\(changedInput\)/);
+  assert.match(script, /function enforceDailyLimitOverrideExclusivity\(changedInput\)/);
   assert.match(script, /'show-channel-select-modal':\s*\(\)\s*=> showChannelSelectModal\(\)/);
   assert.match(script, /'confirm-channel-selection':\s*\(\)\s*=> confirmChannelSelection\(\)/);
   assert.match(script, /'batch-delete-allowed-channels':\s*\(\)\s*=> batchDeleteSelectedAllowedChannels\(\)/);

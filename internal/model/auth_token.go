@@ -47,13 +47,15 @@ type AuthToken struct {
 	// 费用限额（2026-01新增）
 	// 使用微美元整数存储，避免浮点误差。JSON序列化时自动转换为USD浮点数。
 	// 1 USD = 1,000,000 微美元
-	CostUsedMicroUSD       int64 `json:"-"` // 已消耗费用（微美元）
-	CostLimitMicroUSD      int64 `json:"-"` // 费用上限（微美元；0=无限制）
-	DailyCostUsedMicroUSD  int64 `json:"-"` // 当日已消耗费用（微美元）
-	DailyCostLimitMicroUSD int64 `json:"-"` // 当日费用上限（微美元；0=无限制）
-	DailyCostDayKey        int   `json:"-"` // 当日费用所属日期（YYYYMMDD，本地时区）
-	DailyLimitDoubleDayKey int   `json:"-"` // 当日限额翻倍生效日期（YYYYMMDD，0=未启用）
-	DailyLimitTripleDayKey int   `json:"-"` // 当日限额三倍生效日期（YYYYMMDD，0=未启用）
+	CostUsedMicroUSD           int64 `json:"-"` // 已消耗费用（微美元）
+	CostLimitMicroUSD          int64 `json:"-"` // 费用上限（微美元；0=无限制）
+	DailyCostUsedMicroUSD      int64 `json:"-"` // 当日已消耗费用（微美元）
+	DailyCostLimitMicroUSD     int64 `json:"-"` // 当日费用上限（微美元；0=无限制）
+	DailyCostDayKey            int   `json:"-"` // 当日费用所属日期（YYYYMMDD，本地时区）
+	DailyLimitDoubleDayKey     int   `json:"-"` // 当日限额翻倍生效日期（YYYYMMDD，0=未启用）
+	DailyLimitTripleDayKey     int   `json:"-"` // 当日限额三倍生效日期（YYYYMMDD，0=未启用）
+	DailyLimitOverrideMicroUSD int64 `json:"-"` // 当日临时限额（微美元；0=未启用）
+	DailyLimitOverrideDayKey   int   `json:"-"` // 当日临时限额生效日期（YYYYMMDD，0=未启用）
 
 	// RPM统计（2025-12新增，用于tokens.html显示）
 	PeakRPM   float64 `json:"peak_rpm,omitempty"`   // 峰值RPM
@@ -361,10 +363,54 @@ func (t *AuthToken) EffectiveCostLimitUSDValue() float64 {
 
 // EffectiveDailyCostLimitUSDValue 返回已计算的有效当日费用上限（美元）。
 func (t *AuthToken) EffectiveDailyCostLimitUSDValue() float64 {
+	overrideMicroUSD := t.DailyLimitOverrideMicroUSDForToday()
+	if overrideMicroUSD > 0 {
+		return util.MicroUSDToUSD(overrideMicroUSD)
+	}
 	if !t.EffectiveSet {
 		return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD * t.DailyLimitMultiplierToday())
 	}
 	return util.MicroUSDToUSD(t.EffectiveDailyCostLimitMicroUSD)
+}
+
+// DailyLimitOverrideMicroUSDForToday 返回今天仍有效的临时当日限额。
+func (t *AuthToken) DailyLimitOverrideMicroUSDForToday() int64 {
+	if t == nil || t.DailyLimitOverrideMicroUSD <= 0 {
+		return 0
+	}
+	if t.DailyLimitOverrideDayKey != CurrentLocalDayKey() {
+		return 0
+	}
+	return t.DailyLimitOverrideMicroUSD
+}
+
+// DailyLimitOverrideUSDForToday 返回今天仍有效的临时当日限额（美元）。
+func (t *AuthToken) DailyLimitOverrideUSDForToday() float64 {
+	return util.MicroUSDToUSD(t.DailyLimitOverrideMicroUSDForToday())
+}
+
+// SetDailyLimitOverrideUSDForToday 设置仅今天有效的绝对限额，并清除当日倍率。
+func (t *AuthToken) SetDailyLimitOverrideUSDForToday(usd float64) {
+	if t == nil {
+		return
+	}
+	t.DailyLimitDoubleDayKey = 0
+	t.DailyLimitTripleDayKey = 0
+	if usd <= 0 {
+		t.ClearDailyLimitOverride()
+		return
+	}
+	t.DailyLimitOverrideMicroUSD = util.USDToMicroUSD(usd)
+	t.DailyLimitOverrideDayKey = CurrentLocalDayKey()
+}
+
+// ClearDailyLimitOverride 清除临时当日限额，不改变倍率设置。
+func (t *AuthToken) ClearDailyLimitOverride() {
+	if t == nil {
+		return
+	}
+	t.DailyLimitOverrideMicroUSD = 0
+	t.DailyLimitOverrideDayKey = 0
 }
 
 // IsDailyLimitDoubledToday 返回“当日限额翻倍”是否仍对今天生效。
@@ -402,6 +448,8 @@ func (t *AuthToken) SetDailyLimitMultiplierForToday(multiplier int64) {
 	}
 	t.DailyLimitDoubleDayKey = 0
 	t.DailyLimitTripleDayKey = 0
+	t.DailyLimitOverrideMicroUSD = 0
+	t.DailyLimitOverrideDayKey = 0
 	today := CurrentLocalDayKey()
 	switch multiplier {
 	case 2:
@@ -442,7 +490,9 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 			t.EffectiveAllowedModels = cloneStringSlice(group.AllowedModels)
 		}
 	}
-	if t.EffectiveDailyCostLimitMicroUSD > 0 {
+	if overrideMicroUSD := t.DailyLimitOverrideMicroUSDForToday(); overrideMicroUSD > 0 {
+		t.EffectiveDailyCostLimitMicroUSD = overrideMicroUSD
+	} else if t.EffectiveDailyCostLimitMicroUSD > 0 {
 		t.EffectiveDailyCostLimitMicroUSD *= t.DailyLimitMultiplierToday()
 	}
 }
@@ -499,6 +549,9 @@ func (t *AuthToken) ValidateUsageLimits() error {
 	}
 	if t.DailyCostLimitMicroUSD < 0 {
 		return errors.New("daily_cost_limit_usd must be >= 0")
+	}
+	if t.DailyLimitOverrideMicroUSD < 0 {
+		return errors.New("daily_limit_override_usd must be >= 0")
 	}
 	if t.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
@@ -604,6 +657,7 @@ type authTokenJSON struct {
 	DailyCostLimitUSD               float64   `json:"daily_cost_limit_usd"`
 	DailyLimitDoubleEnabled         bool      `json:"daily_limit_double_enabled"`
 	DailyLimitTripleEnabled         bool      `json:"daily_limit_triple_enabled"`
+	DailyLimitOverrideUSD           float64   `json:"daily_limit_override_usd"`
 	PeakRPM                         float64   `json:"peak_rpm,omitempty"`
 	AvgRPM                          float64   `json:"avg_rpm,omitempty"`
 	RecentRPM                       float64   `json:"recent_rpm,omitempty"`
@@ -666,6 +720,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		DailyCostLimitUSD:               t.DailyCostLimitUSD(),
 		DailyLimitDoubleEnabled:         t.IsDailyLimitDoubledToday(),
 		DailyLimitTripleEnabled:         t.IsDailyLimitTripledToday(),
+		DailyLimitOverrideUSD:           t.DailyLimitOverrideUSDForToday(),
 		PeakRPM:                         t.PeakRPM,
 		AvgRPM:                          t.AvgRPM,
 		RecentRPM:                       t.RecentRPM,

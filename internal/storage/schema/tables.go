@@ -152,6 +152,8 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("daily_cost_day_key INT NOT NULL DEFAULT 0").
 		Column("daily_limit_double_day_key INT NOT NULL DEFAULT 0").
 		Column("daily_limit_triple_day_key INT NOT NULL DEFAULT 0").
+		Column("daily_limit_override_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("daily_limit_override_day_key INT NOT NULL DEFAULT 0").
 		Column("allowed_models VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("allowed_channel_ids VARCHAR(2000) NOT NULL DEFAULT ''").
 		Column("channel_restriction_mode VARCHAR(16) NOT NULL DEFAULT 'allow'").

@@ -238,6 +238,46 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 	})
 
+	t.Run("override replaces triple", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"daily_limit_override_usd":1.25}`)))
+		c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+		server.HandleUpdateAuthToken(c)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+		var adjustment struct {
+			DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
+			DailyLimitTripleEnabled bool    `json:"daily_limit_triple_enabled"`
+			DailyLimitOverrideUSD   float64 `json:"daily_limit_override_usd"`
+		}
+		resp := mustParseAPIResponse[json.RawMessage](t, w.Body.Bytes())
+		if err := json.Unmarshal(resp.Data, &adjustment); err != nil {
+			t.Fatalf("decode adjustment: %v", err)
+		}
+		if adjustment.DailyLimitDoubleEnabled || adjustment.DailyLimitTripleEnabled || adjustment.DailyLimitOverrideUSD != 1.25 {
+			t.Fatalf("unexpected adjustment response: %+v", adjustment)
+		}
+
+		updated, err := store.GetAuthToken(ctx, token.ID)
+		if err != nil {
+			t.Fatalf("GetAuthToken failed: %v", err)
+		}
+		if updated.IsDailyLimitDoubledToday() || updated.IsDailyLimitTripledToday() || updated.DailyLimitOverrideMicroUSDForToday() != 1_250_000 {
+			t.Fatalf("stored adjustment mismatch: %+v", updated)
+		}
+	})
+
+	t.Run("negative override", func(t *testing.T) {
+		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"daily_limit_override_usd":-1}`)))
+		c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+		server.HandleUpdateAuthToken(c)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+		}
+	})
+
 	t.Run("rejects double and triple together", func(t *testing.T) {
 		c, w := newTestContext(t, newJSONRequestBytes(http.MethodPut, "/admin/auth-tokens/1", []byte(`{"daily_limit_double_enabled":true,"daily_limit_triple_enabled":true}`)))
 		c.Params = gin.Params{{Key: "id", Value: "1"}}

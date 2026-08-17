@@ -7,7 +7,8 @@
   ];
   const TOKEN_EDITOR_REQUIRED_CONTROL_IDS = [
     'editDailyLimitDoubleEnabled',
-    'editDailyLimitTripleEnabled'
+    'editDailyLimitTripleEnabled',
+    'editDailyLimitOverrideUSD'
   ];
 
   const TOKEN_EDITOR_STYLESHEET_ID = 'log-token-editor-stylesheet';
@@ -323,10 +324,15 @@
       : 'editDailyLimitTripleEnabled';
     const otherInput = document.getElementById(otherID);
     if (otherInput) otherInput.checked = false;
+    const overrideInput = document.getElementById('editDailyLimitOverrideUSD');
+    if (overrideInput) overrideInput.value = '0';
   }
 
   function handleTokenEditorInputAction(action, actionTarget) {
     switch (action) {
+      case 'set-daily-limit-override':
+        enforceDailyLimitOverrideExclusivity(actionTarget);
+        return true;
       case 'filter-available-channels':
         filterAvailableChannels(actionTarget.value);
         return true;
@@ -336,6 +342,14 @@
       default:
         return false;
     }
+  }
+
+  function enforceDailyLimitOverrideExclusivity(changedInput) {
+    if ((parseFloat(changedInput?.value) || 0) <= 0) return;
+    const doubleInput = document.getElementById('editDailyLimitDoubleEnabled');
+    const tripleInput = document.getElementById('editDailyLimitTripleEnabled');
+    if (doubleInput) doubleInput.checked = false;
+    if (tripleInput) tripleInput.checked = false;
   }
 
   async function ensureLogTokenEditorReady() {
@@ -562,6 +576,10 @@
     if (editDailyLimitTripleInput) {
       editDailyLimitTripleInput.checked = !!token.daily_limit_triple_enabled;
     }
+    const editDailyLimitOverrideInput = document.getElementById('editDailyLimitOverrideUSD');
+    if (editDailyLimitOverrideInput) {
+      editDailyLimitOverrideInput.value = String(Number(token.daily_limit_override_usd) || 0);
+    }
 
     const costUsed = Number(token.cost_used_usd) || 0;
     const dailyCostUsed = Number(token.daily_cost_used_usd) || 0;
@@ -605,6 +623,8 @@
     if (editDailyLimitDoubleInput) editDailyLimitDoubleInput.checked = false;
     const editDailyLimitTripleInput = document.getElementById('editDailyLimitTripleEnabled');
     if (editDailyLimitTripleInput) editDailyLimitTripleInput.checked = false;
+    const editDailyLimitOverrideInput = document.getElementById('editDailyLimitOverrideUSD');
+    if (editDailyLimitOverrideInput) editDailyLimitOverrideInput.value = '0';
 
     editAllowedModels = [];
     editRawAllowedModels = [];
@@ -1224,6 +1244,7 @@
     const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
     const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
     const dailyLimitTripleEnabled = !!document.getElementById('editDailyLimitTripleEnabled')?.checked;
+    const dailyLimitOverrideUSD = parseFloat(document.getElementById('editDailyLimitOverrideUSD')?.value) || 0;
     const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
     if (editInheritQuota) {
       maxConcurrencyResult.value = editRawMaxConcurrency || 0;
@@ -1236,6 +1257,10 @@
     }
     if (dailyCostLimitUSD < 0) {
       if (window.showNotification) window.showNotification(tr('tokens.msg.dailyCostLimitNegative'), 'error');
+      return;
+    }
+    if (dailyLimitOverrideUSD < 0) {
+      if (window.showNotification) window.showNotification(tr('tokens.msg.dailyLimitOverrideNegative'), 'error');
       return;
     }
     if (maxConcurrencyResult.error) {
@@ -1282,6 +1307,7 @@
           daily_cost_limit_usd: dailyCostLimitUSD,
           daily_limit_double_enabled: dailyLimitDoubleEnabled,
           daily_limit_triple_enabled: dailyLimitTripleEnabled,
+          daily_limit_override_usd: dailyLimitOverrideUSD,
           max_concurrency: maxConcurrencyResult.value
         })
       });

@@ -264,6 +264,58 @@ func TestAdminAPI_CreateAuthToken_RejectsDoubleAndTripleTogether(t *testing.T) {
 	}
 }
 
+func TestAdminAPI_CreateAuthToken_DailyLimitOverride(t *testing.T) {
+	server := newInMemoryServer(t)
+	ctx := context.Background()
+
+	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
+		"description":              "temporary limit token",
+		"daily_cost_limit_usd":     0.5,
+		"daily_limit_override_usd": 1.25,
+	}))
+	server.HandleCreateAuthToken(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	type respData struct {
+		ID                      int64   `json:"id"`
+		DailyLimitOverrideUSD   float64 `json:"daily_limit_override_usd"`
+		DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
+		DailyLimitTripleEnabled bool    `json:"daily_limit_triple_enabled"`
+	}
+	resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
+	if math.Abs(resp.Data.DailyLimitOverrideUSD-1.25) > 1e-9 {
+		t.Fatalf("daily_limit_override_usd=%v, want 1.25", resp.Data.DailyLimitOverrideUSD)
+	}
+	if resp.Data.DailyLimitDoubleEnabled || resp.Data.DailyLimitTripleEnabled {
+		t.Fatal("override response should not enable a multiplier")
+	}
+
+	stored, err := server.store.GetAuthToken(ctx, resp.Data.ID)
+	if err != nil {
+		t.Fatalf("GetAuthToken failed: %v", err)
+	}
+	if got := stored.DailyLimitOverrideMicroUSDForToday(); got != 1_250_000 {
+		t.Fatalf("stored override=%d, want 1250000", got)
+	}
+}
+
+func TestAdminAPI_CreateAuthToken_RejectsOverrideWithMultiplier(t *testing.T) {
+	server := newInMemoryServer(t)
+	c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-tokens", map[string]any{
+		"description":                "invalid adjustment",
+		"daily_limit_double_enabled": true,
+		"daily_limit_override_usd":   1.25,
+	}))
+
+	server.HandleCreateAuthToken(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
 func TestAdminAPI_ListAuthTokens_ResponseShape(t *testing.T) {
 	server := newInMemoryServer(t)
 

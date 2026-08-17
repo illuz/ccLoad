@@ -263,6 +263,7 @@
           }
         },
         input: {
+          'set-daily-limit-override': (actionTarget) => enforceDailyLimitOverrideExclusivity(actionTarget),
           'filter-available-channels': (actionTarget) => filterAvailableChannels(actionTarget.value),
           'filter-available-models': (actionTarget) => filterAvailableModels(actionTarget.value),
           'update-model-import-preview': () => updateModelImportPreview()
@@ -968,6 +969,7 @@
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
       const dailyLimitTripleBadgeHtml = buildDailyLimitTripleBadgeHtml(token);
+      const dailyLimitOverrideBadgeHtml = buildDailyLimitOverrideBadgeHtml(token);
       const codexGuardBadgeHtml = buildCodexGuardBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const isActive = !!token.is_active;
@@ -989,6 +991,7 @@
         groupHtml: groupHtml,
         dailyLimitDoubleBadgeHtml: dailyLimitDoubleBadgeHtml,
         dailyLimitTripleBadgeHtml: dailyLimitTripleBadgeHtml,
+        dailyLimitOverrideBadgeHtml: dailyLimitOverrideBadgeHtml,
         codexGuardBadgeHtml: codexGuardBadgeHtml,
         batteryHtml: batteryHtml,
         statusClass: status.class,
@@ -1229,6 +1232,10 @@
       if (token && token.effective_daily_cost_limit_usd !== undefined) {
         return Number(token.effective_daily_cost_limit_usd) || 0;
       }
+      const overrideLimit = Number(token?.daily_limit_override_usd) || 0;
+      if (overrideLimit > 0) {
+        return overrideLimit;
+      }
       if (token && token.daily_limit_triple_enabled) {
         return (Number(token?.daily_cost_limit_usd) || 0) * 3;
       }
@@ -1375,6 +1382,17 @@
       return `<span class="token-row-badge token-row-badge--daily-triple" title="${escapeHtml(title)}">×3 ${escapeHtml(t('tokens.dailyLimitTripleShort'))}</span>`;
     }
 
+    function buildDailyLimitOverrideBadgeHtml(token) {
+      const overrideLimit = Number(token?.daily_limit_override_usd) || 0;
+      if (overrideLimit <= 0) return '';
+      const rawLimit = Number(token.daily_cost_limit_usd) || 0;
+      const title = t('tokens.dailyLimitOverrideBadgeTitle', {
+        base: rawLimit > 0 ? formatCostDisplay(rawLimit) : t('tokens.unlimited'),
+        effective: formatCostDisplay(overrideLimit)
+      });
+      return `<span class="token-row-badge token-row-badge--daily-override" title="${escapeHtml(title)}">${escapeHtml(formatCostDisplay(overrideLimit))} ${escapeHtml(t('tokens.dailyLimitOverrideShort'))}</span>`;
+    }
+
     function buildCodexGuardBadgeHtml(token) {
       if (!token || !token.codex_guard_enabled) return '';
       return `<span class="token-row-badge token-row-badge--codex-guard" title="${escapeHtml(t('tokens.codexGuardHint'))}">${escapeHtml(t('tokens.codexGuardShort'))}</span>`;
@@ -1458,6 +1476,7 @@
       const groupHtml = buildTokenGroupBadgeHtml(token);
       const dailyLimitDoubleBadgeHtml = buildDailyLimitDoubleBadgeHtml(token);
       const dailyLimitTripleBadgeHtml = buildDailyLimitTripleBadgeHtml(token);
+      const dailyLimitOverrideBadgeHtml = buildDailyLimitOverrideBadgeHtml(token);
       const codexGuardBadgeHtml = buildCodexGuardBadgeHtml(token);
       const batteryHtml = buildTokenBatteryHtml(token);
       const enableSwitchHtml = buildTokenEnableSwitchHtml(token);
@@ -1475,7 +1494,7 @@
           </td>
           <td class="tokens-col-token" data-mobile-label="${t('tokens.table.token')}">
             <div class="token-row-description"><span class="token-row-name">${escapeHtml(token.description)}</span>${batteryHtml}</div>
-            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}${dailyLimitTripleBadgeHtml}${codexGuardBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button><button type="button" class="btn-icon token-usage-link-btn" data-action="copy-token-usage-link" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(usageLinkTitle)}" aria-label="${escapeHtml(usageLinkTitle)}" ${copyTokenValue ? '' : 'disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M10 13A5 5 0 0 0 17.54 13.54L19.5 11.58A5 5 0 0 0 12.42 4.5L11.29 5.63" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11A5 5 0 0 0 6.46 10.46L4.5 12.42A5 5 0 0 0 11.58 19.5L12.71 18.37" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+            <div class="token-row-meta">${groupHtml}${dailyLimitDoubleBadgeHtml}${dailyLimitTripleBadgeHtml}${dailyLimitOverrideBadgeHtml}${codexGuardBadgeHtml}<button type="button" class="token-row-key" data-action="copy-token-key" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(copyTokenTitle)}" aria-label="${escapeHtml(copyTokenTitle)}" ${copyTokenValue ? '' : 'disabled'}>${escapeHtml(maskedToken)}</button><button type="button" class="btn-icon token-usage-link-btn" data-action="copy-token-usage-link" data-token-value="${escapeHtml(copyTokenValue)}" title="${escapeHtml(usageLinkTitle)}" aria-label="${escapeHtml(usageLinkTitle)}" ${copyTokenValue ? '' : 'disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path d="M10 13A5 5 0 0 0 17.54 13.54L19.5 11.58A5 5 0 0 0 12.42 4.5L11.29 5.63" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11A5 5 0 0 0 6.46 10.46L4.5 12.42A5 5 0 0 0 11.58 19.5L12.71 18.37" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
             <button type="button" class="token-mobile-details-toggle" data-action="toggle-token-mobile-details" aria-expanded="false">${escapeHtml(t('tokens.mobileDetailsExpand'))}</button>
           </td>
           <td class="tokens-col-calls token-mobile-foldable" data-mobile-label="${t('tokens.table.callCount')}">${callsHtml}</td>
@@ -1604,6 +1623,8 @@
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
           daily_limit_double_enabled: !!data.daily_limit_double_enabled,
+          daily_limit_triple_enabled: !!data.daily_limit_triple_enabled,
+          daily_limit_override_usd: Number(data.daily_limit_override_usd) || 0,
           success_count: 0,
           failure_count: 0,
           stream_avg_ttfb: 0,
@@ -1727,6 +1748,10 @@
       if (dailyLimitTripleCheckbox) {
         dailyLimitTripleCheckbox.checked = editDailyLimitTripleEnabled;
       }
+      const dailyLimitOverrideInput = document.getElementById('editDailyLimitOverrideUSD');
+      if (dailyLimitOverrideInput) {
+        dailyLimitOverrideInput.value = Number(token.daily_limit_override_usd) || 0;
+      }
 
       // 显示已消耗费用
       const costUsed = token.cost_used_usd || 0;
@@ -1773,6 +1798,8 @@
       if (dailyLimitDoubleInput) dailyLimitDoubleInput.checked = false;
       const dailyLimitTripleInput = document.getElementById('editDailyLimitTripleEnabled');
       if (dailyLimitTripleInput) dailyLimitTripleInput.checked = false;
+      const dailyLimitOverrideInput = document.getElementById('editDailyLimitOverrideUSD');
+      if (dailyLimitOverrideInput) dailyLimitOverrideInput.value = '0';
       // 清理模型限制状态
       editAllowedModels = [];
       editRawAllowedModels = [];
@@ -1837,6 +1864,16 @@
         : 'editDailyLimitTripleEnabled';
       const otherInput = document.getElementById(otherID);
       if (otherInput) otherInput.checked = false;
+      const overrideInput = document.getElementById('editDailyLimitOverrideUSD');
+      if (overrideInput) overrideInput.value = '0';
+    }
+
+    function enforceDailyLimitOverrideExclusivity(changedInput) {
+      if ((parseFloat(changedInput?.value) || 0) <= 0) return;
+      const doubleInput = document.getElementById('editDailyLimitDoubleEnabled');
+      const tripleInput = document.getElementById('editDailyLimitTripleEnabled');
+      if (doubleInput) doubleInput.checked = false;
+      if (tripleInput) tripleInput.checked = false;
     }
 
     function setEditInheritChannels(checked) {
@@ -1942,6 +1979,7 @@
       const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
       const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
       const dailyLimitTripleEnabled = !!document.getElementById('editDailyLimitTripleEnabled')?.checked;
+      const dailyLimitOverrideUSD = parseFloat(document.getElementById('editDailyLimitOverrideUSD')?.value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency').value);
       if (editInheritQuota) {
         maxConcurrencyResult.value = editRawMaxConcurrency || 0;
@@ -1953,6 +1991,10 @@
       }
       if (dailyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.dailyCostLimitNegative'), 'error');
+        return;
+      }
+      if (dailyLimitOverrideUSD < 0) {
+        window.showNotification(t('tokens.msg.dailyLimitOverrideNegative'), 'error');
         return;
       }
       if (maxConcurrencyResult.error) {
@@ -1999,6 +2041,7 @@
             daily_cost_limit_usd: dailyCostLimitUSD,
             daily_limit_double_enabled: dailyLimitDoubleEnabled,
             daily_limit_triple_enabled: dailyLimitTripleEnabled,
+            daily_limit_override_usd: dailyLimitOverrideUSD,
             max_concurrency: maxConcurrency      // 2026-04新增：并发上限
           })
         });

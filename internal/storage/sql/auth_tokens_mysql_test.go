@@ -98,7 +98,7 @@ func (r *foundRowsRows) Columns() []string {
 		"codex_guard_enabled",
 		"success_count", "failure_count", "stream_avg_ttfb", "non_stream_avg_rt", "stream_count", "non_stream_count",
 		"prompt_tokens_total", "completion_tokens_total", "cache_read_tokens_total", "cache_creation_tokens_total", "total_cost_usd", "effective_cost_usd",
-		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "daily_limit_triple_day_key", "allowed_models", "allowed_channel_ids", "channel_restriction_mode", "max_concurrency",
+		"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "daily_limit_triple_day_key", "daily_limit_override_microusd", "daily_limit_override_day_key", "allowed_models", "allowed_channel_ids", "channel_restriction_mode", "max_concurrency",
 		"group_id", "inherit_quota", "inherit_channels", "inherit_models",
 	}
 }
@@ -146,6 +146,8 @@ func authTokenDriverValues(token *model.AuthToken) []driver.Value {
 		token.DailyCostDayKey,
 		token.DailyLimitDoubleDayKey,
 		token.DailyLimitTripleDayKey,
+		token.DailyLimitOverrideMicroUSD,
+		token.DailyLimitOverrideDayKey,
 		`["gpt-4o"]`,
 		`[42]`,
 		token.ChannelRestrictionMode,

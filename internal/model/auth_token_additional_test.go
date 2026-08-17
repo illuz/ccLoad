@@ -354,6 +354,62 @@ func TestAuthToken_MarshalJSON_ExposesTripleDailyLimit(t *testing.T) {
 	}
 }
 
+func TestAuthToken_DailyLimitOverrideForToday(t *testing.T) {
+	t.Parallel()
+
+	token := &AuthToken{
+		DailyCostLimitMicroUSD: 800_000,
+		DailyLimitDoubleDayKey: CurrentLocalDayKey(),
+	}
+	token.SetDailyLimitOverrideUSDForToday(1.25)
+
+	if token.IsDailyLimitDoubledToday() || token.IsDailyLimitTripledToday() {
+		t.Fatal("setting an override should clear daily multipliers")
+	}
+	if got := token.DailyLimitOverrideMicroUSDForToday(); got != 1_250_000 {
+		t.Fatalf("DailyLimitOverrideMicroUSDForToday() = %d, want 1250000", got)
+	}
+	if got := token.EffectiveDailyCostLimitUSDValue(); math.Abs(got-1.25) > 1e-9 {
+		t.Fatalf("EffectiveDailyCostLimitUSDValue() = %v, want 1.25", got)
+	}
+
+	token.ApplyGroupEffective(&AuthTokenGroup{DailyCostLimitMicroUSD: 2_000_000})
+	if got := token.EffectiveDailyCostLimitMicroUSD; got != 1_250_000 {
+		t.Fatalf("EffectiveDailyCostLimitMicroUSD = %d, want override 1250000", got)
+	}
+
+	token.DailyLimitOverrideDayKey = 20000101
+	token.EffectiveSet = false
+	if got := token.DailyLimitOverrideMicroUSDForToday(); got != 0 {
+		t.Fatalf("expired override = %d, want 0", got)
+	}
+	if got := token.EffectiveDailyCostLimitUSDValue(); math.Abs(got-0.8) > 1e-9 {
+		t.Fatalf("effective limit after override expiry = %v, want 0.8", got)
+	}
+}
+
+func TestAuthToken_MarshalJSON_ExposesDailyLimitOverride(t *testing.T) {
+	t.Parallel()
+
+	token := AuthToken{DailyCostLimitMicroUSD: 800_000}
+	token.SetDailyLimitOverrideUSDForToday(1.25)
+	b, err := json.Marshal(token)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	var got struct {
+		DailyLimitOverrideUSD      float64 `json:"daily_limit_override_usd"`
+		EffectiveDailyCostLimitUSD float64 `json:"effective_daily_cost_limit_usd"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if math.Abs(got.DailyLimitOverrideUSD-1.25) > 1e-9 || math.Abs(got.EffectiveDailyCostLimitUSD-1.25) > 1e-9 {
+		t.Fatalf("override/effective = %v/%v, want 1.25/1.25", got.DailyLimitOverrideUSD, got.EffectiveDailyCostLimitUSD)
+	}
+}
+
 func TestAuthTokenGroup_DailyCostConversionsAndValidation(t *testing.T) {
 	t.Parallel()
 

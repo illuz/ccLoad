@@ -471,6 +471,20 @@ func ensureAuthTokensDailyLimitTriple(ctx context.Context, db *sql.DB, dialect D
 		"INTEGER NOT NULL DEFAULT 0")
 }
 
+func ensureAuthTokensDailyLimitOverride(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "auth_tokens", []mysqlColumnDef{
+			{name: "daily_limit_override_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "daily_limit_override_day_key", definition: "INT NOT NULL DEFAULT 0"},
+		})
+	}
+
+	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
+		{name: "daily_limit_override_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "daily_limit_override_day_key", definition: "INTEGER NOT NULL DEFAULT 0"},
+	})
+}
+
 // ensureAuthTokensCodexGuard 确保auth_tokens表有 Codex reasoning guard 令牌级开关字段（2026-07新增）
 func ensureAuthTokensCodexGuard(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "auth_tokens", "codex_guard_enabled",

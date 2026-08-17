@@ -46,12 +46,12 @@ test('日志页令牌编辑器复用 tokens.html 编辑弹窗标记但不加载 
   assert.doesNotMatch(tokenEditorScript, /tokens\.js/);
 });
 
-test('日志页会识别并替换缺少 3 倍开关的旧版令牌弹窗', () => {
+test('日志页会识别并替换缺少临时限额的旧版令牌弹窗', () => {
   const requiredNodeIDs = ['editModal', 'channelSelectModal', 'modelSelectModal', 'tpl-token-expiry-options'];
-  const requiredControlIDs = ['editDailyLimitDoubleEnabled', 'editDailyLimitTripleEnabled'];
+  const requiredControlIDs = ['editDailyLimitDoubleEnabled', 'editDailyLimitTripleEnabled', 'editDailyLimitOverrideUSD'];
   const oldDocument = {
     getElementById(id) {
-      return id === 'editDailyLimitTripleEnabled' ? null : { id };
+      return id === 'editDailyLimitOverrideUSD' ? null : { id };
     }
   };
   const context = {
@@ -92,6 +92,9 @@ test('日志页令牌编辑器同步并互斥保存当日限额倍率', () => {
   assert.match(tokenEditorScript, /function enforceDailyLimitMultiplierExclusivity\(changedInput\)/);
   assert.match(tokenEditorScript, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
   assert.match(tokenEditorScript, /daily_limit_triple_enabled:\s*dailyLimitTripleEnabled,/);
+  assert.match(tokenEditorScript, /editDailyLimitOverrideInput\.value = String\(Number\(token\.daily_limit_override_usd\) \|\| 0\);/);
+  assert.match(tokenEditorScript, /function enforceDailyLimitOverrideExclusivity\(changedInput\)/);
+  assert.match(tokenEditorScript, /daily_limit_override_usd:\s*dailyLimitOverrideUSD,/);
 });
 
 test('日志页令牌编辑保存后刷新日志令牌筛选和列表', () => {
