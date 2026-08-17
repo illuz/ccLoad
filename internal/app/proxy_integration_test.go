@@ -4229,6 +4229,61 @@ func TestProxy_CostLimitExceeded_Returns429(t *testing.T) {
 	}
 }
 
+func TestProxy_CostLimitExceeded_CodexReturnsUsageLimitError(t *testing.T) {
+	t.Parallel()
+
+	upstreamHits := atomic.Int32{}
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "ch1", models: "gpt-5.4", apiKey: "sk-1"},
+	}, map[int]string{0: upstream.URL})
+
+	tokenHash := model.HashToken("test-api-key")
+	env.server.authService.authTokensMux.Lock()
+	env.server.authService.authTokenCostLimits[tokenHash] = tokenCostLimit{
+		usedMicroUSD:  200_000,
+		limitMicroUSD: 100_000,
+	}
+	env.server.authService.authTokensMux.Unlock()
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/responses", map[string]any{
+		"model":  "gpt-5.4",
+		"input":  "hi",
+		"stream": true,
+	}, nil)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if body.Error.Type != "usage_limit_reached" {
+		t.Fatalf("error.type=%q, want usage_limit_reached; body=%s", body.Error.Type, w.Body.String())
+	}
+	if body.Error.Code != "cost_limit_exceeded" {
+		t.Fatalf("error.code=%q, want cost_limit_exceeded; body=%s", body.Error.Code, w.Body.String())
+	}
+	if !strings.Contains(body.Error.Message, "Cost limit exceeded") {
+		t.Fatalf("error.message=%q, want cost limit detail", body.Error.Message)
+	}
+	if got := upstreamHits.Load(); got != 0 {
+		t.Fatalf("upstream hits=%d, want 0", got)
+	}
+}
+
 func TestProxy_InvalidToken_IsLoggedWithoutCredential(t *testing.T) {
 	t.Parallel()
 

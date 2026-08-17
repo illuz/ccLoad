@@ -405,7 +405,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
 
-	if !s.enforceTokenLimits(c, tokenHashStr, originalModel, startTime, isStreaming, thinkingEffort) {
+	if !s.enforceTokenLimits(c, clientProtocol, tokenHashStr, originalModel, startTime, isStreaming, thinkingEffort) {
 		return
 	}
 
@@ -558,6 +558,7 @@ func shouldStopTryingChannels(result *proxyResult) bool {
 // 违规时已写响应并返回 false，调用方应直接 return。
 func (s *Server) enforceTokenLimits(
 	c *gin.Context,
+	clientProtocol protocol.Protocol,
 	tokenHash string,
 	originalModel string,
 	startTime time.Time,
@@ -589,13 +590,7 @@ func (s *Server) enforceTokenLimits(
 			used := util.MicroUSDToUSD(usedMicro)
 			limit := util.MicroUSDToUSD(limitMicro)
 			message := fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", used, limit)
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": gin.H{
-					"message": message,
-					"type":    "insufficient_quota",
-					"code":    "cost_limit_exceeded",
-				},
-			})
+			writeTokenQuotaError(c, clientProtocol, message, "cost_limit_exceeded")
 			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
 			return false
 		}
@@ -605,19 +600,28 @@ func (s *Server) enforceTokenLimits(
 			used := util.MicroUSDToUSD(dailyUsedMicro)
 			limit := util.MicroUSDToUSD(dailyLimitMicro)
 			message := fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", used, limit)
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": gin.H{
-					"message": message,
-					"type":    "insufficient_quota",
-					"code":    "daily_cost_limit_exceeded",
-				},
-			})
+			writeTokenQuotaError(c, clientProtocol, message, "daily_cost_limit_exceeded")
 			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
 			return false
 		}
 	}
 
 	return true
+}
+
+func writeTokenQuotaError(c *gin.Context, clientProtocol protocol.Protocol, message, code string) {
+	errorType := "insufficient_quota"
+	if clientProtocol == protocol.Codex {
+		// Codex handles 429 quota responses specially only for this error type.
+		errorType = "usage_limit_reached"
+	}
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error": gin.H{
+			"message": message,
+			"type":    errorType,
+			"code":    code,
+		},
+	})
 }
 
 // runProxyAttemptLoop 按优先级遍历候选渠道。
