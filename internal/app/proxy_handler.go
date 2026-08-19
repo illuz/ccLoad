@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ccLoad/internal/config"
 	"ccLoad/internal/cooldown"
@@ -91,6 +93,8 @@ var ErrChannelRPMExceeded = errors.New("channel rpm limit exceeded")
 
 // ErrChannelConcurrencyExceeded 表示渠道并发限制已达到
 var ErrChannelConcurrencyExceeded = errors.New("channel concurrency limit exceeded")
+
+const codexPromoMessageHeader = "X-Codex-Promo-Message"
 
 func summarizeNoAvailableUpstream(
 	ctx context.Context,
@@ -614,6 +618,7 @@ func writeTokenQuotaError(c *gin.Context, clientProtocol protocol.Protocol, mess
 	if clientProtocol == protocol.Codex {
 		// Codex handles 429 quota responses specially only for this error type.
 		errorType = "usage_limit_reached"
+		setCodexPromoMessage(c.Writer.Header(), message)
 	}
 	c.JSON(http.StatusTooManyRequests, gin.H{
 		"error": gin.H{
@@ -622,6 +627,224 @@ func writeTokenQuotaError(c *gin.Context, clientProtocol protocol.Protocol, mess
 			"code":    code,
 		},
 	})
+}
+
+type codex429ErrorDetails struct {
+	message      string
+	errorType    string
+	code         string
+	httpEnvelope bool
+}
+
+func parseCodex429JSON(data []byte) (codex429ErrorDetails, bool) {
+	type errorObject struct {
+		Message any `json:"message"`
+		Type    any `json:"type"`
+		Code    any `json:"code"`
+		Status  any `json:"status"`
+	}
+	var payload struct {
+		Error    json.RawMessage `json:"error"`
+		Message  any             `json:"message"`
+		Type     any             `json:"type"`
+		Code     any             `json:"code"`
+		Status   any             `json:"status"`
+		Response struct {
+			Error errorObject `json:"error"`
+		} `json:"response"`
+	}
+	if err := sonic.Unmarshal(data, &payload); err != nil {
+		return codex429ErrorDetails{}, false
+	}
+
+	details := codex429ErrorDetails{}
+	if len(payload.Error) > 0 && string(payload.Error) != "null" {
+		var apiError errorObject
+		if err := sonic.Unmarshal(payload.Error, &apiError); err == nil {
+			details.message = codex429ScalarString(apiError.Message)
+			details.errorType = codex429ScalarString(apiError.Type)
+			details.code = codex429ScalarString(apiError.Code)
+			if details.code == "" {
+				details.code = codex429ScalarString(apiError.Status)
+			}
+			details.httpEnvelope = true
+		} else {
+			var message string
+			if err := sonic.Unmarshal(payload.Error, &message); err == nil {
+				details.message = strings.TrimSpace(message)
+			}
+		}
+	}
+	if details.message == "" {
+		details.message = codex429ScalarString(payload.Response.Error.Message)
+	}
+	if details.errorType == "" {
+		details.errorType = codex429ScalarString(payload.Response.Error.Type)
+	}
+	if details.code == "" {
+		details.code = codex429ScalarString(payload.Response.Error.Code)
+	}
+	if details.code == "" {
+		details.code = codex429ScalarString(payload.Response.Error.Status)
+	}
+	if details.message == "" {
+		details.message = codex429ScalarString(payload.Message)
+	}
+	if details.errorType == "" {
+		topLevelType := codex429ScalarString(payload.Type)
+		normalizedType := strings.ToLower(topLevelType)
+		if normalizedType != "error" && !strings.HasPrefix(normalizedType, "response.") {
+			details.errorType = topLevelType
+		}
+	}
+	if details.code == "" {
+		details.code = codex429ScalarString(payload.Code)
+	}
+	if details.code == "" {
+		details.code = codex429ScalarString(payload.Status)
+	}
+	return details, true
+}
+
+// codex429ScalarString accepts the scalar forms commonly used by upstream APIs
+// (for example, Gemini returns error.code as the number 429).
+func codex429ScalarString(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case json.Number:
+		return strings.TrimSpace(v.String())
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case int:
+		return strconv.Itoa(v)
+	case int8:
+		return strconv.FormatInt(int64(v), 10)
+	case int16:
+		return strconv.FormatInt(int64(v), 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case uint:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		return ""
+	}
+}
+
+func codex429DetailsFromBody(body []byte) codex429ErrorDetails {
+	if details, ok := parseCodex429JSON(bytes.TrimSpace(body)); ok {
+		return details
+	}
+
+	for remaining := body; len(remaining) > 0; {
+		eventEnd := firstSSEEventEnd(remaining)
+		if eventEnd < 0 {
+			eventEnd = len(remaining)
+		}
+		_, data := parseSSEEventChunk(remaining[:eventEnd])
+		if details, ok := parseCodex429JSON(bytes.TrimSpace(data)); ok {
+			details.httpEnvelope = false
+			return details
+		}
+		if eventEnd >= len(remaining) {
+			break
+		}
+		remaining = remaining[eventEnd:]
+	}
+
+	message := strings.TrimSpace(safeBodyToString(body))
+	if message == "[binary/compressed response]" {
+		message = ""
+	}
+	return codex429ErrorDetails{message: message}
+}
+
+func sanitizeCodexPromoMessage(message string) string {
+	message = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, message)
+	message = strings.Join(strings.Fields(message), " ")
+	const maxBytes = 1024
+	if len(message) <= maxBytes {
+		return message
+	}
+	end := maxBytes
+	for end > 0 && !utf8.RuneStart(message[end]) {
+		end--
+	}
+	return message[:end] + "..."
+}
+
+func setCodexPromoMessage(header http.Header, message string) {
+	if header == nil {
+		return
+	}
+	if message = sanitizeCodexPromoMessage(message); message != "" {
+		header.Set(codexPromoMessageHeader, message)
+	}
+}
+
+func codexCompatible429Response(header http.Header, body []byte) (http.Header, []byte) {
+	details := codex429DetailsFromBody(body)
+	responseHeader := header.Clone()
+	if responseHeader == nil {
+		responseHeader = make(http.Header)
+	}
+
+	if details.httpEnvelope && (details.errorType == "usage_limit_reached" || details.errorType == "usage_not_included") {
+		if details.errorType == "usage_limit_reached" {
+			setCodexPromoMessage(responseHeader, details.message)
+		}
+		return responseHeader, body
+	}
+
+	message := details.message
+	if message == "" {
+		message = responseHeader.Get(codexPromoMessageHeader)
+	}
+	if message == "" {
+		message = "Request rate limit exceeded"
+	}
+	code := details.code
+	if code == "" {
+		code = details.errorType
+	}
+	if code == "" {
+		code = "rate_limit_exceeded"
+	}
+	responseBody, err := sonic.Marshal(gin.H{
+		"error": gin.H{
+			"message": message,
+			"type":    "usage_limit_reached",
+			"code":    code,
+		},
+	})
+	if err != nil {
+		return responseHeader, body
+	}
+
+	responseHeader.Del("Content-Encoding")
+	responseHeader.Del("Content-Length")
+	responseHeader.Set("Content-Type", "application/json; charset=utf-8")
+	setCodexPromoMessage(responseHeader, message)
+	return responseHeader, responseBody
 }
 
 // runProxyAttemptLoop 按优先级遍历候选渠道。
@@ -726,7 +949,11 @@ func (s *Server) writeFinalProxyResponse(
 
 	if lastResult != nil && lastResult.status != 0 {
 		// 透明代理原则：透传所有上游响应（状态码+header+body）
-		writeResponseWithHeaders(c.Writer, finalStatus, lastResult.header, lastResult.body)
+		responseHeader, responseBody := lastResult.header, lastResult.body
+		if finalStatus == http.StatusTooManyRequests && reqCtx.clientProtocol == protocol.Codex {
+			responseHeader, responseBody = codexCompatible429Response(responseHeader, responseBody)
+		}
+		writeResponseWithHeaders(c.Writer, finalStatus, responseHeader, responseBody)
 	} else {
 		disableResponseWriteTimeout(c.Writer, "最终响应")
 		c.JSON(finalStatus, gin.H{"error": "no upstream available"})

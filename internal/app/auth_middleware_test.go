@@ -239,12 +239,71 @@ func TestRequireAPIAuth_TokenConcurrencyLimit(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "token_concurrency_exceeded") {
 		t.Fatalf("expected token_concurrency_exceeded in response: %s", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"type":"rate_limit_error"`) {
+		t.Fatalf("expected rate_limit_error for non-Codex response: %s", w.Body.String())
+	}
 
 	otherReq := httptest.NewRequest(http.MethodGet, "/test", nil)
 	otherReq.Header.Set("Authorization", "Bearer other-token")
 	otherW := runMiddleware(t, svc.RequireAPIAuth(), otherReq)
 	if otherW.Code != http.StatusOK {
 		t.Fatalf("expected other token to pass, got %d: %s", otherW.Code, otherW.Body.String())
+	}
+}
+
+func TestRequireAPIAuth_TokenConcurrencyLimit_CodexResponse(t *testing.T) {
+	t.Parallel()
+	svc := newTestAuthService(t)
+	injectAPIToken(svc, "limited-codex-token", 0, 13)
+
+	tokenHash := model.HashToken("limited-codex-token")
+	svc.authTokensMux.Lock()
+	svc.authTokenMaxConns[tokenHash] = 1
+	svc.authTokensMux.Unlock()
+
+	release, _, _, ok := svc.acquireTokenConcurrencySlot(tokenHash)
+	if !ok {
+		t.Fatal("expected manual slot acquisition to succeed")
+	}
+	defer release()
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(captureClientRequestMetadata())
+	engine.Any("/v1/responses", svc.RequireAPIAuth(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req.Header.Set("Authorization", "Bearer limited-codex-token")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if body.Error.Type != "usage_limit_reached" {
+		t.Fatalf("error.type=%q, want usage_limit_reached", body.Error.Type)
+	}
+	if body.Error.Code != "token_concurrency_exceeded" {
+		t.Fatalf("error.code=%q, want token_concurrency_exceeded", body.Error.Code)
+	}
+	const wantMessage = "Token concurrency limit exceeded: 1 active of 1 limit"
+	if body.Error.Message != wantMessage {
+		t.Fatalf("error.message=%q, want %q", body.Error.Message, wantMessage)
+	}
+	if got := w.Header().Get("X-Codex-Promo-Message"); got != wantMessage {
+		t.Fatalf("X-Codex-Promo-Message=%q, want %q", got, wantMessage)
 	}
 }
 

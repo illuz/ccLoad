@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ccLoad/internal/cooldown"
+	"ccLoad/internal/protocol"
 	"ccLoad/internal/util"
 
 	"github.com/gin-gonic/gin"
@@ -80,6 +81,184 @@ func TestWriteFinalProxyResponse_DisablesWriteTimeoutForJSONFallback(t *testing.
 	}
 	if !w.writeDeadline.IsZero() {
 		t.Fatalf("writeDeadline=%v, want zero time", w.writeDeadline)
+	}
+}
+
+func TestCodexCompatible429Response_ResponseFailedSSE(t *testing.T) {
+	t.Parallel()
+
+	const message = "Concurrency limit exceeded for user, please retry later"
+	body := []byte("event: response.failed\n" +
+		`data: {"type":"response.failed","response":` + "\n" +
+		`data: {"status":"failed","error":{"code":"rate_limit_exceeded","message":"` + message + `"}}}` + "\n\n")
+	header := http.Header{
+		"Content-Type":     []string{"text/event-stream"},
+		"Content-Encoding": []string{"br"},
+		"Content-Length":   []string{"999"},
+		"X-Request-Id":     []string{"req_123"},
+	}
+
+	gotHeader, gotBody := codexCompatible429Response(header, body)
+
+	if got := gotHeader.Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("Content-Type=%q, want application/json", got)
+	}
+	if got := gotHeader.Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding=%q, want empty", got)
+	}
+	if got := gotHeader.Get("Content-Length"); got != "" {
+		t.Fatalf("Content-Length=%q, want empty", got)
+	}
+	if got := gotHeader.Get("X-Request-Id"); got != "req_123" {
+		t.Fatalf("X-Request-Id=%q, want req_123", got)
+	}
+	if got := gotHeader.Get(codexPromoMessageHeader); got != message {
+		t.Fatalf("%s=%q, want %q", codexPromoMessageHeader, got, message)
+	}
+	if got := header.Get("Content-Encoding"); got != "br" {
+		t.Fatalf("input header was mutated: Content-Encoding=%q", got)
+	}
+
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, gotBody)
+	}
+	if payload.Error.Message != message {
+		t.Fatalf("error.message=%q, want %q", payload.Error.Message, message)
+	}
+	if payload.Error.Type != "usage_limit_reached" {
+		t.Fatalf("error.type=%q, want usage_limit_reached", payload.Error.Type)
+	}
+	if payload.Error.Code != "rate_limit_exceeded" {
+		t.Fatalf("error.code=%q, want rate_limit_exceeded", payload.Error.Code)
+	}
+}
+
+func TestCodexCompatible429Response_GeminiNumericCode(t *testing.T) {
+	t.Parallel()
+
+	const message = "You exceeded your current quota. Please retry in 59s."
+	body := []byte(`{"error":{"code":429,"message":"` + message + `","status":"RESOURCE_EXHAUSTED"}}`)
+
+	header, responseBody := codexCompatible429Response(nil, body)
+
+	if got := header.Get(codexPromoMessageHeader); got != message {
+		t.Fatalf("%s=%q, want %q", codexPromoMessageHeader, got, message)
+	}
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, responseBody)
+	}
+	if payload.Error.Message != message || payload.Error.Type != "usage_limit_reached" || payload.Error.Code != "429" {
+		t.Fatalf("unexpected error payload: %+v", payload.Error)
+	}
+}
+
+func TestCodexCompatible429Response_TopLevelCode(t *testing.T) {
+	t.Parallel()
+
+	const message = "Daily usage limit exceeded"
+	body := []byte(`{"code":"USAGE_LIMIT_EXCEEDED","message":"` + message + `"}`)
+
+	_, responseBody := codexCompatible429Response(nil, body)
+
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, responseBody)
+	}
+	if payload.Error.Message != message || payload.Error.Type != "usage_limit_reached" || payload.Error.Code != "USAGE_LIMIT_EXCEEDED" {
+		t.Fatalf("unexpected error payload: %+v", payload.Error)
+	}
+}
+
+func TestCodexCompatible429Response_PreservesNativeUsageLimit(t *testing.T) {
+	t.Parallel()
+
+	const message = "Original Codex limit detail"
+	body := []byte(`{"error":{"type":"usage_limit_reached","message":"` + message + `","plan_type":"plus","resets_at":1787140800}}`)
+	header := http.Header{"Content-Type": []string{"application/json"}}
+
+	gotHeader, gotBody := codexCompatible429Response(header, body)
+
+	if !bytes.Equal(gotBody, body) {
+		t.Fatalf("native usage-limit body was rewritten: got=%s want=%s", gotBody, body)
+	}
+	if got := gotHeader.Get(codexPromoMessageHeader); got != message {
+		t.Fatalf("%s=%q, want %q", codexPromoMessageHeader, got, message)
+	}
+}
+
+func TestWriteFinalProxyResponse_Adapts429OnlyForCodex(t *testing.T) {
+	t.Parallel()
+
+	const message = "Rate limit reached for this model"
+	originalBody := []byte(`{"error":{"message":"` + message + `","type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+
+	tests := []struct {
+		name             string
+		clientProtocol   protocol.Protocol
+		wantType         string
+		wantPromoMessage string
+	}{
+		{name: "codex", clientProtocol: protocol.Codex, wantType: "usage_limit_reached", wantPromoMessage: message},
+		{name: "openai", clientProtocol: protocol.OpenAI, wantType: "rate_limit_error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := &Server{}
+			c, recorder := newTestContext(t, newRequest(http.MethodPost, "/v1/responses", nil))
+			reqCtx := &proxyRequestContext{
+				startTime:      time.Now(),
+				clientProtocol: tt.clientProtocol,
+			}
+			lastResult := &proxyResult{
+				status: http.StatusTooManyRequests,
+				header: http.Header{"Content-Type": []string{"application/json"}},
+				body:   originalBody,
+			}
+
+			srv.writeFinalProxyResponse(c, reqCtx, "gpt-test", false, lastResult, 1)
+
+			if recorder.Code != http.StatusTooManyRequests {
+				t.Fatalf("status=%d, want 429", recorder.Code)
+			}
+			var payload struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+					Code    string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v; body=%s", err, recorder.Body.String())
+			}
+			if payload.Error.Message != message || payload.Error.Type != tt.wantType || payload.Error.Code != "rate_limit_exceeded" {
+				t.Fatalf("unexpected error payload: %+v", payload.Error)
+			}
+			if got := recorder.Header().Get(codexPromoMessageHeader); got != tt.wantPromoMessage {
+				t.Fatalf("%s=%q, want %q", codexPromoMessageHeader, got, tt.wantPromoMessage)
+			}
+		})
 	}
 }
 

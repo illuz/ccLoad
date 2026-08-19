@@ -13,6 +13,7 @@ import (
 
 	"ccLoad/internal/config"
 	"ccLoad/internal/model"
+	"ccLoad/internal/protocol"
 	"ccLoad/internal/storage"
 	"ccLoad/internal/util"
 
@@ -396,10 +397,17 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		releaseTokenSlot, activeConns, maxConns, acquired := s.acquireTokenConcurrencySlot(tokenHash)
 		if !acquired {
 			message := fmt.Sprintf("Token concurrency limit exceeded: %d active of %d limit", activeConns, maxConns)
+			errorType := "rate_limit_error"
+			clientProtocol, _ := clientRequestMetadata(c)
+			if clientProtocol == protocol.Codex {
+				// Codex otherwise reduces an unrecognized 429 response to its HTTP status.
+				errorType = "usage_limit_reached"
+				setCodexPromoMessage(c.Writer.Header(), message)
+			}
 			reject(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
 					"message": message,
-					"type":    "rate_limit_error",
+					"type":    errorType,
 					"code":    "token_concurrency_exceeded",
 				},
 			}, message)
