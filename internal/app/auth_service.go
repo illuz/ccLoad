@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -260,7 +261,30 @@ func (s *AuthService) CleanExpiredTokens() {
 // 认证中间件
 // ============================================================================
 
-const apiAuthRejectionContextKey = "ccLoad.apiAuthRejection"
+const (
+	apiAuthRejectionContextKey         = "ccLoad.apiAuthRejection"
+	invalidAuthorizationMessage        = "invalid or missing authorization"
+	maxLoggedRejectedAPIKeyLengthBytes = 512
+)
+
+// invalidAuthorizationLogMessage is persisted in the admin request log only;
+// the API response remains generic so it does not echo credentials to clients.
+func invalidAuthorizationLogMessage(key string, found bool) string {
+	if !found {
+		return invalidAuthorizationMessage
+	}
+
+	displayKey := key
+	truncated := false
+	if len(displayKey) > maxLoggedRejectedAPIKeyLengthBytes {
+		displayKey = displayKey[:maxLoggedRejectedAPIKeyLengthBytes]
+		truncated = true
+	}
+	if truncated {
+		return fmt.Sprintf("%s (key: %s [truncated])", invalidAuthorizationMessage, strconv.Quote(displayKey))
+	}
+	return fmt.Sprintf("%s (key: %s)", invalidAuthorizationMessage, strconv.Quote(displayKey))
+}
 
 // RequireTokenAuth Token 认证中间件（管理界面使用）
 func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
@@ -294,16 +318,6 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			c.Set(apiAuthRejectionContextKey, logMessage)
 			c.JSON(status, response)
 			c.Abort()
-		}
-
-		// 未配置认证令牌时，默认全部返回 401（不允许公开访问）
-		s.authTokensMux.RLock()
-		tokenCount := len(s.authTokens)
-		s.authTokensMux.RUnlock()
-
-		if tokenCount == 0 {
-			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
-			return
 		}
 
 		var token string
@@ -346,8 +360,20 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			}
 		}
 
+		invalidAuthLogMessage := invalidAuthorizationLogMessage(token, tokenFound)
+
+		// 未配置认证令牌时，默认全部返回 401（不允许公开访问）
+		s.authTokensMux.RLock()
+		tokenCount := len(s.authTokens)
+		s.authTokensMux.RUnlock()
+
+		if tokenCount == 0 {
+			reject(http.StatusUnauthorized, gin.H{"error": invalidAuthorizationMessage}, invalidAuthLogMessage)
+			return
+		}
+
 		if !tokenFound {
-			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
+			reject(http.StatusUnauthorized, gin.H{"error": invalidAuthorizationMessage}, invalidAuthLogMessage)
 			return
 		}
 
@@ -365,7 +391,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		s.authTokensMux.RUnlock()
 
 		if !exists {
-			reject(http.StatusUnauthorized, gin.H{"error": "invalid or missing authorization"}, "invalid or missing authorization")
+			reject(http.StatusUnauthorized, gin.H{"error": invalidAuthorizationMessage}, invalidAuthLogMessage)
 			return
 		}
 

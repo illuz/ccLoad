@@ -4284,7 +4284,7 @@ func TestProxy_CostLimitExceeded_CodexReturnsUsageLimitError(t *testing.T) {
 	}
 }
 
-func TestProxy_InvalidToken_IsLoggedWithoutCredential(t *testing.T) {
+func TestProxy_InvalidToken_IsLoggedWithCredentialForAdmin(t *testing.T) {
 	t.Parallel()
 
 	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4305,13 +4305,20 @@ func TestProxy_InvalidToken_IsLoggedWithoutCredential(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
+	if strings.Contains(w.Body.String(), invalidToken) {
+		t.Fatalf("401 response leaked invalid credential: %s", w.Body.String())
+	}
 
 	entry := waitForProxyRejectionLog(t, env, http.StatusUnauthorized, "invalid or missing authorization")
 	if entry.AuthTokenID != 0 {
 		t.Fatalf("AuthTokenID=%d, want 0 for an unknown token", entry.AuthTokenID)
 	}
-	if entry.APIKeyUsed != "" || strings.Contains(entry.Message, invalidToken) {
-		t.Fatalf("invalid credential leaked into log: api_key_used=%q message=%q", entry.APIKeyUsed, entry.Message)
+	if entry.APIKeyUsed != "" {
+		t.Fatalf("APIKeyUsed=%q, want empty for a client authorization key", entry.APIKeyUsed)
+	}
+	wantMessage := `invalid or missing authorization (key: "definitely-invalid-secret")`
+	if entry.Message != wantMessage {
+		t.Fatalf("Message=%q, want %q", entry.Message, wantMessage)
 	}
 	if entry.ClientIP == "" {
 		t.Fatal("ClientIP should be recorded")

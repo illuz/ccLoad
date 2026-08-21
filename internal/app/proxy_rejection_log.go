@@ -27,8 +27,8 @@ func ensureProxyRequestID(c *gin.Context) string {
 }
 
 // logAPIAuthRejections records requests stopped by RequireAPIAuth before they
-// can reach HandleProxyRequest. It deliberately does not inspect or persist the
-// submitted credential.
+// can reach HandleProxyRequest. RequireAPIAuth supplies the admin-facing
+// diagnostic message.
 func (s *Server) logAPIAuthRejections() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fallbackStart := time.Now()
