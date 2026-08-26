@@ -130,8 +130,8 @@ test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /editAllowedChannelIDs = \(token\.allowed_channel_ids \|\| \[\]\)\.slice\(\);/);
   assert.match(script, /editDailyLimitDoubleEnabled = !!token\.daily_limit_double_enabled;/);
   assert.match(script, /editDailyLimitTripleEnabled = !!token\.daily_limit_triple_enabled;/);
-  assert.match(script, /allowed_channel_ids:\s*editInheritChannels\s*\?\s*editRawAllowedChannelIDs\s*:\s*editAllowedChannelIDs,/);
-  assert.match(script, /channel_restriction_mode:\s*editInheritChannels/);
+  assert.match(script, /allowed_channel_ids:\s*channelRestriction\.allowedChannelIDs,/);
+  assert.match(script, /channel_restriction_mode:\s*channelRestriction\.channelRestrictionMode,/);
   assert.match(script, /channel_restriction_mode:\s*tokenGroupChannelRestrictionMode/);
   assert.match(script, /daily_limit_double_enabled:\s*dailyLimitDoubleEnabled,/);
   assert.match(script, /daily_limit_triple_enabled:\s*dailyLimitTripleEnabled,/);
@@ -142,6 +142,49 @@ test('tokens.js 保存并渲染 allowed_channel_ids', () => {
   assert.match(script, /'confirm-channel-selection':\s*\(\)\s*=> confirmChannelSelection\(\)/);
   assert.match(script, /'batch-delete-allowed-channels':\s*\(\)\s*=> batchDeleteSelectedAllowedChannels\(\)/);
   assert.match(script, /'toggle-allowed-channel':\s*\(actionTarget\)\s*=>/);
+});
+
+test('tokens 保存时以渠道限制控件的最终值为准', () => {
+  const functionNames = [
+    'normalizeChannelRestrictionMode',
+    'readEditChannelRestrictionForSave'
+  ];
+  const elements = {
+    editInheritChannels: { checked: false },
+    editChannelRestrictionMode: { value: 'deny' }
+  };
+  const context = {
+    Array,
+    String,
+    document: {
+      getElementById(id) {
+        return elements[id] || null;
+      }
+    },
+    editInheritChannels: false,
+    editChannelRestrictionMode: 'allow',
+    editRawChannelRestrictionMode: 'allow',
+    editAllowedChannelIDs: [102],
+    editRawAllowedChannelIDs: [91]
+  };
+  const source = functionNames.map(name => extractFunctionSource(script, name)).join('\n\n');
+  vm.createContext(context);
+  vm.runInContext(`${source}\nthis.__exports = { ${functionNames.join(', ')} };`, context);
+
+  const direct = context.__exports.readEditChannelRestrictionForSave(2);
+  assert.equal(direct.inheritChannels, false);
+  assert.deepEqual(Array.from(direct.allowedChannelIDs), [102]);
+  assert.equal(direct.channelRestrictionMode, 'deny');
+  assert.equal(context.editChannelRestrictionMode, 'deny');
+  assert.equal(context.editRawChannelRestrictionMode, 'deny');
+
+  elements.editInheritChannels.checked = true;
+  elements.editChannelRestrictionMode.value = 'allow';
+  context.editRawChannelRestrictionMode = 'deny';
+  const inherited = context.__exports.readEditChannelRestrictionForSave(2);
+  assert.equal(inherited.inheritChannels, true);
+  assert.deepEqual(Array.from(inherited.allowedChannelIDs), [91]);
+  assert.equal(inherited.channelRestrictionMode, 'deny');
 });
 
 test('tokens 渠道选择弹窗支持按类型或按分组切换，并在类型视图展示分组标识', () => {

@@ -1963,6 +1963,27 @@
       setControlDisabled('[data-action="show-model-select-modal"], [data-action="show-model-import-modal"], [data-action="batch-delete-allowed-models"], #selectAllAllowedModels', editInheritModels && hasGroup);
     }
 
+    function readEditChannelRestrictionForSave(groupID) {
+      const inheritChannels = groupID > 0 && !!document.getElementById('editInheritChannels')?.checked;
+      const selectedMode = normalizeChannelRestrictionMode(
+        document.getElementById('editChannelRestrictionMode')?.value || editChannelRestrictionMode
+      );
+
+      if (!inheritChannels) {
+        editInheritChannels = false;
+        editChannelRestrictionMode = selectedMode;
+        editRawChannelRestrictionMode = selectedMode;
+      }
+
+      return {
+        inheritChannels,
+        allowedChannelIDs: (inheritChannels ? editRawAllowedChannelIDs : editAllowedChannelIDs).slice(),
+        channelRestrictionMode: inheritChannels
+          ? normalizeChannelRestrictionMode(editRawChannelRestrictionMode)
+          : selectedMode
+      };
+    }
+
     async function updateToken() {
       
       const id = document.getElementById('editTokenId').value;
@@ -1975,6 +1996,7 @@
         captureRawEditValues();
       }
       const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
+      const channelRestriction = readEditChannelRestrictionForSave(groupID);
       const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
       const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
       const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
@@ -2030,12 +2052,10 @@
             expires_at: expiresAt,
             group_id: groupID,
             inherit_quota: groupID > 0 && editInheritQuota,
-            inherit_channels: groupID > 0 && editInheritChannels,
+            inherit_channels: channelRestriction.inheritChannels,
             inherit_models: groupID > 0 && editInheritModels,
-            allowed_channel_ids: editInheritChannels ? editRawAllowedChannelIDs : editAllowedChannelIDs,
-            channel_restriction_mode: editInheritChannels
-              ? editRawChannelRestrictionMode
-              : editChannelRestrictionMode,
+            allowed_channel_ids: channelRestriction.allowedChannelIDs,
+            channel_restriction_mode: channelRestriction.channelRestrictionMode,
             allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,  // 2026-01新增：模型限制
             cost_limit_usd: costLimitUSD,        // 2026-01新增：费用上限
             daily_cost_limit_usd: dailyCostLimitUSD,
