@@ -467,7 +467,7 @@ function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningToken
   const title = titleParts.length > 0 ? ` title="${titleParts.join('&#10;')}"` : '';
   const redirectBadge = redirected ? '<sup class="redirect-badge">↪</sup>' : '';
   const auditBadge = auditMismatch
-    ? `<sup class="model-audit-badge" title="上游响应模型与实际发送模型不一致">!</sup>`
+    ? `<sup class="model-audit-badge" title="上游响应模型与实际发送模型不一致">!${escapeHtml(responseModel)}</sup>`
     : '';
   const badgeHtml = redirectBadge || effort || tokens > 0 || auditMismatch
     ? `<span class="model-badges">${redirectBadge}${buildThinkingEffortBadge(effort, tokens)}${auditBadge}</span>`

@@ -1435,15 +1435,20 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 14px;
+      min-width: 14px;
+      max-width: 200px;
       height: 14px;
       margin-left: 4px;
-      border-radius: 50%;
+      padding: 0 4px;
+      border-radius: 8px;
       background: var(--error-600);
       color: #fff;
       font-size: 10px;
       font-weight: 700;
       line-height: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       vertical-align: middle;
     }
 

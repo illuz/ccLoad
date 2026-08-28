@@ -189,8 +189,10 @@ test('日志页提供上游响应模型不一致筛选和模型审计标记', ()
   assert.match(logsSource, /upstream_model_mismatch/);
   assert.match(logsSource, /model-upstream-mismatch/);
   assert.match(logsSource, /model-audit-badge/);
+  assert.match(logsSource, /<sup class="model-audit-badge"[^>]*>!\$\{escapeHtml\(responseModel\)\}<\/sup>/);
   assert.match(css, /\.model-tag\.model-upstream-mismatch\s*\{/);
   assert.match(css, /\.model-audit-badge\s*\{/);
+  assert.match(css, /\.model-audit-badge\s*\{[\s\S]*?min-width:\s*14px;/);
   assert.match(zhLocale, /'logs\.upstreamModelMismatchOnly': '仅看上游模型不一致'/);
   assert.match(enLocale, /'logs\.upstreamModelMismatchOnly': 'Upstream model mismatches only'/);
 });
