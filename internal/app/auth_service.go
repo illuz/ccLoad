@@ -286,21 +286,29 @@ func invalidAuthorizationLogMessage(key string, found bool) string {
 	return fmt.Sprintf("%s (key: %s)", invalidAuthorizationMessage, strconv.Quote(displayKey))
 }
 
+// extractBearerToken parses the Authorization header according to the
+// Bearer authentication scheme.  RFC 7235 defines the auth-scheme as
+// case-insensitive, so clients may send "bearer"/"BEARER" as well as the
+// conventional "Bearer" spelling.  Token values themselves remain
+// case-sensitive and are returned unchanged (apart from surrounding OWS).
+func extractBearerToken(authHeader string) (string, bool) {
+	parts := strings.Fields(authHeader)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return "", false
+	}
+	return parts[1], true
+}
+
 // RequireTokenAuth Token 认证中间件（管理界面使用）
 func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 从 Authorization 头获取Token
 		authHeader := c.GetHeader("Authorization")
-		if authHeader != "" {
-			const prefix = "Bearer "
-			if strings.HasPrefix(authHeader, prefix) {
-				token := strings.TrimPrefix(authHeader, prefix)
-
-				// 检查动态Token（登录生成的长期会话Token）
-				if s.isValidToken(token) {
-					c.Next()
-					return
-				}
+		if token, ok := extractBearerToken(authHeader); ok {
+			// 检查动态Token（登录生成的长期会话Token）
+			if s.isValidToken(token) {
+				c.Next()
+				return
 			}
 		}
 
@@ -324,13 +332,9 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		var tokenFound bool
 
 		// 检查 Authorization 头（Bearer token）
-		authHeader := c.GetHeader("Authorization")
-		if authHeader != "" {
-			const prefix = "Bearer "
-			if strings.HasPrefix(authHeader, prefix) {
-				token = strings.TrimPrefix(authHeader, prefix)
-				tokenFound = true
-			}
+		if bearerToken, ok := extractBearerToken(c.GetHeader("Authorization")); ok {
+			token = bearerToken
+			tokenFound = true
 		}
 
 		// 检查 X-API-Key 头
@@ -537,10 +541,7 @@ func (s *AuthService) HandleLogin(c *gin.Context) {
 func (s *AuthService) HandleLogout(c *gin.Context) {
 	// 从Authorization头提取Token
 	authHeader := c.GetHeader("Authorization")
-	const prefix = "Bearer "
-	if after, ok := strings.CutPrefix(authHeader, prefix); ok {
-		token := after
-
+	if token, ok := extractBearerToken(authHeader); ok {
 		// [INFO] 安全修复：计算tokenHash删除(2025-12)
 		tokenHash := model.HashToken(token)
 

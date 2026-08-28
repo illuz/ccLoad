@@ -36,6 +36,28 @@ func TestRequireAPIAuth_BearerToken(t *testing.T) {
 	}
 }
 
+func TestRequireAPIAuth_BearerSchemeIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
+	svc := newTestAuthService(t)
+	injectAPIToken(svc, "sk-test-123", 0, 1)
+
+	// RFC 7235 auth-scheme values are case-insensitive.  Some HTTP clients
+	// serialize the scheme as lowercase even though the conventional spelling
+	// is "Bearer".
+	for _, scheme := range []string{"bearer", "BEARER", "bEaReR"} {
+		t.Run(scheme, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("Authorization", scheme+" sk-test-123")
+
+			w := runMiddleware(t, svc.RequireAPIAuth(), req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("scheme %q: expected 200, got %d: %s", scheme, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestRequireAPIAuth_XAPIKey(t *testing.T) {
 	t.Parallel()
 	svc := newTestAuthService(t)
