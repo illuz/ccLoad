@@ -245,6 +245,9 @@ func hashFilter(filter *model.LogFilter) string {
 	if filter.StatusCode != nil {
 		parts = append(parts, fmt.Sprintf("status:%d", *filter.StatusCode))
 	}
+	if filter.ClientProtocol != "" {
+		parts = append(parts, fmt.Sprintf("client_protocol:%s", filter.ClientProtocol))
+	}
 	if filter.LogSource != "" {
 		parts = append(parts, fmt.Sprintf("source:%s", filter.LogSource))
 	}

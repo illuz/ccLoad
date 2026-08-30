@@ -296,6 +296,7 @@ func BindAndValidate(c *gin.Context, obj RequestValidator) error {
 // - channel_name_like: 模糊匹配渠道名称
 // - model: 精确匹配模型名称
 // - model_like: 模糊匹配模型名称
+// - client_protocol: 精确匹配客户端入口协议
 // - upstream_model_mismatch: 仅筛选上游响应模型与实际发送模型不一致的日志
 func BuildLogFilter(c *gin.Context) model.LogFilter {
 	var lf model.LogFilter
@@ -337,6 +338,10 @@ func BuildLogFilter(c *gin.Context) model.LogFilter {
 	// 渠道类型过滤（anthropic/openai/gemini/codex）
 	if ct := strings.TrimSpace(c.Query("channel_type")); ct != "" {
 		lf.ChannelType = ct
+	}
+
+	if clientProtocol := strings.ToLower(strings.TrimSpace(c.Query("client_protocol"))); clientProtocol != "" && clientProtocol != "all" {
+		lf.ClientProtocol = clientProtocol
 	}
 
 	// API令牌ID过滤

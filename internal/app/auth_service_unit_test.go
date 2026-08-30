@@ -120,6 +120,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 			"t1": {usedMicroUSD: 20, limitMicroUSD: 30, dayKey: model.CurrentLocalDayKey()},
 			"t0": {usedMicroUSD: 20, limitMicroUSD: 0, dayKey: model.CurrentLocalDayKey()},
 		},
+		authTokenMonthlyLimits: map[string]monthlyTokenCostLimit{
+			"t1": {usedMicroUSD: 10, limitMicroUSD: 40, monthKey: model.CurrentLocalMonthKey()},
+			"t0": {usedMicroUSD: 10, limitMicroUSD: 0, monthKey: model.CurrentLocalMonthKey()},
+		},
 	}
 
 	used, limit, exceeded := s.IsCostLimitExceeded("missing")
@@ -140,6 +144,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 	if used != 20 || limit != 30 || exceeded {
 		t.Fatalf("t1 daily before add: got (%d,%d,%v), want (20,30,false)", used, limit, exceeded)
 	}
+	used, limit, exceeded = s.IsMonthlyCostLimitExceeded("t1")
+	if used != 10 || limit != 40 || exceeded {
+		t.Fatalf("t1 monthly before add: got (%d,%d,%v), want (10,40,false)", used, limit, exceeded)
+	}
 
 	s.AddCostToCache("t1", 0)
 	s.AddCostToCache("t1", -1)
@@ -153,6 +161,10 @@ func TestAuthService_CostLimit(t *testing.T) {
 	used, limit, exceeded = s.IsDailyCostLimitExceeded("t1")
 	if used != 80 || limit != 30 || !exceeded {
 		t.Fatalf("t1 daily after add: got (%d,%d,%v), want (80,30,true)", used, limit, exceeded)
+	}
+	used, limit, exceeded = s.IsMonthlyCostLimitExceeded("t1")
+	if used != 70 || limit != 40 || !exceeded {
+		t.Fatalf("t1 monthly after add: got (%d,%d,%v), want (70,40,true)", used, limit, exceeded)
 	}
 }
 
@@ -181,11 +193,14 @@ func TestReloadAuthTokens_DoesNotRegressUsage(t *testing.T) {
 	const hash = "p0-token-hash" // DB 中存哈希；ReloadAuthTokens 直接将其作为内存 map key
 	stub := &reloadStubStore{
 		tokens: []*model.AuthToken{{
-			Token:             hash,
-			ID:                1,
-			CostUsedMicroUSD:  100, // DB 落盘值（滞后）
-			CostLimitMicroUSD: 1000,
-			MaxConcurrency:    1,
+			Token:                    hash,
+			ID:                       1,
+			CostUsedMicroUSD:         100, // DB 落盘值（滞后）
+			CostLimitMicroUSD:        1000,
+			MonthlyCostUsedMicroUSD:  100,
+			MonthlyCostLimitMicroUSD: 1000,
+			MonthlyCostMonthKey:      model.CurrentLocalMonthKey(),
+			MaxConcurrency:           1,
 		}},
 	}
 
@@ -212,6 +227,55 @@ func TestReloadAuthTokens_DoesNotRegressUsage(t *testing.T) {
 	}
 	if used, _, _ := s.IsCostLimitExceeded(hash); used != 150 {
 		t.Fatalf("reload regressed in-memory usage: used=%d, want 150 (DB lagging value must not overwrite memory)", used)
+	}
+	if used, _, _ := s.IsMonthlyCostLimitExceeded(hash); used != 150 {
+		t.Fatalf("reload regressed in-memory monthly usage: used=%d, want 150", used)
+	}
+}
+
+func TestAuthService_MonthlyCostLimitResetsOnNewMonth(t *testing.T) {
+	t.Parallel()
+
+	s := &AuthService{
+		authTokenMonthlyLimits: map[string]monthlyTokenCostLimit{
+			"t1": {usedMicroUSD: 100, limitMicroUSD: 200, monthKey: 200001},
+		},
+	}
+
+	used, limit, exceeded := s.IsMonthlyCostLimitExceeded("t1")
+	if used != 0 || limit != 200 || exceeded {
+		t.Fatalf("monthly reset: got (%d,%d,%v), want (0,200,false)", used, limit, exceeded)
+	}
+}
+
+func TestReloadAuthTokens_InheritsMonthlyCostLimit(t *testing.T) {
+	t.Parallel()
+
+	const hash = "monthly-group-token"
+	stub := &reloadStubStore{
+		tokens: []*model.AuthToken{{
+			Token:                    hash,
+			ID:                       1,
+			GroupID:                  9,
+			InheritQuota:             true,
+			MonthlyCostUsedMicroUSD:  25,
+			MonthlyCostLimitMicroUSD: 100,
+			MonthlyCostMonthKey:      model.CurrentLocalMonthKey(),
+		}},
+		groups: []*model.AuthTokenGroup{{
+			ID:                       9,
+			MonthlyCostLimitMicroUSD: 500,
+		}},
+	}
+	s := newTestAuthService(t)
+	s.store = stub
+	if err := s.ReloadAuthTokens(); err != nil {
+		t.Fatalf("ReloadAuthTokens: %v", err)
+	}
+
+	used, limit, exceeded := s.IsMonthlyCostLimitExceeded(hash)
+	if used != 25 || limit != 500 || exceeded {
+		t.Fatalf("inherited monthly limit: got (%d,%d,%v), want (25,500,false)", used, limit, exceeded)
 	}
 }
 

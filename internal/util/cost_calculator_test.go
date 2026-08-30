@@ -319,6 +319,8 @@ func TestOpenAIServiceTierMultiplier(t *testing.T) {
 		multiplier float64
 	}{
 		{"gpt-5.6", "priority", 2.5},
+		{"gpt-5.6", "auto", 2.5},
+		{"gpt-5.6", "ultrafast", 10.0},
 		{"gpt-5.6-sol", "priority", 2.5},
 		{"gpt-5.6-terra", "flex", 0.5},
 		{"gpt-5.6-luna-2026-06-26", "priority", 2.5},
@@ -330,7 +332,7 @@ func TestOpenAIServiceTierMultiplier(t *testing.T) {
 		{"gpt-5", "flex", 0.5},
 		{"gpt-5", "default", 1.0},
 		{"gpt-5", "", 1.0},
-		{"gpt-5", "auto", 1.0},
+		{"gpt-5", "auto", 2.0},
 		{"gpt-4o", "priority", 2.0},
 		{"gpt-4.1-mini", "flex", 0.5},
 		{"o3", "priority", 2.0},
@@ -399,7 +401,8 @@ func TestServiceTierCostMultiplier(t *testing.T) {
 		{model: "gpt-5.6", tier: "priority", want: 2.5},
 		{model: "gpt-5.4", tier: "fast", want: 2.0},
 		{model: "gpt-5", tier: "flex", want: 0.5},
-		{model: "claude-opus-4-6", tier: "fast", want: 6.0},
+		{model: "claude-opus-4-8", tier: "fast", want: 2.0},
+		{model: "claude-opus-4-6", tier: "fast", want: 1.0},
 		{model: "qwen3.5-plus", tier: "priority", want: 1.0},
 		{model: "gpt-5.6", tier: "default", want: 1.0},
 	}
@@ -1370,9 +1373,12 @@ func TestIsFastModeModel(t *testing.T) {
 		model string
 		want  bool
 	}{
-		{"claude-opus-4-6", true},
-		{"claude-opus-4-6-20260301", true},
-		{"Claude-Opus-4-6", true}, // 大小写不敏感
+		{"claude-opus-5", true},
+		{"claude-opus-5-20260801", true},
+		{"claude-opus-4-8", true},
+		{"claude-opus-4-8-20260701", true},
+		{"Claude-Opus-4-8", true}, // 大小写不敏感
+		{"claude-opus-4-6", false},
 		{"claude-opus-4-5", false},
 		{"claude-sonnet-4-6", false},
 		{"gpt-5", false},
@@ -1387,11 +1393,11 @@ func TestIsFastModeModel(t *testing.T) {
 
 func TestCalculateFastModeCost_Basic(t *testing.T) {
 	// 场景：Fast mode 基础输入/输出
-	// Input: 1000 × $30 / 1M = $0.030
-	// Output: 2000 × $150 / 1M = $0.300
-	// Total: $0.330
+	// Input: 1000 × $10 / 1M = $0.010
+	// Output: 2000 × $50 / 1M = $0.100
+	// Total: $0.110
 	cost := CalculateFastModeCost(1000, 2000, 0, 0, 0)
-	expected := 0.330
+	expected := 0.110
 	if !floatEquals(cost, expected, 0.000001) {
 		t.Errorf("Fast mode 基础成本 = %.6f, 期望 %.6f", cost, expected)
 	}
@@ -1399,16 +1405,16 @@ func TestCalculateFastModeCost_Basic(t *testing.T) {
 
 func TestCalculateFastModeCost_WithCache(t *testing.T) {
 	// 场景：Fast mode + 缓存
-	// [P1-3] 缓存成本基于「基础 input 价 $5」而非 fast 价 $30
+	// [P1-3] 缓存成本基于「基础 input 价 $5」而非 fast 价 $10
 	//   （缓存倍率常量定义为相对基础 input 价，且与标准计费路径 CalculateCostDetailed 一致）
-	// Input:  1000 × $30 / 1M = $0.030000（input/output 仍按 fast 价）
-	// Output: 500 × $150 / 1M = $0.075000
+	// Input:  1000 × $10 / 1M = $0.010000（input/output 仍按 fast 价）
+	// Output: 500 × $50 / 1M = $0.025000
 	// Cache Read: 5000 × ($5 × 0.1) / 1M  = $0.002500
 	// 5m Write:   2000 × ($5 × 1.25) / 1M = $0.012500
 	// 1h Write:   1000 × ($5 × 2.0) / 1M  = $0.010000
-	// Total: $0.130000
+	// Total: $0.060000
 	cost := CalculateFastModeCost(1000, 500, 5000, 2000, 1000)
-	expected := 0.130
+	expected := 0.060
 	if !floatEquals(cost, expected, 0.000001) {
 		t.Errorf("Fast mode 缓存成本 = %.6f, 期望 %.6f", cost, expected)
 	}
@@ -1417,10 +1423,10 @@ func TestCalculateFastModeCost_WithCache(t *testing.T) {
 func TestCalculateFastModeCost_VsStandard(t *testing.T) {
 	// 验证 fast mode 与标准模式的价格差异
 	// 标准模式统一价格: Input=$5, Output=$25（全1M窗口）
-	// Fast mode 统一: Input=$30, Output=$150
+	// Fast mode 统一: Input=$10, Output=$50
 	inputTokens := 250000
 
-	standardCost := CalculateCostDetailed("claude-opus-4-6", inputTokens, 1000, 0, 0, 0)
+	standardCost := CalculateCostDetailed("claude-opus-5", inputTokens, 1000, 0, 0, 0)
 	fastCost := CalculateFastModeCost(inputTokens, 1000, 0, 0, 0)
 
 	// 标准: 250000×$5/1M + 1000×$25/1M = $1.275
@@ -1429,15 +1435,15 @@ func TestCalculateFastModeCost_VsStandard(t *testing.T) {
 		t.Errorf("标准模式成本 = %.6f, 期望 %.6f", standardCost, expectedStandard)
 	}
 
-	// Fast: 250000×$30/1M + 1000×$150/1M = $7.65
-	expectedFast := 7.65
+	// Fast: 250000×$10/1M + 1000×$50/1M = $2.55
+	expectedFast := 2.55
 	if !floatEquals(fastCost, expectedFast, 0.000001) {
 		t.Errorf("Fast mode 成本 = %.6f, 期望 %.6f", fastCost, expectedFast)
 	}
 
-	// Opus 4.6 全窗口统一价格后，fast mode 恰好是标准的6倍（$30/$5, $150/$25）
-	if !floatEquals(fastCost, standardCost*6.0, 0.000001) {
-		t.Errorf("Fast mode 应为标准成本的6倍: fast=%.6f, standard×6=%.6f", fastCost, standardCost*6.0)
+	// Opus 5/4.8 fast mode 是标准价格的2倍（$10/$5, $50/$25）
+	if !floatEquals(fastCost, standardCost*2.0, 0.000001) {
+		t.Errorf("Fast mode 应为标准成本的2倍: fast=%.6f, standard×2=%.6f", fastCost, standardCost*2.0)
 	}
 }
 

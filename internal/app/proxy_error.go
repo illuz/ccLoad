@@ -172,6 +172,7 @@ func (s *Server) logProxyResult(
 		APIKeyUsed:              selectedKey,
 		AuthTokenID:             reqCtx.tokenID,
 		AuthTokenKey:            reqCtx.tokenKey,
+		ClientProtocol:          reqCtx.clientProtocol,
 		ClientIP:                reqCtx.clientIP,
 		BaseURL:                 reqCtx.baseURL,
 		Result:                  res,
@@ -627,6 +628,13 @@ func (s *Server) handleProxyErrorResponse(
 		classification.KeyCooldownReason == "model_cooldown" ||
 		util.IsModelScopedHTTPStatus(res.Status) ||
 		util.IsModelScopedStreamFailure(res.Status)
+	if capabilityKey, ok := protocolCapabilityKeyForRequest(cfg, reqCtx, reqCtx.baseURL); ok &&
+		shouldCacheProtocolUnsupported(res.Status, failure.modelScoped) {
+		s.protocolCapabilities.markUnsupported(capabilityKey)
+		failure.protocolCapabilityMissing = true
+		failure.nextAction = cooldown.ActionRetryChannel
+		return failure, cooldown.ActionRetryChannel
+	}
 
 	if res.Status == util.StatusCodexReasoningGuard {
 		// Codex Guard 是令牌级保护策略命中，不代表当前渠道或 Key 健康异常。

@@ -46,6 +46,7 @@ type AuthService struct {
 	authTokenCodexGuards     map[string]bool                     // Token哈希 → 是否启用 Codex reasoning guard（2026-07新增）
 	authTokenCostLimits      map[string]tokenCostLimit           // Token哈希 → 费用限额状态（仅限额>0的令牌）
 	authTokenDailyCostLimits map[string]dailyTokenCostLimit      // Token哈希 → 当日费用限额状态（仅限额>0的令牌）
+	authTokenMonthlyLimits   map[string]monthlyTokenCostLimit    // Token哈希 → 当月费用限额状态（仅限额>0的令牌）
 	authTokenMaxConns        map[string]int                      // Token哈希 → 最大并发请求数（0=无限制）
 	authTokenActiveReqs      map[string]int                      // Token哈希 → 当前进行中请求数
 	authTokensMux            sync.RWMutex                        // 并发保护（支持热更新）
@@ -76,6 +77,12 @@ type dailyTokenCostLimit struct {
 	dayKey            int
 }
 
+type monthlyTokenCostLimit struct {
+	usedMicroUSD  int64
+	limitMicroUSD int64
+	monthKey      int
+}
+
 func (v dailyTokenCostLimit) resetForDay(dayKey int) dailyTokenCostLimit {
 	if v.dayKey == dayKey {
 		return v
@@ -83,6 +90,15 @@ func (v dailyTokenCostLimit) resetForDay(dayKey int) dailyTokenCostLimit {
 	v.usedMicroUSD = 0
 	v.limitMicroUSD = v.baseLimitMicroUSD
 	v.dayKey = dayKey
+	return v
+}
+
+func (v monthlyTokenCostLimit) resetForMonth(monthKey int) monthlyTokenCostLimit {
+	if v.monthKey == monthKey {
+		return v
+	}
+	v.usedMicroUSD = 0
+	v.monthKey = monthKey
 	return v
 }
 
@@ -109,6 +125,7 @@ func NewAuthService(
 		authTokenCodexGuards:     make(map[string]bool),
 		authTokenCostLimits:      make(map[string]tokenCostLimit),
 		authTokenDailyCostLimits: make(map[string]dailyTokenCostLimit),
+		authTokenMonthlyLimits:   make(map[string]monthlyTokenCostLimit),
 		authTokenMaxConns:        make(map[string]int),
 		authTokenActiveReqs:      make(map[string]int),
 		loginRateLimiter:         loginRateLimiter,
@@ -417,6 +434,7 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 			delete(s.authTokenCodexGuards, tokenHash)
 			delete(s.authTokenCostLimits, tokenHash)
 			delete(s.authTokenDailyCostLimits, tokenHash)
+			delete(s.authTokenMonthlyLimits, tokenHash)
 			delete(s.authTokenMaxConns, tokenHash)
 			s.authTokensMux.Unlock()
 
@@ -598,9 +616,11 @@ func (s *AuthService) ReloadAuthTokens() error {
 	newTokenCodexGuards := make(map[string]bool, len(tokens))
 	newTokenCostLimits := make(map[string]tokenCostLimit, len(tokens))
 	newTokenDailyCostLimits := make(map[string]dailyTokenCostLimit, len(tokens))
+	newTokenMonthlyLimits := make(map[string]monthlyTokenCostLimit, len(tokens))
 	newTokenMaxConns := make(map[string]int, len(tokens))
 	for _, t := range tokens {
 		t.NormalizeDailyCostForToday()
+		t.NormalizeMonthlyCostForCurrentMonth()
 		group := groupByID[t.GroupID]
 		baseDailyLimitMicro := t.DailyCostLimitMicroUSD
 		if group != nil && t.GroupID > 0 && t.GroupID == group.ID && t.InheritQuota {
@@ -649,6 +669,14 @@ func (s *AuthService) ReloadAuthTokens() error {
 				dayKey:            t.DailyCostDayKey,
 			}
 		}
+		monthlyLimitMicro := t.MonthlyCostLimitMicroUSD
+		if monthlyLimitMicro > 0 {
+			newTokenMonthlyLimits[t.Token] = monthlyTokenCostLimit{
+				usedMicroUSD:  t.MonthlyCostUsedMicroUSD,
+				limitMicroUSD: monthlyLimitMicro,
+				monthKey:      t.MonthlyCostMonthKey,
+			}
+		}
 		if t.MaxConcurrency > 0 {
 			newTokenMaxConns[t.Token] = t.MaxConcurrency
 		}
@@ -677,6 +705,17 @@ func (s *AuthService) ReloadAuthTokens() error {
 		}
 		newTokenDailyCostLimits[tok] = lim
 	}
+	currentMonthKey := model.CurrentLocalMonthKey()
+	for tok, lim := range newTokenMonthlyLimits {
+		lim = lim.resetForMonth(currentMonthKey)
+		if old, ok := s.authTokenMonthlyLimits[tok]; ok {
+			old = old.resetForMonth(currentMonthKey)
+			if old.monthKey == lim.monthKey && old.usedMicroUSD > lim.usedMicroUSD {
+				lim.usedMicroUSD = old.usedMicroUSD
+			}
+		}
+		newTokenMonthlyLimits[tok] = lim
+	}
 	s.authTokens = newTokens
 	s.authTokenIDs = newTokenIDs
 	s.authTokenModels = newTokenModels
@@ -684,6 +723,7 @@ func (s *AuthService) ReloadAuthTokens() error {
 	s.authTokenCodexGuards = newTokenCodexGuards
 	s.authTokenCostLimits = newTokenCostLimits
 	s.authTokenDailyCostLimits = newTokenDailyCostLimits
+	s.authTokenMonthlyLimits = newTokenMonthlyLimits
 	s.authTokenMaxConns = newTokenMaxConns
 	s.authTokensMux.Unlock()
 
@@ -700,8 +740,8 @@ func (s *AuthService) getAllowedModelSet(tokenHash string) (map[string]struct{},
 	}
 
 	allowedSet := make(map[string]struct{}, len(allowedModels))
-	for _, model := range allowedModels {
-		allowedSet[strings.ToLower(model)] = struct{}{}
+	for _, modelName := range allowedModels {
+		allowedSet[strings.ToLower(model.RoutingModelName(modelName))] = struct{}{}
 	}
 	return allowedSet, true
 }
@@ -715,9 +755,9 @@ func (s *AuthService) FilterAllowedModels(tokenHash string, models []string) []s
 	}
 
 	filtered := make([]string, 0, len(models))
-	for _, model := range models {
-		if _, ok := allowedSet[strings.ToLower(model)]; ok {
-			filtered = append(filtered, model)
+	for _, modelName := range models {
+		if _, ok := allowedSet[strings.ToLower(model.RoutingModelName(modelName))]; ok {
+			filtered = append(filtered, modelName)
 		}
 	}
 	return filtered
@@ -725,12 +765,12 @@ func (s *AuthService) FilterAllowedModels(tokenHash string, models []string) []s
 
 // IsModelAllowed 检查令牌是否允许访问指定模型
 // 如果令牌没有模型限制，返回 true
-func (s *AuthService) IsModelAllowed(tokenHash, model string) bool {
+func (s *AuthService) IsModelAllowed(tokenHash, modelName string) bool {
 	allowedSet, hasRestriction := s.getAllowedModelSet(tokenHash)
 	if !hasRestriction {
 		return true // 无限制
 	}
-	_, ok := allowedSet[strings.ToLower(model)]
+	_, ok := allowedSet[strings.ToLower(model.RoutingModelName(modelName))]
 	return ok
 }
 
@@ -851,6 +891,25 @@ func (s *AuthService) IsDailyCostLimitExceeded(tokenHash string) (usedMicroUSD, 
 	return v.usedMicroUSD, v.limitMicroUSD, v.usedMicroUSD >= v.limitMicroUSD
 }
 
+// IsMonthlyCostLimitExceeded 检查令牌是否超过当月费用限额（微美元）。
+func (s *AuthService) IsMonthlyCostLimitExceeded(tokenHash string) (usedMicroUSD, limitMicroUSD int64, exceeded bool) {
+	currentMonthKey := model.CurrentLocalMonthKey()
+
+	s.authTokensMux.Lock()
+	v, ok := s.authTokenMonthlyLimits[tokenHash]
+	if !ok || v.limitMicroUSD <= 0 {
+		s.authTokensMux.Unlock()
+		return 0, 0, false
+	}
+	if v.monthKey != currentMonthKey {
+		v = v.resetForMonth(currentMonthKey)
+		s.authTokenMonthlyLimits[tokenHash] = v
+	}
+	s.authTokensMux.Unlock()
+
+	return v.usedMicroUSD, v.limitMicroUSD, v.usedMicroUSD >= v.limitMicroUSD
+}
+
 // AddCostToCache 原子更新令牌的已消耗费用缓存
 // 仅更新内存缓存，数据库更新由 UpdateTokenStats 异步处理
 func (s *AuthService) AddCostToCache(tokenHash string, deltaMicroUSD int64) {
@@ -872,6 +931,15 @@ func (s *AuthService) AddCostToCache(tokenHash string, deltaMicroUSD int64) {
 		}
 		daily.usedMicroUSD += deltaMicroUSD
 		s.authTokenDailyCostLimits[tokenHash] = daily
+	}
+	monthly, ok := s.authTokenMonthlyLimits[tokenHash]
+	if ok && monthly.limitMicroUSD > 0 {
+		currentMonthKey := model.CurrentLocalMonthKey()
+		if monthly.monthKey != currentMonthKey {
+			monthly = monthly.resetForMonth(currentMonthKey)
+		}
+		monthly.usedMicroUSD += deltaMicroUSD
+		s.authTokenMonthlyLimits[tokenHash] = monthly
 	}
 	s.authTokensMux.Unlock()
 }

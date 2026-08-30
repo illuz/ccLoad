@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -191,6 +190,105 @@ func TestProxy_Success_NonStreaming(t *testing.T) {
 	}
 	if resp["id"] != "chatcmpl-1" {
 		t.Fatalf("expected id=chatcmpl-1, got %v", resp["id"])
+	}
+}
+
+func TestProxy_ThinkingSuffixRoutesAndSendsBaseModel(t *testing.T) {
+	t.Parallel()
+
+	received := make(chan map[string]any, 1)
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode upstream body: %v", err)
+		}
+		received <- body
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-suffix","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstream.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{{
+		name: "suffix-route", models: "gpt-5.6-luna", channelType: util.ChannelTypeOpenAI,
+	}}, map[int]string{0: upstream.URL})
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":            "gpt-5.6-luna(max)",
+		"reasoning_effort": "low",
+		"messages":         []map[string]string{{"role": "user", "content": "hi"}},
+	}, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, body=%s", w.Code, w.Body.String())
+	}
+	body := <-received
+	if body["model"] != "gpt-5.6-luna" {
+		t.Fatalf("upstream model=%v, want base model", body["model"])
+	}
+	if body["reasoning_effort"] != "xhigh" {
+		t.Fatalf("upstream reasoning_effort=%v, want xhigh", body["reasoning_effort"])
+	}
+}
+
+func TestProxy_UpstreamProtocolCapabilityWaitsBeforeReprobe(t *testing.T) {
+	var unsupportedHits atomic.Int64
+	unsupported := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		unsupportedHits.Add(1)
+		http.Error(w, "endpoint not found", http.StatusNotFound)
+	}))
+	defer unsupported.Close()
+
+	var fallbackHits atomic.Int64
+	fallback := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fallbackHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-fallback","choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer fallback.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{
+			name:                  "upstream-protocol-probe",
+			channelType:           util.ChannelTypeAnthropic,
+			protocolTransformMode: model.ProtocolTransformModeUpstream,
+			protocolTransforms:    []string{util.ChannelTypeOpenAI},
+			models:                "gpt-4",
+			priority:              200,
+		},
+		{name: "native-fallback", channelType: util.ChannelTypeOpenAI, models: "gpt-4", priority: 100},
+	}, map[int]string{0: unsupported.URL, 1: fallback.URL})
+
+	request := func() *httptest.ResponseRecorder {
+		return doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+			"model":    "gpt-4",
+			"messages": []map[string]string{{"role": "user", "content": "hi"}},
+		}, nil)
+	}
+	for i := 0; i < 2; i++ {
+		if w := request(); w.Code != http.StatusOK {
+			t.Fatalf("request %d status=%d, body=%s", i+1, w.Code, w.Body.String())
+		}
+	}
+	if got := unsupportedHits.Load(); got != 1 {
+		t.Fatalf("unsupported endpoint hits=%d, want one probe before retry deadline", got)
+	}
+	if got := fallbackHits.Load(); got != 2 {
+		t.Fatalf("fallback endpoint hits=%d, want 2", got)
+	}
+
+	configs, err := env.store.ListConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListConfigs failed: %v", err)
+	}
+	var probeChannelID int64
+	for _, cfg := range configs {
+		if cfg.Name == "upstream-protocol-probe" {
+			probeChannelID = cfg.ID
+			break
+		}
+	}
+	summary := env.server.protocolCapabilities.unsupportedRetrySummaries(time.Now())[probeChannelID]
+	if probeChannelID == 0 || summary.count != 1 || !summary.retryAt.After(time.Now()) {
+		t.Fatalf("pending protocol retry summary=%+v for channel %d", summary, probeChannelID)
 	}
 }
 
@@ -2614,6 +2712,60 @@ func TestProxy_Success_Streaming_CodexCompletedWithoutEOF(t *testing.T) {
 	}
 }
 
+func TestProxy_Success_Streaming_AnthropicMessageStopWithoutEOF(t *testing.T) {
+	sse := []byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"usage\":{\"input_tokens\":7,\"output_tokens\":0}}}\n\n" +
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":4}}\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	trailing := []byte("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"late\"}}\n\n")
+	upstreamData := append(append([]byte(nil), sse...), trailing...)
+	upstreamBody := newDataThenBlockReadCloser(upstreamData, len(upstreamData))
+	defer func() { _ = upstreamBody.Close() }()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "anthropic-no-eof", channelType: "anthropic", models: "claude-sonnet", apiKey: "sk-anthropic"},
+	}, map[int]string{0: "https://anthropic-upstream.example.com"})
+	env.server.client = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       upstreamBody,
+			}, nil
+		}),
+	}
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- doProxyRequest(t, env.engine, http.MethodPost, "/v1/messages", map[string]any{
+			"model":      "claude-sonnet",
+			"stream":     true,
+			"max_tokens": 32,
+			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		}, nil)
+	}()
+
+	var w *httptest.ResponseRecorder
+	select {
+	case w = <-done:
+	case <-time.After(2 * time.Second):
+		_ = upstreamBody.Close()
+		<-done
+		t.Fatal("Anthropic stream waited for upstream EOF after message_stop")
+	}
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != string(sse) {
+		t.Fatalf("forwarded SSE mismatch:\n got: %q\nwant: %q", w.Body.String(), string(sse))
+	}
+	select {
+	case <-upstreamBody.closed:
+	default:
+		t.Fatal("stream returned without closing the upstream body")
+	}
+}
+
 func TestProxy_Success_NonStreaming_CodexToOpenAITransform(t *testing.T) {
 	t.Parallel()
 
@@ -3597,12 +3749,6 @@ func TestProxy_MultiURLFirstByteTimeout_DoesNotRetryOrCooldownAnotherURL(t *test
 
 	// 已探测 URL 排在未探测 URL 之后，稳定让 timeout URL 成为首跳。
 	env.server.urlSelector.RecordLatency(channelID, upstreamOK.URL, 10*time.Millisecond)
-	env.server.urlSelector.probeDial = func(context.Context, string, string) (net.Conn, error) {
-		conn, peer := net.Pipe()
-		_ = peer.Close()
-		return conn, nil
-	}
-
 	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
 		"model":    "gpt-4",
 		"stream":   true,
@@ -3700,87 +3846,6 @@ func TestProxy_MultiURLFirstAttempt_UsesWeightedRandom(t *testing.T) {
 	}
 	if slow < 5 {
 		t.Fatalf("expected slow URL to be selected sometimes (not deterministic first pick), fast=%d slow=%d", fast, slow)
-	}
-}
-
-func TestProxy_MultiURLProbeCanceledByShutdown_DoesNotPolluteCooldown(t *testing.T) {
-	upstreamA := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"from-a","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
-	}))
-	defer upstreamA.Close()
-
-	upstreamB := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"from-b","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
-	}))
-	defer upstreamB.Close()
-
-	env := setupProxyTestEnv(t, []testChannel{
-		{name: "ch-probe-shutdown", models: "gpt-4", apiKey: "sk-1"},
-	}, map[int]string{
-		0: upstreamA.URL + "\n" + upstreamB.URL,
-	})
-
-	env.server.urlSelector.probeTimeout = 5 * time.Second
-	started := make(chan struct{}, 2)
-	env.server.urlSelector.probeDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		started <- struct{}{}
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
-
-	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
-		"model":    "gpt-4",
-		"messages": []map[string]string{{"role": "user", "content": "hi"}},
-	}, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	for range 2 {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			t.Fatal("probe dial did not start in time")
-		}
-	}
-
-	configs, err := env.store.ListConfigs(context.Background())
-	if err != nil {
-		t.Fatalf("ListConfigs: %v", err)
-	}
-	if len(configs) != 1 {
-		t.Fatalf("expected 1 config, got %d", len(configs))
-	}
-	channelID := configs[0].ID
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := env.server.Shutdown(shutdownCtx); err != nil {
-		t.Fatalf("Shutdown failed: %v", err)
-	}
-
-	deadline := time.Now().Add(time.Second)
-	for {
-		env.server.urlSelector.mu.RLock()
-		probingLeft := len(env.server.urlSelector.probing)
-		env.server.urlSelector.mu.RUnlock()
-		if probingLeft == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("expected probing markers to be cleared after shutdown, got %d", probingLeft)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	for _, u := range []string{upstreamA.URL, upstreamB.URL} {
-		if env.server.urlSelector.IsCooledDown(channelID, u) {
-			t.Fatalf("expected canceled probe not to cooldown url: %s", u)
-		}
 	}
 }
 

@@ -1126,4 +1126,68 @@ func TestClientStatusFor(t *testing.T) {
 	}
 }
 
+func TestIsContextLengthExceededError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "codex code", body: `{"error":{"code":"context_length_exceeded","message":"too large"}}`, want: true},
+		{name: "responses nested", body: `{"response":{"error":{"code":"context_too_large","message":"too large"}}}`, want: true},
+		{name: "anthropic message", body: `{"type":"error","error":{"type":"invalid_request_error","message":"prompt exceeds the model context window"}}`, want: true},
+		{name: "top level streaming", body: `{"type":"invalid_request_error","code":"bad_request_error","message":"too many tokens"}`, want: true},
+		{name: "unrelated bad request", body: `{"error":{"type":"invalid_request_error","message":"invalid tool name"}}`},
+		{name: "non json", body: `context length exceeded`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsContextLengthExceededError([]byte(tt.body)); got != tt.want {
+				t.Fatalf("IsContextLengthExceededError()=%v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyContextLengthExceededAsClientError(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"maximum context length exceeded"}}`)
+	for _, status := range []int{400, 413, StatusSSEError} {
+		classification := ClassifyHTTPResponseWithMeta(status, nil, body)
+		if classification.Level != ErrorLevelClient || classification.ModelScoped {
+			t.Fatalf("status=%d classification=%+v, want client error", status, classification)
+		}
+	}
+}
+
+func TestStructuredQuotaResetMetadata(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+	timestamp := now.Add(17 * time.Minute).Format(time.RFC3339)
+	body := []byte(`{"error":{"status":"RESOURCE_EXHAUSTED","details":[{"reason":"API_KEY_QUOTA_EXHAUSTED","metadata":{"model":"gemini-3.5-flash","quotaResetDelay":"9m","quotaResetTimeStamp":"` + timestamp + `"}}]}}`)
+
+	classification := classifyHTTPResponseWithMetaAt(429, nil, body, now)
+	if !classification.HasKeyCooldownUntil || !classification.KeyCooldownUntil.Equal(now.Add(17*time.Minute)) {
+		t.Fatalf("classification=%+v, want exact timestamp reset", classification)
+	}
+	if classification.KeyCooldownReason != "RESOURCE_EXHAUSTED" {
+		t.Fatalf("reason=%q, want RESOURCE_EXHAUSTED", classification.KeyCooldownReason)
+	}
+}
+
+func TestAnthropicUnifiedResetHeader(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+	want := now.Add(23 * time.Minute).Truncate(time.Second)
+	headers := map[string][]string{"anthropic-ratelimit-unified-reset": {strconv.FormatInt(want.Unix(), 10)}}
+
+	classification := classifyHTTPResponseWithMetaAt(429, headers, nil, now)
+	if !classification.ModelScoped || !classification.HasModelCooldownUntil || !classification.ModelCooldownUntil.Equal(want) {
+		t.Fatalf("classification=%+v, want exact model cooldown", classification)
+	}
+	if classification.ModelCooldownReason != "anthropic_unified_reset" {
+		t.Fatalf("reason=%q, want anthropic_unified_reset", classification.ModelCooldownReason)
+	}
+}
+
 // IsRetryableStatus 已移除：重试决策不应依赖静态状态码表，而应依赖 errorLevel/shouldRetry 等语义信息。

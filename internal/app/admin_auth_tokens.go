@@ -25,6 +25,15 @@ type optionalInt64JSON struct {
 	value *int64
 }
 
+func firstFloat64(values ...*float64) *float64 {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
 func (v *optionalInt64JSON) UnmarshalJSON(data []byte) error {
 	v.set = true
 	if string(data) == "null" {
@@ -332,6 +341,8 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		ChannelRestrictionMode string   `json:"channel_restriction_mode"`
 		CostLimitUSD           *float64 `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD      *float64 `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		MonthlyCostLimitUSD    *float64 `json:"monthly_cost_limit_usd"`
+		CostMonthlyLimitUSD    *float64 `json:"cost_monthly_limit_usd"` // 上游命名兼容
 		DailyLimitDouble       *bool    `json:"daily_limit_double_enabled"`
 		DailyLimitTriple       *bool    `json:"daily_limit_triple_enabled"`
 		DailyLimitOverrideUSD  *float64 `json:"daily_limit_override_usd"`
@@ -351,8 +362,13 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
 		return
 	}
+	monthlyCostLimitUSD := firstFloat64(req.MonthlyCostLimitUSD, req.CostMonthlyLimitUSD)
 	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
+		return
+	}
+	if monthlyCostLimitUSD != nil && *monthlyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "monthly_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.DailyLimitOverrideUSD != nil && *req.DailyLimitOverrideUSD < 0 {
@@ -434,6 +450,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	if req.DailyCostLimitUSD != nil {
 		authToken.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
 	}
+	if monthlyCostLimitUSD != nil {
+		authToken.SetMonthlyCostLimitUSD(*monthlyCostLimitUSD)
+	}
 	if err := applyDailyLimitAdjustmentRequest(authToken, req.DailyLimitDouble, req.DailyLimitTriple, req.DailyLimitOverrideUSD); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
@@ -487,6 +506,8 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"allowed_channel_ids":        authToken.AllowedChannelIDs,
 		"channel_restriction_mode":   authToken.ChannelRestrictionMode,
 		"daily_cost_limit_usd":       authToken.DailyCostLimitUSD(),
+		"monthly_cost_limit_usd":     authToken.MonthlyCostLimitUSD(),
+		"cost_monthly_limit_usd":     authToken.MonthlyCostLimitUSD(),
 		"daily_limit_double_enabled": authToken.IsDailyLimitDoubledToday(),
 		"daily_limit_triple_enabled": authToken.IsDailyLimitTripledToday(),
 		"daily_limit_override_usd":   authToken.DailyLimitOverrideUSDForToday(),
@@ -517,6 +538,8 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		ChannelRestrictionMode *string           `json:"channel_restriction_mode"`
 		CostLimitUSD           *float64          `json:"cost_limit_usd"`       // 费用上限（0=无限制）
 		DailyCostLimitUSD      *float64          `json:"daily_cost_limit_usd"` // 当日费用上限（0=无限制）
+		MonthlyCostLimitUSD    *float64          `json:"monthly_cost_limit_usd"`
+		CostMonthlyLimitUSD    *float64          `json:"cost_monthly_limit_usd"` // 上游命名兼容
 		DailyLimitDouble       *bool             `json:"daily_limit_double_enabled"`
 		DailyLimitTriple       *bool             `json:"daily_limit_triple_enabled"`
 		DailyLimitOverrideUSD  *float64          `json:"daily_limit_override_usd"`
@@ -536,8 +559,13 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		RespondErrorMsg(c, http.StatusBadRequest, "cost_limit_usd must be >= 0")
 		return
 	}
+	monthlyCostLimitUSD := firstFloat64(req.MonthlyCostLimitUSD, req.CostMonthlyLimitUSD)
 	if req.DailyCostLimitUSD != nil && *req.DailyCostLimitUSD < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "daily_cost_limit_usd must be >= 0")
+		return
+	}
+	if monthlyCostLimitUSD != nil && *monthlyCostLimitUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "monthly_cost_limit_usd must be >= 0")
 		return
 	}
 	if req.DailyLimitOverrideUSD != nil && *req.DailyLimitOverrideUSD < 0 {
@@ -623,6 +651,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.DailyCostLimitUSD != nil {
 		token.SetDailyCostLimitUSD(*req.DailyCostLimitUSD)
+	}
+	if monthlyCostLimitUSD != nil {
+		token.SetMonthlyCostLimitUSD(*monthlyCostLimitUSD)
 	}
 	if err := applyDailyLimitAdjustmentRequest(token, req.DailyLimitDouble, req.DailyLimitTriple, req.DailyLimitOverrideUSD); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())

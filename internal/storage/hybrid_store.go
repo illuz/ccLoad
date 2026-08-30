@@ -43,6 +43,23 @@ type HybridStore struct {
 	// 静默降级在生产中难以察觉，计数器 + 采样告警让运维可见，不改一致性语义
 	sqliteSyncFailCount atomic.Uint64 // SQLite 缓存同步失败累计
 	syncQueueDropCount  atomic.Uint64 // MySQL 同步队列满丢弃累计
+	mysqlSyncFailCount  atomic.Uint64 // MySQL 日志同步失败累计
+	mysqlSyncSuccessAt  atomic.Int64  // 最近一次 MySQL 日志同步成功时间（Unix 毫秒）
+}
+
+// HybridRuntimeMetrics is the in-process health snapshot exposed by HybridStore.
+type HybridRuntimeMetrics struct {
+	SQLiteSyncFailures     uint64 `json:"sqlite_sync_failures"`
+	MySQLSyncPending       int    `json:"mysql_sync_pending"`
+	MySQLSyncQueueCapacity int    `json:"mysql_sync_queue_capacity"`
+	MySQLSyncFailures      uint64 `json:"mysql_sync_failures"`
+	MySQLSyncDropped       uint64 `json:"mysql_sync_dropped"`
+	MySQLSyncLastSuccess   int64  `json:"mysql_sync_last_success_unix_ms"`
+}
+
+// HybridRuntimeMetricsProvider avoids adding hybrid-only metrics to Store.
+type HybridRuntimeMetricsProvider interface {
+	RuntimeMetrics() HybridRuntimeMetrics
 }
 
 // syncTask 同步任务
@@ -181,8 +198,11 @@ func (h *HybridStore) executeSyncTask(task *syncTask) {
 	}
 
 	if err != nil {
+		h.mysqlSyncFailCount.Add(1)
 		log.Printf("[WARN] MySQL 同步失败: %v, operation=%s", err, task.operation)
+		return
 	}
+	h.mysqlSyncSuccessAt.Store(time.Now().UnixMilli())
 }
 
 // enqueueLogSync 将日志同步任务加入队列（非阻塞，队列满则丢弃）
@@ -957,6 +977,18 @@ func (h *HybridStore) Ping(ctx context.Context) error {
 // SyncQueueLen 返回当前同步队列中待处理的任务数量（用于监控）
 func (h *HybridStore) SyncQueueLen() int {
 	return len(h.syncCh)
+}
+
+// RuntimeMetrics returns current queue state and process-lifetime failure counters.
+func (h *HybridStore) RuntimeMetrics() HybridRuntimeMetrics {
+	return HybridRuntimeMetrics{
+		SQLiteSyncFailures:     h.sqliteSyncFailCount.Load(),
+		MySQLSyncPending:       len(h.syncCh),
+		MySQLSyncQueueCapacity: cap(h.syncCh),
+		MySQLSyncFailures:      h.mysqlSyncFailCount.Load(),
+		MySQLSyncDropped:       h.syncQueueDropCount.Load(),
+		MySQLSyncLastSuccess:   h.mysqlSyncSuccessAt.Load(),
+	}
 }
 
 func (h *HybridStore) Close() error {

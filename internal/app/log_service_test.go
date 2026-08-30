@@ -196,6 +196,25 @@ func TestAddLogAsync_ChannelFull_Drops(t *testing.T) {
 	}
 }
 
+func TestLogServiceRuntimeMetrics(t *testing.T) {
+	t.Parallel()
+
+	shutdownCh := make(chan struct{})
+	var wg sync.WaitGroup
+	svc := NewLogService(nil, nil, 3, 0, 3, shutdownCh, &atomic.Bool{}, &wg)
+	svc.logDropCount.Store(4)
+	svc.logFailCount.Store(5)
+	svc.logChan <- &model.LogEntry{}
+
+	got := svc.runtimeMetrics()
+	if got.DroppedEntries != 4 || got.PersistenceFailedEntries != 5 {
+		t.Fatalf("failure counters=%+v", got)
+	}
+	if got.BacklogEntries != 1 || got.QueueCapacityEntries != 3 {
+		t.Fatalf("queue metrics=%+v", got)
+	}
+}
+
 // TestAddLogAsync_AfterShutdown_Noop 验证 shutdown 后不再投递日志
 func TestAddLogAsync_AfterShutdown_Noop(t *testing.T) {
 	shutdownCh := make(chan struct{})
@@ -267,6 +286,9 @@ func TestFlushLogs_ShutdownDisablesRetries(t *testing.T) {
 
 	if store.attempts != 1 {
 		t.Fatalf("关停阶段应仅尝试一次刷盘，实际尝试次数=%d", store.attempts)
+	}
+	if got := svc.runtimeMetrics().PersistenceFailedEntries; got != 1 {
+		t.Fatalf("persistence failed entries=%d, want 1", got)
 	}
 }
 

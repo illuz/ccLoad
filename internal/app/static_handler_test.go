@@ -255,7 +255,7 @@ func TestChannelsTemplateNameLineLayout(t *testing.T) {
 	checks := []string{
 		`<div class="ch-name-main">`,
 		`{{{typeBadge}}}<strong>{{name}}</strong>{{{protocolTransformBadges}}}`,
-		`<div class="ch-action-statuses">{{{cooldownBadge}}}</div>`,
+		`<div class="ch-action-statuses">{{{cooldownBadge}}}{{{protocolProbeBadge}}}</div>`,
 	}
 	for _, want := range checks {
 		if !strings.Contains(body, want) {

@@ -234,11 +234,17 @@ func (c *Config) Clone() *Config {
 // GetModels 获取所有已启用的模型名称列表
 func (c *Config) GetModels() []string {
 	models := make([]string, 0, len(c.ModelEntries))
+	seen := make(map[string]struct{}, len(c.ModelEntries))
 	for _, e := range c.ModelEntries {
 		if e.Disabled {
 			continue
 		}
-		models = append(models, e.Model)
+		name := RoutingModelName(e.Model)
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		models = append(models, name)
 	}
 	return models
 }
@@ -363,11 +369,26 @@ func (c *Config) buildIndexIfNeeded() {
 		}
 		c.modelIndex[c.ModelEntries[i].Model] = &c.ModelEntries[i]
 	}
+	// A configured suffixed entry is an alias for its routing identity. An
+	// explicit base entry wins when both forms are present.
+	for i := range c.ModelEntries {
+		if c.ModelEntries[i].Disabled {
+			continue
+		}
+		base := RoutingModelName(c.ModelEntries[i].Model)
+		if base == c.ModelEntries[i].Model {
+			continue
+		}
+		if _, exists := c.modelIndex[base]; !exists {
+			c.modelIndex[base] = &c.ModelEntries[i]
+		}
+	}
 }
 
 // GetRedirectModel 获取模型的重定向目标
 // 返回 (目标模型, 是否有重定向)
 func (c *Config) GetRedirectModel(model string) (string, bool) {
+	model = RoutingModelName(model)
 	c.buildIndexIfNeeded()
 	c.indexMu.RLock()
 	defer c.indexMu.RUnlock()
@@ -379,6 +400,7 @@ func (c *Config) GetRedirectModel(model string) (string, bool) {
 
 // SupportsModel 检查渠道是否支持指定模型
 func (c *Config) SupportsModel(model string) bool {
+	model = RoutingModelName(model)
 	c.buildIndexIfNeeded()
 	c.indexMu.RLock()
 	defer c.indexMu.RUnlock()
@@ -388,6 +410,7 @@ func (c *Config) SupportsModel(model string) bool {
 
 // GetFixedCostPerRequest 获取模型按次价格（美元）
 func (c *Config) GetFixedCostPerRequest(model string) (float64, bool) {
+	model = RoutingModelName(model)
 	c.buildIndexIfNeeded()
 	c.indexMu.RLock()
 	defer c.indexMu.RUnlock()
@@ -456,19 +479,26 @@ type ChannelWithKeys struct {
 // 当精确匹配失败时，查找包含 query 子串的模型，按版本排序返回最新的
 // 返回 (匹配到的模型名, 是否匹配成功)
 func (c *Config) FuzzyMatchModel(query string) (string, bool) {
+	query = RoutingModelName(query)
 	if query == "" {
 		return "", false
 	}
 
 	queryLower := strings.ToLower(query)
 	var matches []string
+	seen := make(map[string]struct{}, len(c.ModelEntries))
 
 	for _, entry := range c.ModelEntries {
 		if entry.Disabled {
 			continue
 		}
-		if strings.Contains(strings.ToLower(entry.Model), queryLower) {
-			matches = append(matches, entry.Model)
+		name := RoutingModelName(entry.Model)
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		if strings.Contains(strings.ToLower(name), queryLower) {
+			seen[name] = struct{}{}
+			matches = append(matches, name)
 		}
 	}
 

@@ -695,6 +695,7 @@
       const name = restoredFilters.channelName || '';
       const range = restoredFilters.range || 'today';
       const model = restoredFilters.model || '';
+      const clientProtocol = restoredFilters.clientProtocol || '';
       const authToken = restoredFilters.authToken || '';
 
       window.initSavedDateRangeFilter({
@@ -720,6 +721,12 @@
       initStatsChannelNameCombobox(name);
       initStatsModelCombobox(model);
 
+      const clientProtocolSelect = document.getElementById('f_client_protocol');
+      if (clientProtocolSelect) {
+        clientProtocolSelect.value = clientProtocol;
+        clientProtocolSelect.addEventListener('change', applyFilter);
+      }
+
       window.initAuthTokenFilter({
         selectId: 'f_auth_token',
         value: authToken,
@@ -741,7 +748,7 @@
       window.bindFilterApplyInputs({
         apply: applyFilter,
         debounceInputIds: [],
-        enterInputIds: ['f_hours', 'f_auth_token']
+        enterInputIds: ['f_hours', 'f_client_protocol', 'f_auth_token']
       });
     }
 
@@ -1012,6 +1019,7 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
         }
       },
       { key: 'channelId', queryKeys: ['channel_id'], defaultValue: '' },
+      { key: 'clientProtocol', queryKeys: ['client_protocol'], defaultValue: '' },
       {
         key: 'channelName',
         queryKeys: ['channel_name', 'channel_name_like'],
@@ -1045,6 +1053,7 @@ ${t('stats.tooltipCost')}: $${point.cost.toFixed(4)}`;
       const model = statsModelCombobox ? statsModelCombobox.getValue() : '';
       const baseValues = window.readFilterControlValues({
         range: { id: 'f_hours', defaultValue: 'today', trim: true },
+        clientProtocol: { id: 'f_client_protocol', trim: true },
         authToken: { id: 'f_auth_token', trim: true }
       });
       const hasCustomRange = baseValues.range === 'custom' && currentStatsCustomTimeRange;

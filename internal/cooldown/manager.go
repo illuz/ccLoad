@@ -110,7 +110,22 @@ func (m *Manager) classifyDecision(in ErrorInput) cooldownDecision {
 		decision.hasChannelCooldownUntil = classification.HasChannelCooldownUntil
 		decision.channelCooldownReason = classification.ChannelCooldownReason
 
-		if decision.hasKeyCooldownUntil && decision.keyCooldownReason == "model_cooldown" {
+		// OAuth 类渠道没有独立 Key。上游返回的精确 Key 截止时间如果落到
+		// NoKeyIndex 会被丢弃，因此改为冷却当前实际模型。
+		if in.KeyIndex == NoKeyIndex && classification.HasKeyCooldownUntil {
+			decision.model = strings.TrimSpace(in.Model)
+			if decision.model == "" {
+				decision.model = strings.TrimSpace(classification.Model)
+			}
+			if decision.model != "" {
+				decision.modelScoped = true
+				decision.modelCooldownUntil = classification.KeyCooldownUntil
+			}
+		}
+
+		if decision.modelScoped {
+			// 精确配额截止时间已转换为模型级冷却。
+		} else if decision.hasKeyCooldownUntil && decision.keyCooldownReason == "model_cooldown" {
 			decision.model = strings.TrimSpace(in.Model)
 			if decision.model == "" {
 				decision.model = strings.TrimSpace(classification.Model)

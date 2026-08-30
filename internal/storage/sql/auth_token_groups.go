@@ -13,7 +13,7 @@ import (
 )
 
 const authTokenGroupSelectColumns = `
-	id, name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
+	id, name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, monthly_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
 `
 
 func scanAuthTokenGroup(scanner interface {
@@ -35,6 +35,7 @@ func scanAuthTokenGroup(scanner interface {
 		&updatedAtMs,
 		&group.CostLimitMicroUSD,
 		&group.DailyCostLimitMicroUSD,
+		&group.MonthlyCostLimitMicroUSD,
 		&allowedModelsJSON,
 		&allowedChannelIDsJSON,
 		&channelRestrictionMode,
@@ -105,15 +106,15 @@ func (s *SQLStore) CreateAuthTokenGroup(ctx context.Context, group *model.AuthTo
 
 	query := `
 		INSERT INTO auth_token_groups (
-			name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, monthly_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	args := []any{group.Name, group.Description, group.Color, group.CreatedAt.UnixMilli(), group.UpdatedAt.UnixMilli(), group.CostLimitMicroUSD, group.DailyCostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, group.ChannelRestrictionMode, group.MaxConcurrency}
+	args := []any{group.Name, group.Description, group.Color, group.CreatedAt.UnixMilli(), group.UpdatedAt.UnixMilli(), group.CostLimitMicroUSD, group.DailyCostLimitMicroUSD, group.MonthlyCostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, group.ChannelRestrictionMode, group.MaxConcurrency}
 	if group.ID > 0 {
 		query = `
 			INSERT INTO auth_token_groups (
-				id, name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, name, description, color, created_at, updated_at, cost_limit_microusd, daily_cost_limit_microusd, monthly_cost_limit_microusd, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
 		args = append([]any{group.ID}, args...)
 	}
@@ -231,12 +232,13 @@ func (s *SQLStore) UpdateAuthTokenGroup(ctx context.Context, group *model.AuthTo
 		    updated_at = ?,
 		    cost_limit_microusd = ?,
 		    daily_cost_limit_microusd = ?,
+		    monthly_cost_limit_microusd = ?,
 		    allowed_models = ?,
 		    allowed_channel_ids = ?,
 		    channel_restriction_mode = ?,
 		    max_concurrency = ?
 		WHERE id = ?
-	`, group.Name, group.Description, group.Color, group.UpdatedAt.UnixMilli(), group.CostLimitMicroUSD, group.DailyCostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, group.ChannelRestrictionMode, group.MaxConcurrency, group.ID)
+	`, group.Name, group.Description, group.Color, group.UpdatedAt.UnixMilli(), group.CostLimitMicroUSD, group.DailyCostLimitMicroUSD, group.MonthlyCostLimitMicroUSD, allowedModelsJSON, allowedChannelIDsJSON, group.ChannelRestrictionMode, group.MaxConcurrency, group.ID)
 	if err != nil {
 		return fmt.Errorf("update auth token group: %w", err)
 	}

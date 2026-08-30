@@ -14,6 +14,7 @@ import (
 
 	"ccLoad/internal/cooldown"
 	"ccLoad/internal/model"
+	"ccLoad/internal/protocol"
 	"ccLoad/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -145,6 +146,57 @@ func TestHandleListAndGetChannelIncludeDailyCostUsed(t *testing.T) {
 	if math.Abs(detailResp.Data.DailyCostUsed-1.23456) > 1e-9 {
 		t.Fatalf("detail daily_cost_used=%v, want 1.23456", detailResp.Data.DailyCostUsed)
 	}
+}
+
+func TestHandleListAndGetChannelIncludeProtocolProbeRetry(t *testing.T) {
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+
+	created, err := store.CreateConfig(context.Background(), &model.Config{
+		Name:         "protocol-reprobe-channel",
+		URL:          "https://api.example.com",
+		ChannelType:  "anthropic",
+		ModelEntries: []model.ModelEntry{{Model: "model-1"}},
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig failed: %v", err)
+	}
+	server.protocolCapabilities.markUnsupported(protocolCapabilityKey{
+		channelID:      created.ID,
+		baseURL:        created.URL,
+		clientProtocol: protocol.OpenAI,
+		requestFamily:  protocol.RequestFamilyChatCompletions,
+	})
+
+	assertRetrySummary := func(name string, got ChannelWithCooldown) {
+		t.Helper()
+		if got.ProtocolProbeRetryCount != 1 || got.ProtocolProbeRetryAt == nil {
+			t.Fatalf("%s retry summary=%+v", name, got)
+		}
+		if got.ProtocolProbeRetryRemainingMS <= 0 || got.ProtocolProbeRetryRemainingMS > unsupportedProtocolCapabilityTTL.Milliseconds() {
+			t.Fatalf("%s remaining=%d, want within (0,%d]", name, got.ProtocolProbeRetryRemainingMS, unsupportedProtocolCapabilityTTL.Milliseconds())
+		}
+	}
+
+	cList, wList := newTestContext(t, newRequest(http.MethodGet, "/admin/channels", nil))
+	server.handleListChannels(cList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list status=%d, body=%s", wList.Code, wList.Body.String())
+	}
+	listResp := mustParseAPIResponse[[]ChannelWithCooldown](t, wList.Body.Bytes())
+	if len(listResp.Data) != 1 {
+		t.Fatalf("len(list)=%d, want 1", len(listResp.Data))
+	}
+	assertRetrySummary("list", listResp.Data[0])
+
+	cGet, wGet := newTestContext(t, newRequest(http.MethodGet, "/admin/channels/1", nil))
+	server.handleGetChannel(cGet, created.ID)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("detail status=%d, body=%s", wGet.Code, wGet.Body.String())
+	}
+	detailResp := mustParseAPIResponse[ChannelWithCooldown](t, wGet.Body.Bytes())
+	assertRetrySummary("detail", detailResp.Data)
 }
 
 func TestHandleListChannelsExactAndFuzzyFilters(t *testing.T) {

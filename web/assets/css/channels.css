@@ -1,4 +1,4 @@
-    :root {
+	:root {
       --channel-cooldown-row-bg-start: #fff7ed;
       --channel-cooldown-row-bg-end: #fffbeb;
       --channel-cooldown-row-hover-bg-start: #ffedd5;
@@ -14,7 +14,10 @@
       --channel-last-request-copy-fg: #991b1b;
       --channel-last-request-copy-hover-bg: #ffffff;
       --channel-last-request-copy-hover-fg: #7f1d1d;
-      --channel-last-request-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+	  --channel-last-request-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+	  --channel-protocol-reprobe-bg: #eff6ff;
+	  --channel-protocol-reprobe-border: #93c5fd;
+	  --channel-protocol-reprobe-fg: #1d4ed8;
     }
 
     html[data-theme="dark"] {
@@ -33,7 +36,10 @@
       --channel-last-request-copy-fg: #fecaca;
       --channel-last-request-copy-hover-bg: rgba(248, 113, 113, 0.20);
       --channel-last-request-copy-hover-fg: #ffffff;
-      --channel-last-request-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+	  --channel-last-request-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+	  --channel-protocol-reprobe-bg: rgba(30, 64, 175, 0.22);
+	  --channel-protocol-reprobe-border: rgba(96, 165, 250, 0.48);
+	  --channel-protocol-reprobe-fg: #bfdbfe;
     }
 
     html[data-theme="system"][data-resolved-theme="dark"] {
@@ -52,7 +58,26 @@
       --channel-last-request-copy-fg: #fecaca;
       --channel-last-request-copy-hover-bg: rgba(248, 113, 113, 0.20);
       --channel-last-request-copy-hover-fg: #ffffff;
-      --channel-last-request-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+	  --channel-last-request-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+	  --channel-protocol-reprobe-bg: rgba(30, 64, 175, 0.22);
+	  --channel-protocol-reprobe-border: rgba(96, 165, 250, 0.48);
+	  --channel-protocol-reprobe-fg: #bfdbfe;
+	}
+
+    .ch-protocol-reprobe-badge {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 2px 6px;
+      color: var(--channel-protocol-reprobe-fg);
+      font-size: 0.68rem;
+      font-weight: 600;
+      line-height: 1.2;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      background: var(--channel-protocol-reprobe-bg);
+      border: 1px solid var(--channel-protocol-reprobe-border);
+      border-radius: 4px;
     }
 
     html[data-theme="dark"] .channel-refresh-result--failed,
@@ -1255,8 +1280,11 @@
       top: 8px;
       right: 8px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: flex-end;
-      width: 100%;
+      gap: 4px;
+      width: calc(100% - 16px);
+      max-width: calc(100% - 16px);
       pointer-events: none;
     }
 
@@ -4344,6 +4372,8 @@
       .channel-table .ch-action-statuses {
         position: static;
         justify-content: center;
+        width: 100%;
+        max-width: 100%;
         pointer-events: auto;
       }
 

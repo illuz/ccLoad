@@ -194,7 +194,9 @@ func anthropicOutputEffortFromThinking(thinking *anthropicThinkingConfig) string
 
 func normalizeAnthropicOutputEffort(effort string) string {
 	switch strings.ToLower(strings.TrimSpace(effort)) {
-	case "minimal", "low":
+	case "minimal":
+		return "minimal"
+	case "low":
 		return "low"
 	case "medium", "auto":
 		return "medium"

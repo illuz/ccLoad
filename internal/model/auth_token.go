@@ -52,6 +52,9 @@ type AuthToken struct {
 	DailyCostUsedMicroUSD      int64 `json:"-"` // 当日已消耗费用（微美元）
 	DailyCostLimitMicroUSD     int64 `json:"-"` // 当日费用上限（微美元；0=无限制）
 	DailyCostDayKey            int   `json:"-"` // 当日费用所属日期（YYYYMMDD，本地时区）
+	MonthlyCostUsedMicroUSD    int64 `json:"-"` // 当月已消耗费用（微美元）
+	MonthlyCostLimitMicroUSD   int64 `json:"-"` // 当月费用上限（微美元；0=无限制）
+	MonthlyCostMonthKey        int   `json:"-"` // 当月费用所属月份（YYYYMM，本地时区）
 	DailyLimitDoubleDayKey     int   `json:"-"` // 当日限额翻倍生效日期（YYYYMMDD，0=未启用）
 	DailyLimitTripleDayKey     int   `json:"-"` // 当日限额三倍生效日期（YYYYMMDD，0=未启用）
 	DailyLimitOverrideMicroUSD int64 `json:"-"` // 当日临时限额（微美元；0=未启用）
@@ -73,18 +76,19 @@ type AuthToken struct {
 	MaxConcurrency int `json:"max_concurrency"` // 最大并发请求数，0表示无限制
 
 	// 分组与继承（2026-06新增）
-	GroupID                         int64    `json:"group_id"`             // 所属分组ID，0表示未分组
-	GroupName                       string   `json:"group_name,omitempty"` // 所属分组名称（仅响应展示）
-	InheritQuota                    bool     `json:"inherit_quota"`        // 是否继承分组配额（费用上限+并发上限）
-	InheritChannels                 bool     `json:"inherit_channels"`     // 是否继承分组渠道限制
-	InheritModels                   bool     `json:"inherit_models"`       // 是否继承分组模型限制
-	EffectiveSet                    bool     `json:"-"`                    // 是否已计算有效限制（仅响应/运行时）
-	EffectiveCostLimitMicroUSD      int64    `json:"-"`                    // 有效费用上限（微美元）
-	EffectiveDailyCostLimitMicroUSD int64    `json:"-"`                    // 有效当日费用上限（微美元）
-	EffectiveAllowedModels          []string `json:"-"`                    // 有效模型限制
-	EffectiveAllowedChannelIDs      []int64  `json:"-"`                    // 有效渠道限制
-	EffectiveChannelRestrictionMode string   `json:"-"`                    // 有效渠道限制模式
-	EffectiveMaxConcurrency         int      `json:"-"`                    // 有效并发上限
+	GroupID                           int64    `json:"group_id"`             // 所属分组ID，0表示未分组
+	GroupName                         string   `json:"group_name,omitempty"` // 所属分组名称（仅响应展示）
+	InheritQuota                      bool     `json:"inherit_quota"`        // 是否继承分组配额（费用上限+并发上限）
+	InheritChannels                   bool     `json:"inherit_channels"`     // 是否继承分组渠道限制
+	InheritModels                     bool     `json:"inherit_models"`       // 是否继承分组模型限制
+	EffectiveSet                      bool     `json:"-"`                    // 是否已计算有效限制（仅响应/运行时）
+	EffectiveCostLimitMicroUSD        int64    `json:"-"`                    // 有效费用上限（微美元）
+	EffectiveDailyCostLimitMicroUSD   int64    `json:"-"`                    // 有效当日费用上限（微美元）
+	EffectiveMonthlyCostLimitMicroUSD int64    `json:"-"`                    // 有效当月费用上限（微美元）
+	EffectiveAllowedModels            []string `json:"-"`                    // 有效模型限制
+	EffectiveAllowedChannelIDs        []int64  `json:"-"`                    // 有效渠道限制
+	EffectiveChannelRestrictionMode   string   `json:"-"`                    // 有效渠道限制模式
+	EffectiveMaxConcurrency           int      `json:"-"`                    // 有效并发上限
 }
 
 // AuthTokenGroup 表示 API 访问令牌分组。
@@ -92,19 +96,20 @@ type AuthToken struct {
 // 分组限制是“每个令牌的模板”，不是共享额度池：令牌选择继承后，会把这里的
 // 配额/渠道/模型限制作为该令牌的有效限制；令牌自身的用量统计仍然独立累计。
 type AuthTokenGroup struct {
-	ID                     int64     `json:"id"`
-	Name                   string    `json:"name"`
-	Description            string    `json:"description"`
-	Color                  string    `json:"color"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
-	CostLimitMicroUSD      int64     `json:"-"`
-	DailyCostLimitMicroUSD int64     `json:"-"`
-	MaxConcurrency         int       `json:"max_concurrency"`
-	AllowedModels          []string  `json:"allowed_models,omitempty"`
-	AllowedChannelIDs      []int64   `json:"allowed_channel_ids,omitempty"`
-	ChannelRestrictionMode string    `json:"channel_restriction_mode"`
-	TokenCount             int       `json:"token_count,omitempty"`
+	ID                       int64     `json:"id"`
+	Name                     string    `json:"name"`
+	Description              string    `json:"description"`
+	Color                    string    `json:"color"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+	CostLimitMicroUSD        int64     `json:"-"`
+	DailyCostLimitMicroUSD   int64     `json:"-"`
+	MonthlyCostLimitMicroUSD int64     `json:"-"`
+	MaxConcurrency           int       `json:"max_concurrency"`
+	AllowedModels            []string  `json:"allowed_models,omitempty"`
+	AllowedChannelIDs        []int64   `json:"allowed_channel_ids,omitempty"`
+	ChannelRestrictionMode   string    `json:"channel_restriction_mode"`
+	TokenCount               int       `json:"token_count,omitempty"`
 }
 
 const (
@@ -275,8 +280,24 @@ func (t *AuthToken) UpdateLastUsed() {
 
 // CurrentLocalDayKey 返回当前本地日期键（YYYYMMDD）。
 func CurrentLocalDayKey() int {
-	now := time.Now().In(time.Local)
+	return LocalDayKey(time.Now())
+}
+
+// LocalDayKey 返回给定时刻在本地时区的日期键（YYYYMMDD）。
+func LocalDayKey(at time.Time) int {
+	now := at.In(time.Local)
 	return now.Year()*10000 + int(now.Month())*100 + now.Day()
+}
+
+// CurrentLocalMonthKey 返回当前本地月份键（YYYYMM）。
+func CurrentLocalMonthKey() int {
+	return LocalMonthKey(time.Now())
+}
+
+// LocalMonthKey 返回给定时刻在本地时区的月份键（YYYYMM）。
+func LocalMonthKey(at time.Time) int {
+	now := at.In(time.Local)
+	return now.Year()*100 + int(now.Month())
 }
 
 // NormalizeDailyCostForToday 将过期的“当日费用”重置为今天的口径。
@@ -292,14 +313,28 @@ func (t *AuthToken) NormalizeDailyCostForToday() {
 	t.DailyCostDayKey = dayKey
 }
 
+// NormalizeMonthlyCostForCurrentMonth 将过期的“当月费用”重置为本月口径。
+func (t *AuthToken) NormalizeMonthlyCostForCurrentMonth() {
+	if t == nil {
+		return
+	}
+	monthKey := CurrentLocalMonthKey()
+	if t.MonthlyCostMonthKey == monthKey {
+		return
+	}
+	t.MonthlyCostUsedMicroUSD = 0
+	t.MonthlyCostMonthKey = monthKey
+}
+
 // IsModelAllowed 检查模型是否被令牌允许访问
 // 如果 AllowedModels 为空，表示无限制，允许所有模型
 func (t *AuthToken) IsModelAllowed(model string) bool {
 	if len(t.AllowedModels) == 0 {
 		return true
 	}
+	model = RoutingModelName(model)
 	for _, m := range t.AllowedModels {
-		if strings.EqualFold(m, model) {
+		if strings.EqualFold(RoutingModelName(m), model) {
 			return true
 		}
 	}
@@ -335,6 +370,16 @@ func (t *AuthToken) DailyCostLimitUSD() float64 {
 	return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD)
 }
 
+// MonthlyCostUsedUSD 返回当月已消耗费用（美元）。
+func (t *AuthToken) MonthlyCostUsedUSD() float64 {
+	return util.MicroUSDToUSD(t.MonthlyCostUsedMicroUSD)
+}
+
+// MonthlyCostLimitUSD 返回当月费用上限（美元）。
+func (t *AuthToken) MonthlyCostLimitUSD() float64 {
+	return util.MicroUSDToUSD(t.MonthlyCostLimitMicroUSD)
+}
+
 // SetCostLimitUSD 设置费用上限（从美元转换为微美元）
 func (t *AuthToken) SetCostLimitUSD(usd float64) {
 	if usd <= 0 {
@@ -351,6 +396,15 @@ func (t *AuthToken) SetDailyCostLimitUSD(usd float64) {
 		return
 	}
 	t.DailyCostLimitMicroUSD = util.USDToMicroUSD(usd)
+}
+
+// SetMonthlyCostLimitUSD 设置当月费用上限（从美元转换为微美元）。
+func (t *AuthToken) SetMonthlyCostLimitUSD(usd float64) {
+	if usd <= 0 {
+		t.MonthlyCostLimitMicroUSD = 0
+		return
+	}
+	t.MonthlyCostLimitMicroUSD = util.USDToMicroUSD(usd)
 }
 
 // EffectiveCostLimitUSD 返回已计算的有效费用上限（美元）。
@@ -371,6 +425,14 @@ func (t *AuthToken) EffectiveDailyCostLimitUSDValue() float64 {
 		return util.MicroUSDToUSD(t.DailyCostLimitMicroUSD * t.DailyLimitMultiplierToday())
 	}
 	return util.MicroUSDToUSD(t.EffectiveDailyCostLimitMicroUSD)
+}
+
+// EffectiveMonthlyCostLimitUSDValue 返回已计算的有效当月费用上限（美元）。
+func (t *AuthToken) EffectiveMonthlyCostLimitUSDValue() float64 {
+	if !t.EffectiveSet {
+		return t.MonthlyCostLimitUSD()
+	}
+	return util.MicroUSDToUSD(t.EffectiveMonthlyCostLimitMicroUSD)
 }
 
 // DailyLimitOverrideMicroUSDForToday 返回今天仍有效的临时当日限额。
@@ -470,6 +532,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 	t.EffectiveSet = true
 	t.EffectiveCostLimitMicroUSD = t.CostLimitMicroUSD
 	t.EffectiveDailyCostLimitMicroUSD = t.DailyCostLimitMicroUSD
+	t.EffectiveMonthlyCostLimitMicroUSD = t.MonthlyCostLimitMicroUSD
 	t.EffectiveMaxConcurrency = t.MaxConcurrency
 	t.EffectiveAllowedModels = cloneStringSlice(t.AllowedModels)
 	t.EffectiveAllowedChannelIDs = cloneInt64Slice(t.AllowedChannelIDs)
@@ -480,6 +543,7 @@ func (t *AuthToken) ApplyGroupEffective(group *AuthTokenGroup) {
 		if t.InheritQuota {
 			t.EffectiveCostLimitMicroUSD = group.CostLimitMicroUSD
 			t.EffectiveDailyCostLimitMicroUSD = group.DailyCostLimitMicroUSD
+			t.EffectiveMonthlyCostLimitMicroUSD = group.MonthlyCostLimitMicroUSD
 			t.EffectiveMaxConcurrency = group.MaxConcurrency
 		}
 		if t.InheritChannels {
@@ -505,6 +569,7 @@ func (t *AuthToken) ApplyEffectiveValuesToRawForRuntime() {
 	}
 	t.CostLimitMicroUSD = t.EffectiveCostLimitMicroUSD
 	t.DailyCostLimitMicroUSD = t.EffectiveDailyCostLimitMicroUSD
+	t.MonthlyCostLimitMicroUSD = t.EffectiveMonthlyCostLimitMicroUSD
 	t.MaxConcurrency = t.EffectiveMaxConcurrency
 	t.AllowedModels = cloneStringSlice(t.EffectiveAllowedModels)
 	t.AllowedChannelIDs = cloneInt64Slice(t.EffectiveAllowedChannelIDs)
@@ -550,6 +615,9 @@ func (t *AuthToken) ValidateUsageLimits() error {
 	if t.DailyCostLimitMicroUSD < 0 {
 		return errors.New("daily_cost_limit_usd must be >= 0")
 	}
+	if t.MonthlyCostLimitMicroUSD < 0 {
+		return errors.New("monthly_cost_limit_usd must be >= 0")
+	}
 	if t.DailyLimitOverrideMicroUSD < 0 {
 		return errors.New("daily_limit_override_usd must be >= 0")
 	}
@@ -573,6 +641,14 @@ func (g *AuthTokenGroup) DailyCostLimitUSD() float64 {
 		return 0
 	}
 	return util.MicroUSDToUSD(g.DailyCostLimitMicroUSD)
+}
+
+// MonthlyCostLimitUSD 返回分组当月费用上限（美元）。
+func (g *AuthTokenGroup) MonthlyCostLimitUSD() float64 {
+	if g == nil {
+		return 0
+	}
+	return util.MicroUSDToUSD(g.MonthlyCostLimitMicroUSD)
 }
 
 // SetCostLimitUSD 设置分组费用上限（从美元转换为微美元）。
@@ -599,6 +675,18 @@ func (g *AuthTokenGroup) SetDailyCostLimitUSD(usd float64) {
 	g.DailyCostLimitMicroUSD = util.USDToMicroUSD(usd)
 }
 
+// SetMonthlyCostLimitUSD 设置分组当月费用上限（从美元转换为微美元）。
+func (g *AuthTokenGroup) SetMonthlyCostLimitUSD(usd float64) {
+	if g == nil {
+		return
+	}
+	if usd <= 0 {
+		g.MonthlyCostLimitMicroUSD = 0
+		return
+	}
+	g.MonthlyCostLimitMicroUSD = util.USDToMicroUSD(usd)
+}
+
 // ValidateUsageLimits enforces invariants for group-level limit templates.
 func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	if g == nil {
@@ -619,10 +707,13 @@ func (g *AuthTokenGroup) ValidateUsageLimits() error {
 	if g.DailyCostLimitMicroUSD < 0 {
 		return errors.New("daily_cost_limit_usd must be >= 0")
 	}
+	if g.MonthlyCostLimitMicroUSD < 0 {
+		return errors.New("monthly_cost_limit_usd must be >= 0")
+	}
 	if g.MaxConcurrency < 0 {
 		return errors.New("max_concurrency must be >= 0")
 	}
-	if (g.CostLimitMicroUSD > 0 || g.DailyCostLimitMicroUSD > 0) && g.MaxConcurrency <= 0 {
+	if (g.CostLimitMicroUSD > 0 || g.DailyCostLimitMicroUSD > 0 || g.MonthlyCostLimitMicroUSD > 0) && g.MaxConcurrency <= 0 {
 		return errors.New("cost-limited auth token group requires max_concurrency > 0")
 	}
 	return nil
@@ -655,6 +746,8 @@ type authTokenJSON struct {
 	CostLimitUSD                    float64   `json:"cost_limit_usd"`
 	DailyCostUsedUSD                float64   `json:"daily_cost_used_usd"`
 	DailyCostLimitUSD               float64   `json:"daily_cost_limit_usd"`
+	MonthlyCostUsedUSD              float64   `json:"monthly_cost_used_usd"`
+	MonthlyCostLimitUSD             float64   `json:"monthly_cost_limit_usd"`
 	DailyLimitDoubleEnabled         bool      `json:"daily_limit_double_enabled"`
 	DailyLimitTripleEnabled         bool      `json:"daily_limit_triple_enabled"`
 	DailyLimitOverrideUSD           float64   `json:"daily_limit_override_usd"`
@@ -672,6 +765,7 @@ type authTokenJSON struct {
 	InheritModels                   bool      `json:"inherit_models"`
 	EffectiveCostLimitUSD           float64   `json:"effective_cost_limit_usd"`
 	EffectiveDailyCostLimitUSD      float64   `json:"effective_daily_cost_limit_usd"`
+	EffectiveMonthlyCostLimitUSD    float64   `json:"effective_monthly_cost_limit_usd"`
 	EffectiveAllowedModels          []string  `json:"effective_allowed_models,omitempty"`
 	EffectiveAllowedChannelIDs      []int64   `json:"effective_allowed_channel_ids,omitempty"`
 	EffectiveChannelRestrictionMode string    `json:"effective_channel_restriction_mode"`
@@ -718,6 +812,8 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		CostLimitUSD:                    t.CostLimitUSD(),
 		DailyCostUsedUSD:                t.DailyCostUsedUSD(),
 		DailyCostLimitUSD:               t.DailyCostLimitUSD(),
+		MonthlyCostUsedUSD:              t.MonthlyCostUsedUSD(),
+		MonthlyCostLimitUSD:             t.MonthlyCostLimitUSD(),
 		DailyLimitDoubleEnabled:         t.IsDailyLimitDoubledToday(),
 		DailyLimitTripleEnabled:         t.IsDailyLimitTripledToday(),
 		DailyLimitOverrideUSD:           t.DailyLimitOverrideUSDForToday(),
@@ -735,6 +831,7 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		InheritModels:                   t.InheritModels,
 		EffectiveCostLimitUSD:           t.EffectiveCostLimitUSDValue(),
 		EffectiveDailyCostLimitUSD:      t.EffectiveDailyCostLimitUSDValue(),
+		EffectiveMonthlyCostLimitUSD:    t.EffectiveMonthlyCostLimitUSDValue(),
 		EffectiveAllowedModels:          effectiveStringSlice(t.EffectiveSet, t.EffectiveAllowedModels, t.AllowedModels),
 		EffectiveAllowedChannelIDs:      effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
 		EffectiveChannelRestrictionMode: effectiveChannelRestrictionMode,
@@ -772,6 +869,7 @@ type authTokenGroupJSON struct {
 	UpdatedAt              time.Time `json:"updated_at"`
 	CostLimitUSD           float64   `json:"cost_limit_usd"`
 	DailyCostLimitUSD      float64   `json:"daily_cost_limit_usd"`
+	MonthlyCostLimitUSD    float64   `json:"monthly_cost_limit_usd"`
 	MaxConcurrency         int       `json:"max_concurrency"`
 	AllowedModels          []string  `json:"allowed_models,omitempty"`
 	AllowedChannelIDs      []int64   `json:"allowed_channel_ids,omitempty"`
@@ -794,6 +892,7 @@ func (g AuthTokenGroup) MarshalJSON() ([]byte, error) {
 		UpdatedAt:              g.UpdatedAt,
 		CostLimitUSD:           g.CostLimitUSD(),
 		DailyCostLimitUSD:      g.DailyCostLimitUSD(),
+		MonthlyCostLimitUSD:    g.MonthlyCostLimitUSD(),
 		MaxConcurrency:         g.MaxConcurrency,
 		AllowedModels:          g.AllowedModels,
 		AllowedChannelIDs:      g.AllowedChannelIDs,

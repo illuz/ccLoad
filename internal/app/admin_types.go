@@ -541,15 +541,18 @@ type ChannelModelStats struct {
 // ChannelWithCooldown 带冷却状态的渠道响应结构
 type ChannelWithCooldown struct {
 	*model.Config
-	KeyStrategy         string                  `json:"key_strategy,omitempty"` // [INFO] 修复 (2025-10-11): 添加key_strategy字段
-	DailyCostUsed       float64                 `json:"daily_cost_used"`        // 当日已使用费用（美元，倍率后成本）
-	CooldownUntil       *time.Time              `json:"cooldown_until,omitempty"`
-	CooldownRemainingMS int64                   `json:"cooldown_remaining_ms,omitempty"`
-	KeyCooldowns        []KeyCooldownInfo       `json:"key_cooldowns,omitempty"`
-	ModelCooldowns      []ModelCooldownInfo     `json:"model_cooldowns,omitempty"`
-	EffectivePriority   *float64                `json:"effective_priority,omitempty"` // 健康度模式下的有效优先级
-	SuccessRate         *float64                `json:"success_rate,omitempty"`       // 成功率(0-1)
-	UpstreamBalance     *ChannelUpstreamBalance `json:"upstream_balance,omitempty"`
+	KeyStrategy                   string                  `json:"key_strategy,omitempty"` // [INFO] 修复 (2025-10-11): 添加key_strategy字段
+	DailyCostUsed                 float64                 `json:"daily_cost_used"`        // 当日已使用费用（美元，倍率后成本）
+	CooldownUntil                 *time.Time              `json:"cooldown_until,omitempty"`
+	CooldownRemainingMS           int64                   `json:"cooldown_remaining_ms,omitempty"`
+	KeyCooldowns                  []KeyCooldownInfo       `json:"key_cooldowns,omitempty"`
+	ModelCooldowns                []ModelCooldownInfo     `json:"model_cooldowns,omitempty"`
+	ProtocolProbeRetryCount       int                     `json:"protocol_probe_retry_count,omitempty"`
+	ProtocolProbeRetryAt          *time.Time              `json:"protocol_probe_retry_at,omitempty"`
+	ProtocolProbeRetryRemainingMS int64                   `json:"protocol_probe_retry_remaining_ms,omitempty"`
+	EffectivePriority             *float64                `json:"effective_priority,omitempty"` // 健康度模式下的有效优先级
+	SuccessRate                   *float64                `json:"success_rate,omitempty"`       // 成功率(0-1)
+	UpstreamBalance               *ChannelUpstreamBalance `json:"upstream_balance,omitempty"`
 }
 
 // ChannelImportSummary 导入结果统计

@@ -58,3 +58,25 @@ func TestEnqueueLogSync_CountsDrops(t *testing.T) {
 		t.Fatalf("入队成功后 syncQueueDropCount=%d, want still 2", got)
 	}
 }
+
+func TestHybridStoreRuntimeMetrics(t *testing.T) {
+	t.Parallel()
+
+	h := &HybridStore{syncCh: make(chan *syncTask, 3)}
+	h.sqliteSyncFailCount.Store(2)
+	h.mysqlSyncFailCount.Store(4)
+	h.syncQueueDropCount.Store(5)
+	h.mysqlSyncSuccessAt.Store(123456)
+	h.syncCh <- &syncTask{operation: "log"}
+
+	got := h.RuntimeMetrics()
+	if got.SQLiteSyncFailures != 2 || got.MySQLSyncFailures != 4 || got.MySQLSyncDropped != 5 {
+		t.Fatalf("failure counters=%+v", got)
+	}
+	if got.MySQLSyncPending != 1 || got.MySQLSyncQueueCapacity != 3 {
+		t.Fatalf("queue metrics=%+v", got)
+	}
+	if got.MySQLSyncLastSuccess != 123456 {
+		t.Fatalf("last success=%d, want 123456", got.MySQLSyncLastSuccess)
+	}
+}

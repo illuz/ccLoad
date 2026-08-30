@@ -1302,6 +1302,7 @@ function updateBatchChannelSelectionUI() {
   const actionBtnIDs = [
     'batchEnableChannelsBtn',
     'batchDisableChannelsBtn',
+    'batchExportChannelsBtn',
     'batchDeleteChannelsBtn',
     'batchMoveGroupBtn',
     'batchRefreshMergeBtn',

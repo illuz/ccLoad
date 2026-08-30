@@ -35,6 +35,7 @@ func TestLog_AddAndList(t *testing.T) {
 		AttemptNumber:         2,
 		EndToEndFirstByteTime: 1.25,
 		APIKeyUsed:            "abcd...efgh",
+		ClientProtocol:        "openai",
 	}
 	if err := store.AddLog(ctx, log); err != nil {
 		t.Fatalf("add log: %v", err)
@@ -66,6 +67,38 @@ func TestLog_AddAndList(t *testing.T) {
 		if got.EndToEndFirstByteTime != log.EndToEndFirstByteTime {
 			t.Errorf("end_to_end_first_byte_time: got %v, want %v", got.EndToEndFirstByteTime, log.EndToEndFirstByteTime)
 		}
+		if got.ClientProtocol != log.ClientProtocol {
+			t.Errorf("client_protocol: got %q, want %q", got.ClientProtocol, log.ClientProtocol)
+		}
+	}
+}
+
+func TestLog_ClientProtocolFilter(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t, "logs_client_protocol.db")
+	ctx := context.Background()
+	channelID := createTestChannel(t, ctx, store, "log-client-protocol-channel")
+	now := time.Now()
+
+	for index, clientProtocol := range []string{"anthropic", "openai", "gemini"} {
+		if err := store.AddLog(ctx, &model.LogEntry{
+			Time:           newJSONTime(now.Add(time.Duration(index) * time.Millisecond)),
+			Model:          "shared-model",
+			ChannelID:      channelID,
+			StatusCode:     200,
+			Message:        clientProtocol,
+			ClientProtocol: clientProtocol,
+		}); err != nil {
+			t.Fatalf("add %s log: %v", clientProtocol, err)
+		}
+	}
+
+	logs, err := store.ListLogs(ctx, now.Add(-time.Hour), 10, 0, &model.LogFilter{ClientProtocol: "openai"})
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 || logs[0].ClientProtocol != "openai" {
+		t.Fatalf("filtered logs=%+v, want one OpenAI entry", logs)
 	}
 }
 

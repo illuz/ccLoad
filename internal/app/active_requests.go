@@ -28,6 +28,7 @@ type ActiveRequest struct {
 	ChannelID           int64   `json:"channel_id,omitempty"`
 	ChannelName         string  `json:"channel_name,omitempty"`
 	ChannelType         string  `json:"channel_type,omitempty"`           // 渠道类型（用于前端筛选）
+	ClientProtocol      string  `json:"client_protocol,omitempty"`        // 客户端入口协议
 	APIKeyUsed          string  `json:"api_key_used,omitempty"`           // 脱敏后的key
 	TokenID             int64   `json:"token_id,omitempty"`               // 令牌ID（用于前端筛选，0表示无令牌）
 	BaseURL             string  `json:"base_url,omitempty"`               // 当前使用的上游URL
@@ -40,17 +41,18 @@ type ActiveRequest struct {
 }
 
 type activeRequest struct {
-	ID          int64
-	Model       string
-	ClientIP    string
-	StartTime   int64 // Unix毫秒
-	Streaming   bool
-	ChannelID   int64
-	ChannelName string
-	ChannelType string
-	APIKeyUsed  string
-	TokenID     int64
-	BaseURL     string
+	ID             int64
+	Model          string
+	ClientIP       string
+	StartTime      int64 // Unix毫秒
+	Streaming      bool
+	ChannelID      int64
+	ChannelName    string
+	ChannelType    string
+	ClientProtocol string
+	APIKeyUsed     string
+	TokenID        int64
+	BaseURL        string
 
 	CostMultiplier float64 // 渠道成本倍率
 	ThinkingEffort string
@@ -69,6 +71,14 @@ func (m *activeRequestManager) SetThinkingEffort(id int64, thinkingEffort string
 	m.mu.Lock()
 	if req, ok := m.requests[id]; ok {
 		req.ThinkingEffort = normalizeThinkingEffort(thinkingEffort)
+	}
+	m.mu.Unlock()
+}
+
+func (m *activeRequestManager) SetClientProtocol(id int64, clientProtocol string) {
+	m.mu.Lock()
+	if req, ok := m.requests[id]; ok {
+		req.ClientProtocol = clientProtocol
 	}
 	m.mu.Unlock()
 }
@@ -281,6 +291,7 @@ func (m *activeRequestManager) List() []*ActiveRequest {
 			ChannelID:         req.ChannelID,
 			ChannelName:       req.ChannelName,
 			ChannelType:       req.ChannelType,
+			ClientProtocol:    req.ClientProtocol,
 			APIKeyUsed:        req.APIKeyUsed,
 			TokenID:           req.TokenID,
 			BaseURL:           req.BaseURL,

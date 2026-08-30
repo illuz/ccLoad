@@ -47,6 +47,9 @@
             </table>
           </div>
           <div class="settings-save-actions">
+            <button id="runtime-metrics-btn" type="button" class="btn btn-secondary settings-runtime-metrics-btn" data-i18n="settings.runtimeMetrics.button">
+              查看运行状态
+            </button>
             <button id="save-all-btn" class="btn btn-primary settings-save-btn" data-i18n="settings.saveAll">
               保存所有更改
             </button>
@@ -57,6 +60,28 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <div id="runtimeMetricsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="runtimeMetricsTitle" aria-describedby="runtimeMetricsDescription" aria-hidden="true">
+    <div class="modal-content runtime-metrics-modal">
+      <div class="modal-header runtime-metrics-modal-header">
+        <div>
+          <h2 id="runtimeMetricsTitle" class="modal-title" data-i18n="settings.runtimeMetrics.title">进程运行状态</h2>
+          <p id="runtimeMetricsDescription" class="modal-description" data-i18n="settings.runtimeMetrics.description">当前进程及运行子系统的资源占用和状态</p>
+        </div>
+        <button type="button" class="close-btn" data-action="close-runtime-metrics" data-i18n-aria-label="common.close" aria-label="关闭">&times;</button>
+      </div>
+
+      <div id="runtime-metrics-content" class="runtime-metrics-content" aria-live="polite"></div>
+
+      <div class="runtime-metrics-modal-footer">
+        <span id="runtime-metrics-updated-at" class="runtime-metrics-updated-at"></span>
+        <div class="runtime-metrics-footer-actions">
+          <button id="refresh-runtime-metrics-btn" type="button" class="btn btn-secondary" data-i18n="settings.runtimeMetrics.refresh">刷新</button>
+          <button type="button" class="btn btn-primary" data-action="close-runtime-metrics" data-i18n="common.close">关闭</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 设置行模板 -->

@@ -139,6 +139,15 @@ test('logs.js 将上游响应模型不一致纳入筛选状态和请求参数定
   assert.match(logsSource, /function isLogsUpstreamModelMismatchEnabled\(/);
 });
 
+test('logs、stats 和 trend 都把客户端入口协议写入请求参数', () => {
+  assert.match(logsSource, /key: 'clientProtocol', queryKeys: \['client_protocol'\]/);
+  assert.match(statsSource, /key: 'clientProtocol', queryKeys: \['client_protocol'\]/);
+  assert.match(trendSource, /key: 'clientProtocol', queryKeys: \['client_protocol'\]/);
+  assert.match(logsSource, /clientProtocol: \{ id: 'f_client_protocol'/);
+  assert.match(statsSource, /clientProtocol: \{ id: 'f_client_protocol'/);
+  assert.match(trendSource, /currentClientProtocol/);
+});
+
 test('logs.html、stats.html 和 trend.html 在页面脚本前加载共享请求参数 helper', () => {
   assert.match(
     logsHtmlSource,

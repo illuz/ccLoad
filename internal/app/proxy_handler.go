@@ -351,6 +351,11 @@ func (s *Server) handleSpecialRoutes(c *gin.Context) bool {
 
 // HandleProxyRequest 通用透明代理处理器
 func (s *Server) HandleProxyRequest(c *gin.Context) {
+	httpMetrics := s.httpRuntime.begin()
+	defer func() {
+		httpMetrics.finish(c.Writer.Status(), c.Writer.Size())
+	}()
+
 	handlerStart := time.Now()
 	startTime := proxyTimingStartTime(c, handlerStart)
 	timing := newProxyTimingTrace(startTime, handlerStart)
@@ -382,6 +387,9 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		s.recordProxyRejection(c, startTime, "", statusCode, err.Error(), false, "")
 		return
 	}
+	requestedModel := originalModel
+	originalModel = model.RoutingModelName(requestedModel)
+	httpMetrics.observeRequest(isStreaming, len(all))
 
 	clientProtocol, effectiveRequestPath := clientRequestMetadata(c)
 	if err := validateClientBodyMatchesProtocol(clientProtocol, all); err != nil {
@@ -394,7 +402,8 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	if clientProtocol == protocol.Anthropic {
 		all = stripAnthropicBillingHeaders(all)
 	}
-	thinkingEffort := extractThinkingEffortFromJSON(all)
+	all = applyThinkingSuffix(all, clientProtocol, requestedModel)
+	thinkingEffort := thinkingEffortFromRequest(requestedModel, all)
 
 	tokenHashStr := ""
 	if v, ok := c.Get("token_hash"); ok {
@@ -420,6 +429,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 
 	// 注册活跃请求（内存状态，用于前端实时显示）
 	activeID := s.activeRequests.Register(startTime, originalModel, c.ClientIP(), isStreaming)
+	s.activeRequests.SetClientProtocol(activeID, string(clientProtocol))
 	s.activeRequests.SetThinkingEffort(activeID, thinkingEffort)
 	defer s.activeRequests.Remove(activeID)
 
@@ -462,6 +472,7 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 			IsStreaming:           isStreaming,
 			APIKeyUsed:            diagAPIKey,
 			AuthTokenID:           tokenIDInt64,
+			ClientProtocol:        string(clientProtocol),
 			ClientIP:              c.ClientIP(),
 			ThinkingEffort:        thinkingEffort,
 		})
@@ -595,6 +606,16 @@ func (s *Server) enforceTokenLimits(
 			limit := util.MicroUSDToUSD(limitMicro)
 			message := fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", used, limit)
 			writeTokenQuotaError(c, clientProtocol, message, "cost_limit_exceeded")
+			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
+			return false
+		}
+
+		monthlyUsedMicro, monthlyLimitMicro, monthlyExceeded := s.authService.IsMonthlyCostLimitExceeded(tokenHash)
+		if monthlyExceeded {
+			used := util.MicroUSDToUSD(monthlyUsedMicro)
+			limit := util.MicroUSDToUSD(monthlyLimitMicro)
+			message := fmt.Sprintf("Monthly cost limit exceeded: $%.2f used of $%.2f monthly limit", used, limit)
+			writeTokenQuotaError(c, clientProtocol, message, "monthly_cost_limit_exceeded")
 			s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
 			return false
 		}
@@ -972,6 +993,7 @@ func (s *Server) writeFinalProxyResponse(
 			Message:               msg,
 			Duration:              time.Since(reqCtx.startTime).Seconds(),
 			IsStreaming:           isStreaming,
+			ClientProtocol:        string(reqCtx.clientProtocol),
 			ClientIP:              reqCtx.clientIP,
 		})
 	}

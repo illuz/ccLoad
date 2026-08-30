@@ -431,6 +431,17 @@ function inlineCooldownBadge(c) {
   return `<span style="display: inline-flex; align-items: center; color: #dc2626; font-size: 0.68rem; font-weight: 600; line-height: 1; background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 1px 6px; border-radius: 4px; border: 1px solid #fca5a5; vertical-align: middle;">${window.t('channels.cooldownBadge', { time: text })}</span>`;
 }
 
+function inlineProtocolProbeRetryBadge(channel) {
+  const count = Number(channel && channel.protocol_probe_retry_count) || 0;
+  const remainingMS = Number(channel && channel.protocol_probe_retry_remaining_ms) || 0;
+  if (count <= 0 || remainingMS <= 0) return '';
+  const text = window.t('channels.protocolProbeRetryBadge', {
+    count,
+    time: humanizeMS(remainingMS)
+  });
+  return `<span class="ch-protocol-reprobe-badge">${escapeChannelRefreshText(text)}</span>`;
+}
+
 /**
  * 获取渠道类型配置信息
  * @param {string} channelType - 渠道类型
@@ -875,7 +886,8 @@ function createChannelCard(channel) {
     modelsText: modelsText,
     priority: channel.priority,
     effectivePriorityHtml: buildEffectivePriorityHtml(channel),
-    cooldownBadge: inlineCooldownBadge(channel),
+		cooldownBadge: inlineCooldownBadge(channel),
+		protocolProbeBadge: inlineProtocolProbeRetryBadge(channel),
     durationHtml: durationHtml,
     usageHtml: usageHtml,
     costHtml: costHtml,

@@ -74,6 +74,7 @@ function initChannelsPageActions() {
         'batch-enable-channels': () => batchEnableSelectedChannels(),
         'batch-disable-channels': () => batchDisableSelectedChannels(),
         'batch-delete-channels': () => batchDeleteSelectedChannels(),
+        'batch-export-channels': () => exportSelectedChannelsCSV(),
         'batch-refresh-channels-merge': () => batchRefreshSelectedChannelsMerge(),
         'batch-refresh-channels-replace': () => batchRefreshSelectedChannelsReplace(),
         'clear-selected-channels': () => clearSelectedChannels(),

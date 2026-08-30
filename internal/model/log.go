@@ -115,9 +115,10 @@ type LogEntry struct {
 	APIKeyHash            string   `json:"api_key_hash,omitempty"`            // API Key 的 SHA256（仅用于后台精确定位 key_index，不泄露明文）
 	AuthTokenID           int64    `json:"auth_token_id"`                     // 客户端使用的API令牌ID（新增2025-12，0表示未使用token）
 	AuthTokenDescription  string   `json:"auth_token_description"`            // API令牌描述（查询时从auth_tokens表JOIN获取）
+	ClientProtocol        string   `json:"client_protocol,omitempty"`         // 客户端入口协议（anthropic/openai/gemini/codex）
 	ClientIP              string   `json:"client_ip"`                         // 客户端IP地址（新增2025-12）
 	BaseURL               string   `json:"base_url,omitempty"`                // 请求使用的上游URL（多URL场景）
-	ServiceTier           string   `json:"service_tier,omitempty"`            // OpenAI service_tier；Codex priority 按模型计 Fast 倍率
+	ServiceTier           string   `json:"service_tier,omitempty"`            // 上游 service_tier/speed；Codex ultrafast 按模型计10倍
 	ServiceTierMultiplier float64  `json:"service_tier_multiplier,omitempty"` // 瞬态字段：实际 service tier 计费倍率
 	ThinkingEffort        string   `json:"thinking_effort,omitempty"`
 
@@ -145,6 +146,7 @@ type LogFilter struct {
 	Model                 string
 	ModelLike             string
 	StatusCode            *int
+	ClientProtocol        string // 客户端入口协议过滤
 	ChannelType           string // 渠道类型过滤（anthropic/openai/gemini/codex）
 	AuthTokenID           *int64 // API令牌ID过滤
 	LogSource             string

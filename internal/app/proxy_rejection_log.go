@@ -78,6 +78,7 @@ func (s *Server) recordProxyRejection(
 
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
+	clientProtocol, _ := clientRequestMetadata(c)
 	duration := time.Since(startTime).Seconds()
 	s.AddLogAsync(&model.LogEntry{
 		Time:                  model.JSONTime{Time: startTime},
@@ -90,6 +91,7 @@ func (s *Server) recordProxyRejection(
 		EndToEndFirstByteTime: duration,
 		IsStreaming:           isStreaming,
 		AuthTokenID:           tokenIDInt64,
+		ClientProtocol:        string(clientProtocol),
 		ClientIP:              c.ClientIP(),
 		ThinkingEffort:        thinkingEffort,
 	})

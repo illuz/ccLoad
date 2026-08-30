@@ -73,6 +73,8 @@ const (
 const (
 	// RetryAfterThresholdSeconds Retry-After超过此值视为渠道级限流
 	RetryAfterThresholdSeconds = 60
+	// anthropicRateLimitUnifiedResetHeader 是 Anthropic 当前被拒绝配额窗口的 Unix 秒重置时间。
+	anthropicRateLimitUnifiedResetHeader = "Anthropic-Ratelimit-Unified-Reset"
 	// DefaultModelCooldownDuration 是上游未给出模型恢复时间时的固定冷却时长。
 	DefaultModelCooldownDuration = 5 * time.Minute
 	// RateLimitScope 常量
@@ -122,53 +124,66 @@ type HTTPResponseClassification struct {
 // sseErrorResponse SSE error事件的JSON结构（Anthropic API / 88code API）
 // [FIX] 提取为公共结构体，消除 classifySSEError 和 ParseResetTimeFrom1308Error 的重复定义
 type sseErrorResponse struct {
-	Type  string `json:"type"`
-	Error struct {
-		Type    string `json:"type"` // Anthropic使用
-		Code    string `json:"code"` // 其他渠道使用
-		Message string `json:"message"`
-	} `json:"error"`
+	Type     string         `json:"type"`
+	Code     string         `json:"code"`
+	Message  string         `json:"message"`
+	Error    sseErrorDetail `json:"error"`
 	Response struct {
-		Error struct {
-			Type    string `json:"type"`
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+		Error sseErrorDetail `json:"error"`
 	} `json:"response"`
 }
 
+type sseErrorDetail struct {
+	Type    string `json:"type"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type structuredQuotaErrorResponse struct {
-	Code            any             `json:"code"`
-	Message         string          `json:"message"`
-	Model           string          `json:"model"`
-	ResetSeconds    int64           `json:"reset_seconds"`
-	ResetsInSeconds int64           `json:"resets_in_seconds"` // 部分上游使用复数形式
-	ResetsAt        int64           `json:"resets_at"`         // unix 时间戳
-	ResetTime       string          `json:"reset_time"`
-	Status          string          `json:"status"`
-	Error           json.RawMessage `json:"error"`
+	Code            any                          `json:"code"`
+	Message         string                       `json:"message"`
+	Model           string                       `json:"model"`
+	ResetSeconds    int64                        `json:"reset_seconds"`
+	ResetsInSeconds int64                        `json:"resets_in_seconds"` // 部分上游使用复数形式
+	ResetsAt        int64                        `json:"resets_at"`         // unix 时间戳
+	ResetTime       string                       `json:"reset_time"`
+	Status          string                       `json:"status"`
+	Details         []structuredQuotaErrorDetail `json:"details"`
+	Error           json.RawMessage              `json:"error"`
 }
 
 type structuredQuotaErrorObject struct {
-	Type            any    `json:"type"`
-	Code            any    `json:"code"`
-	Message         string `json:"message"`
-	Model           string `json:"model"`
-	ResetSeconds    int64  `json:"reset_seconds"`
-	ResetsInSeconds int64  `json:"resets_in_seconds"` // 部分上游使用复数形式
-	ResetsAt        int64  `json:"resets_at"`         // unix 时间戳
-	ResetTime       string `json:"reset_time"`
-	Status          string `json:"status"`
+	Type            any                          `json:"type"`
+	Code            any                          `json:"code"`
+	Message         string                       `json:"message"`
+	Model           string                       `json:"model"`
+	ResetSeconds    int64                        `json:"reset_seconds"`
+	ResetsInSeconds int64                        `json:"resets_in_seconds"` // 部分上游使用复数形式
+	ResetsAt        int64                        `json:"resets_at"`         // unix 时间戳
+	ResetTime       string                       `json:"reset_time"`
+	Status          string                       `json:"status"`
+	Details         []structuredQuotaErrorDetail `json:"details"`
+}
+
+type structuredQuotaErrorDetail struct {
+	Reason   string `json:"reason"`
+	Metadata struct {
+		Model               string `json:"model"`
+		QuotaResetDelay     string `json:"quotaResetDelay"`
+		QuotaResetTimeStamp string `json:"quotaResetTimeStamp"`
+	} `json:"metadata"`
 }
 
 type structuredQuotaError struct {
-	code         string
-	message      string
-	model        string
-	resetSeconds int64
-	resetsAt     int64 // unix 时间戳（秒）
-	resetTime    string
-	status       string
+	code                string
+	message             string
+	model               string
+	resetSeconds        int64
+	resetsAt            int64 // unix 时间戳（秒）
+	resetTime           string
+	status              string
+	quotaResetDelay     string
+	quotaResetTimeStamp string
 }
 
 // ErrorType 返回错误类型（优先使用type字段，如果为空则使用code字段）
@@ -191,6 +206,47 @@ func (r *sseErrorResponse) ErrorMessage() string {
 		return r.Error.Message
 	}
 	return r.Response.Error.Message
+}
+
+// IsContextLengthExceededError reports whether the upstream rejected the
+// request because its prompt exceeds the model context window.
+func IsContextLengthExceededError(responseBody []byte) bool {
+	if len(responseBody) == 0 {
+		return false
+	}
+
+	var payload sseErrorResponse
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return false
+	}
+
+	details := [...]sseErrorDetail{
+		payload.Error,
+		payload.Response.Error,
+		{Type: payload.Type, Code: payload.Code, Message: payload.Message},
+	}
+	for _, detail := range details {
+		code := strings.ToLower(strings.TrimSpace(detail.Code))
+		if code == "context_length_exceeded" || code == "context_too_large" {
+			return true
+		}
+		if code != "" && code != "invalid_request_error" && code != "bad_request_error" {
+			continue
+		}
+
+		errorType := strings.ToLower(strings.TrimSpace(detail.Type))
+		if errorType != "" && errorType != "error" && errorType != "invalid_request_error" && errorType != "bad_request_error" {
+			continue
+		}
+		message := strings.ToLower(strings.TrimSpace(detail.Message))
+		if strings.Contains(message, "context window") ||
+			strings.Contains(message, "context length") ||
+			strings.Contains(message, "maximum context") ||
+			strings.Contains(message, "too many tokens") {
+			return true
+		}
+	}
+	return false
 }
 
 // statusCodeMetaMap 状态码元数据映射表
@@ -366,6 +422,13 @@ func classifyHTTPResponseWithMetaAt(statusCode int, headers map[string][]string,
 		return classification
 	}
 
+	// 上下文超限由当前请求体决定，切换 Key、模型或渠道都不会改变结果。
+	// SSE 路径使用 597 承载 HTTP 200 中的错误事件；普通错误通常使用 400/413。
+	if (statusCode == StatusSSEError || statusCode == http.StatusBadRequest || statusCode == http.StatusRequestEntityTooLarge) &&
+		IsContextLengthExceededError(responseBody) {
+		return HTTPResponseClassification{Level: ErrorLevelClient}
+	}
+
 	// [INFO] 597 SSE error事件：解析实际错误类型动态判断级别
 	// SSE error JSON格式: {"type":"error","error":{"type":"api_error","message":"上游API返回错误: 500"}}
 	// 服务类错误切换渠道但只冷却当前模型；认证/限流类错误仍冷却 Key。
@@ -390,10 +453,16 @@ func classifyHTTPResponseWithMetaAt(statusCode int, headers map[string][]string,
 		if headers != nil {
 			level = classifyRateLimitError(headers, responseBody)
 		}
-		return HTTPResponseClassification{
+		classification := HTTPResponseClassification{
 			Level:       level,
 			ModelScoped: true,
 		}
+		if until, ok := parseAnthropicRateLimitReset(headers, now); ok {
+			classification.ModelCooldownUntil = until
+			classification.HasModelCooldownUntil = true
+			classification.ModelCooldownReason = "anthropic_unified_reset"
+		}
+		return classification
 	}
 
 	// 400 表示当前模型无法接受该请求。切换渠道，但只冷却实际请求的模型。
@@ -515,6 +584,26 @@ func classifyRateLimitError(headers map[string][]string, responseBody []byte) Er
 	return ErrorLevelKey
 }
 
+func parseAnthropicRateLimitReset(headers map[string][]string, now time.Time) (time.Time, bool) {
+	for name, values := range headers {
+		if !strings.EqualFold(name, anthropicRateLimitUnifiedResetHeader) {
+			continue
+		}
+		for _, value := range values {
+			resetUnix, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err != nil {
+				continue
+			}
+			until := time.Unix(resetUnix, 0)
+			if until.After(now) {
+				return until, true
+			}
+		}
+		return time.Time{}, false
+	}
+	return time.Time{}, false
+}
+
 // classifySSEError 分析SSE error事件的具体类型
 // SSE error JSON格式: {"type":"error","error":{"type":"api_error","message":"上游API返回错误: 500"}}
 //
@@ -575,6 +664,9 @@ func parseStructuredQuotaCooldown(responseBody []byte, now time.Time) (time.Time
 		}
 		return now.Add(DefaultModelCooldownDuration), "model_cooldown", ErrorLevelKey, true
 	case quotaErr.status == "RESOURCE_EXHAUSTED" || strings.Contains(messageUpper, "RESOURCE_EXHAUSTED"):
+		if until, ok := parseStructuredCooldownUntil(quotaErr, now); ok {
+			return until, "RESOURCE_EXHAUSTED", ErrorLevelKey, true
+		}
 		if until, ok := parseRetryInCooldownUntil(message, now); ok {
 			return until, "RESOURCE_EXHAUSTED_RETRY_IN", ErrorLevelKey, true
 		}
@@ -621,6 +713,7 @@ func parseStructuredQuotaError(responseBody []byte) (structuredQuotaError, bool)
 		resetTime:    errResp.ResetTime,
 		status:       strings.ToUpper(strings.TrimSpace(errResp.Status)),
 	}
+	mergeStructuredQuotaDetails(&parsed, errResp.Details)
 
 	if len(errResp.Error) > 0 {
 		var errorText string
@@ -655,11 +748,32 @@ func parseStructuredQuotaError(responseBody []byte) (structuredQuotaError, bool)
 				if parsed.status == "" {
 					parsed.status = strings.ToUpper(strings.TrimSpace(errorObj.Status))
 				}
+				mergeStructuredQuotaDetails(&parsed, errorObj.Details)
 			}
 		}
 	}
 
 	return parsed, parsed.code != "" || parsed.message != "" || parsed.status != ""
+}
+
+func mergeStructuredQuotaDetails(parsed *structuredQuotaError, details []structuredQuotaErrorDetail) {
+	if parsed == nil {
+		return
+	}
+	for _, detail := range details {
+		if parsed.model == "" {
+			parsed.model = strings.TrimSpace(detail.Metadata.Model)
+		}
+		if parsed.quotaResetTimeStamp == "" {
+			parsed.quotaResetTimeStamp = strings.TrimSpace(detail.Metadata.QuotaResetTimeStamp)
+		}
+		if parsed.quotaResetDelay == "" {
+			parsed.quotaResetDelay = strings.TrimSpace(detail.Metadata.QuotaResetDelay)
+		}
+		if parsed.quotaResetTimeStamp != "" && parsed.quotaResetDelay != "" && parsed.model != "" {
+			return
+		}
+	}
 }
 
 func coalesceInt64(values ...int64) int64 {
@@ -703,15 +817,28 @@ func parseStructuredCooldownUntil(quotaErr structuredQuotaError, now time.Time) 
 		}
 	}
 
-	if quotaErr.resetTime == "" {
-		return time.Time{}, false
+	if quotaErr.quotaResetTimeStamp != "" {
+		until, err := time.Parse(time.RFC3339, quotaErr.quotaResetTimeStamp)
+		if err == nil && until.After(now) {
+			return until, true
+		}
 	}
 
-	duration, err := time.ParseDuration(quotaErr.resetTime)
-	if err != nil || duration <= 0 {
-		return time.Time{}, false
+	if quotaErr.resetTime != "" {
+		duration, err := time.ParseDuration(quotaErr.resetTime)
+		if err == nil && duration > 0 {
+			return now.Add(duration), true
+		}
 	}
-	return now.Add(duration), true
+
+	if quotaErr.quotaResetDelay != "" {
+		duration, err := time.ParseDuration(quotaErr.quotaResetDelay)
+		if err == nil && duration > 0 {
+			return now.Add(duration), true
+		}
+	}
+
+	return time.Time{}, false
 }
 
 func parseRetryInCooldownUntil(message string, now time.Time) (time.Time, bool) {

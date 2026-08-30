@@ -14,35 +14,41 @@ import (
 )
 
 type authTokenUsageResponse struct {
-	IsActive             bool     `json:"is_active"`
-	IsValid              bool     `json:"isValid"`
-	Balance              any      `json:"balance"`
-	Remaining            any      `json:"remaining"`
-	Total                any      `json:"total"`
-	Used                 float64  `json:"used"`
-	Unit                 string   `json:"unit"`
-	Extra                string   `json:"extra"`
-	PlanName             string   `json:"plan_name,omitempty"`
-	PlanNameCamel        string   `json:"planName,omitempty"`
-	InvalidMessage       string   `json:"invalid_message,omitempty"`
-	InvalidMessageCamel  string   `json:"invalidMessage,omitempty"`
-	Error                string   `json:"error,omitempty"`
-	LimitType            string   `json:"limit_type,omitempty"`
-	LimitTypeCamel       string   `json:"limitType,omitempty"`
-	DailyUsed            float64  `json:"daily_used"`
-	DailyUsedCamel       float64  `json:"dailyUsed"`
-	DailyLimit           *float64 `json:"daily_limit,omitempty"`
-	DailyLimitCamel      *float64 `json:"dailyLimit,omitempty"`
-	DailyRemaining       *float64 `json:"daily_remaining,omitempty"`
-	DailyRemainingCamel  *float64 `json:"dailyRemaining,omitempty"`
-	CostUsed             float64  `json:"cost_used"`
-	CostUsedCamel        float64  `json:"costUsed"`
-	CostLimit            *float64 `json:"cost_limit,omitempty"`
-	CostLimitCamel       *float64 `json:"costLimit,omitempty"`
-	CostRemaining        *float64 `json:"cost_remaining,omitempty"`
-	CostRemainingCamel   *float64 `json:"costRemaining,omitempty"`
-	UsagePercentage      *float64 `json:"usage_percentage,omitempty"`
-	UsagePercentageCamel *float64 `json:"usagePercentage,omitempty"`
+	IsActive              bool     `json:"is_active"`
+	IsValid               bool     `json:"isValid"`
+	Balance               any      `json:"balance"`
+	Remaining             any      `json:"remaining"`
+	Total                 any      `json:"total"`
+	Used                  float64  `json:"used"`
+	Unit                  string   `json:"unit"`
+	Extra                 string   `json:"extra"`
+	PlanName              string   `json:"plan_name,omitempty"`
+	PlanNameCamel         string   `json:"planName,omitempty"`
+	InvalidMessage        string   `json:"invalid_message,omitempty"`
+	InvalidMessageCamel   string   `json:"invalidMessage,omitempty"`
+	Error                 string   `json:"error,omitempty"`
+	LimitType             string   `json:"limit_type,omitempty"`
+	LimitTypeCamel        string   `json:"limitType,omitempty"`
+	DailyUsed             float64  `json:"daily_used"`
+	DailyUsedCamel        float64  `json:"dailyUsed"`
+	DailyLimit            *float64 `json:"daily_limit,omitempty"`
+	DailyLimitCamel       *float64 `json:"dailyLimit,omitempty"`
+	DailyRemaining        *float64 `json:"daily_remaining,omitempty"`
+	DailyRemainingCamel   *float64 `json:"dailyRemaining,omitempty"`
+	MonthlyUsed           float64  `json:"monthly_used"`
+	MonthlyUsedCamel      float64  `json:"monthlyUsed"`
+	MonthlyLimit          *float64 `json:"monthly_limit,omitempty"`
+	MonthlyLimitCamel     *float64 `json:"monthlyLimit,omitempty"`
+	MonthlyRemaining      *float64 `json:"monthly_remaining,omitempty"`
+	MonthlyRemainingCamel *float64 `json:"monthlyRemaining,omitempty"`
+	CostUsed              float64  `json:"cost_used"`
+	CostUsedCamel         float64  `json:"costUsed"`
+	CostLimit             *float64 `json:"cost_limit,omitempty"`
+	CostLimitCamel        *float64 `json:"costLimit,omitempty"`
+	CostRemaining         *float64 `json:"cost_remaining,omitempty"`
+	CostRemainingCamel    *float64 `json:"costRemaining,omitempty"`
+	UsagePercentage       *float64 `json:"usage_percentage,omitempty"`
+	UsagePercentageCamel  *float64 `json:"usagePercentage,omitempty"`
 }
 
 // HandleAuthTokenUsage 返回当前 API Key 的额度/用量摘要。
@@ -99,6 +105,7 @@ func (s *Server) buildAuthTokenUsageResponse(ctx context.Context, tokenHash stri
 		return authTokenUsageResponse{}, err
 	}
 	token.NormalizeDailyCostForToday()
+	token.NormalizeMonthlyCostForCurrentMonth()
 	if token.GroupID > 0 {
 		group, groupErr := s.store.GetAuthTokenGroup(ctx, token.GroupID)
 		if groupErr == nil {
@@ -116,14 +123,20 @@ func (s *Server) buildAuthTokenUsageResponse(ctx context.Context, tokenHash stri
 	}
 
 	dailyUsedMicro := token.DailyCostUsedMicroUSD
+	monthlyUsedMicro := token.MonthlyCostUsedMicroUSD
 	costUsedMicro := token.CostUsedMicroUSD
 	effectiveDailyLimitMicro := effectiveDailyLimitMicro(token)
+	effectiveMonthlyLimitMicro := effectiveMonthlyLimitMicro(token)
 	effectiveCostLimitMicro := effectiveCostLimitMicro(token)
 
 	if s.authService != nil {
 		if used, limit, _ := s.authService.IsDailyCostLimitExceeded(tokenHash); limit > 0 {
 			dailyUsedMicro = used
 			effectiveDailyLimitMicro = limit
+		}
+		if used, limit, _ := s.authService.IsMonthlyCostLimitExceeded(tokenHash); limit > 0 {
+			monthlyUsedMicro = used
+			effectiveMonthlyLimitMicro = limit
 		}
 		if used, limit, _ := s.authService.IsCostLimitExceeded(tokenHash); limit > 0 {
 			costUsedMicro = used
@@ -133,32 +146,40 @@ func (s *Server) buildAuthTokenUsageResponse(ctx context.Context, tokenHash stri
 
 	dailyLimitPtr := microUSDPtr(effectiveDailyLimitMicro)
 	dailyRemainingPtr := remainingMicroUSDPtr(effectiveDailyLimitMicro, dailyUsedMicro)
+	monthlyLimitPtr := microUSDPtr(effectiveMonthlyLimitMicro)
+	monthlyRemainingPtr := remainingMicroUSDPtr(effectiveMonthlyLimitMicro, monthlyUsedMicro)
 	costLimitPtr := microUSDPtr(effectiveCostLimitMicro)
 	costRemainingPtr := remainingMicroUSDPtr(effectiveCostLimitMicro, costUsedMicro)
 
 	resp := authTokenUsageResponse{
-		IsActive:            token.IsValid(),
-		IsValid:             token.IsValid(),
-		Balance:             nil,
-		Remaining:           nil,
-		Total:               nil,
-		Used:                util.MicroUSDToUSD(dailyUsedMicro),
-		Unit:                "USD",
-		Extra:               "无限制",
-		PlanName:            planName,
-		PlanNameCamel:       planName,
-		DailyUsed:           util.MicroUSDToUSD(dailyUsedMicro),
-		DailyUsedCamel:      util.MicroUSDToUSD(dailyUsedMicro),
-		DailyLimit:          dailyLimitPtr,
-		DailyLimitCamel:     dailyLimitPtr,
-		DailyRemaining:      dailyRemainingPtr,
-		DailyRemainingCamel: dailyRemainingPtr,
-		CostUsed:            util.MicroUSDToUSD(costUsedMicro),
-		CostUsedCamel:       util.MicroUSDToUSD(costUsedMicro),
-		CostLimit:           costLimitPtr,
-		CostLimitCamel:      costLimitPtr,
-		CostRemaining:       costRemainingPtr,
-		CostRemainingCamel:  costRemainingPtr,
+		IsActive:              token.IsValid(),
+		IsValid:               token.IsValid(),
+		Balance:               nil,
+		Remaining:             nil,
+		Total:                 nil,
+		Used:                  util.MicroUSDToUSD(dailyUsedMicro),
+		Unit:                  "USD",
+		Extra:                 "无限制",
+		PlanName:              planName,
+		PlanNameCamel:         planName,
+		DailyUsed:             util.MicroUSDToUSD(dailyUsedMicro),
+		DailyUsedCamel:        util.MicroUSDToUSD(dailyUsedMicro),
+		DailyLimit:            dailyLimitPtr,
+		DailyLimitCamel:       dailyLimitPtr,
+		DailyRemaining:        dailyRemainingPtr,
+		DailyRemainingCamel:   dailyRemainingPtr,
+		MonthlyUsed:           util.MicroUSDToUSD(monthlyUsedMicro),
+		MonthlyUsedCamel:      util.MicroUSDToUSD(monthlyUsedMicro),
+		MonthlyLimit:          monthlyLimitPtr,
+		MonthlyLimitCamel:     monthlyLimitPtr,
+		MonthlyRemaining:      monthlyRemainingPtr,
+		MonthlyRemainingCamel: monthlyRemainingPtr,
+		CostUsed:              util.MicroUSDToUSD(costUsedMicro),
+		CostUsedCamel:         util.MicroUSDToUSD(costUsedMicro),
+		CostLimit:             costLimitPtr,
+		CostLimitCamel:        costLimitPtr,
+		CostRemaining:         costRemainingPtr,
+		CostRemainingCamel:    costRemainingPtr,
 	}
 
 	displayUsedMicro := int64(0)
@@ -172,6 +193,14 @@ func (s *Server) buildAuthTokenUsageResponse(ctx context.Context, tokenHash stri
 		resp.Remaining = dailyRemainingPtr
 		displayUsedMicro = dailyUsedMicro
 		displayLimitMicro = effectiveDailyLimitMicro
+	case effectiveMonthlyLimitMicro > 0:
+		resp.LimitType = "monthly"
+		resp.LimitTypeCamel = "monthly"
+		resp.Total = monthlyLimitPtr
+		resp.Balance = monthlyRemainingPtr
+		resp.Remaining = monthlyRemainingPtr
+		displayUsedMicro = monthlyUsedMicro
+		displayLimitMicro = effectiveMonthlyLimitMicro
 	case effectiveCostLimitMicro > 0:
 		resp.LimitType = "total"
 		resp.LimitTypeCamel = "total"
@@ -207,16 +236,22 @@ func (s *Server) buildAuthTokenUsageResponse(ctx context.Context, tokenHash stri
 		resp.InvalidMessage = "token expired"
 		resp.InvalidMessageCamel = resp.InvalidMessage
 		resp.Error = resp.InvalidMessage
-	} else if effectiveDailyLimitMicro > 0 && dailyUsedMicro >= effectiveDailyLimitMicro {
-		resp.IsActive = false
-		resp.IsValid = false
-		resp.InvalidMessage = fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", util.MicroUSDToUSD(dailyUsedMicro), util.MicroUSDToUSD(effectiveDailyLimitMicro))
-		resp.InvalidMessageCamel = resp.InvalidMessage
-		resp.Error = resp.InvalidMessage
 	} else if effectiveCostLimitMicro > 0 && costUsedMicro >= effectiveCostLimitMicro {
 		resp.IsActive = false
 		resp.IsValid = false
 		resp.InvalidMessage = fmt.Sprintf("Cost limit exceeded: $%.2f used of $%.2f limit", util.MicroUSDToUSD(costUsedMicro), util.MicroUSDToUSD(effectiveCostLimitMicro))
+		resp.InvalidMessageCamel = resp.InvalidMessage
+		resp.Error = resp.InvalidMessage
+	} else if effectiveMonthlyLimitMicro > 0 && monthlyUsedMicro >= effectiveMonthlyLimitMicro {
+		resp.IsActive = false
+		resp.IsValid = false
+		resp.InvalidMessage = fmt.Sprintf("Monthly cost limit exceeded: $%.2f used of $%.2f monthly limit", util.MicroUSDToUSD(monthlyUsedMicro), util.MicroUSDToUSD(effectiveMonthlyLimitMicro))
+		resp.InvalidMessageCamel = resp.InvalidMessage
+		resp.Error = resp.InvalidMessage
+	} else if effectiveDailyLimitMicro > 0 && dailyUsedMicro >= effectiveDailyLimitMicro {
+		resp.IsActive = false
+		resp.IsValid = false
+		resp.InvalidMessage = fmt.Sprintf("Daily cost limit exceeded: $%.2f used of $%.2f daily limit", util.MicroUSDToUSD(dailyUsedMicro), util.MicroUSDToUSD(effectiveDailyLimitMicro))
 		resp.InvalidMessageCamel = resp.InvalidMessage
 		resp.Error = resp.InvalidMessage
 	}
@@ -242,6 +277,16 @@ func effectiveCostLimitMicro(token *model.AuthToken) int64 {
 		return token.EffectiveCostLimitMicroUSD
 	}
 	return token.CostLimitMicroUSD
+}
+
+func effectiveMonthlyLimitMicro(token *model.AuthToken) int64 {
+	if token == nil {
+		return 0
+	}
+	if token.EffectiveSet {
+		return token.EffectiveMonthlyCostLimitMicroUSD
+	}
+	return token.MonthlyCostLimitMicroUSD
 }
 
 func microUSDPtr(micro int64) *float64 {

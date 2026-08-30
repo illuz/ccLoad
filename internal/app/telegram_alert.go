@@ -266,6 +266,9 @@ func (s *AlertService) CheckTokenUsage(tokenHash string) {
 	if used, limit, _ := s.authService.IsDailyCostLimitExceeded(tokenHash); limit > 0 {
 		s.maybeAlertTokenUsage(tokenHash, "daily", model.CurrentLocalDayKey(), used, limit)
 	}
+	if used, limit, _ := s.authService.IsMonthlyCostLimitExceeded(tokenHash); limit > 0 {
+		s.maybeAlertTokenUsage(tokenHash, "monthly", model.CurrentLocalMonthKey(), used, limit)
+	}
 	if used, limit, _ := s.authService.IsCostLimitExceeded(tokenHash); limit > 0 {
 		s.maybeAlertTokenUsage(tokenHash, "total", 0, used, limit)
 	}

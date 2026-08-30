@@ -106,6 +106,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			"channel_restriction_mode":   "deny",
 			"cost_limit_usd":             1.5,
 			"daily_cost_limit_usd":       0.8,
+			"monthly_cost_limit_usd":     2.4,
 			"daily_limit_double_enabled": true,
 			"max_concurrency":            0,
 			"unknown_ignored":            "x",
@@ -127,6 +128,7 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 			ExpiresAt               *int64  `json:"expires_at,omitempty"`
 			CostLimitUSD            float64 `json:"cost_limit_usd"`
 			DailyCostLimitUSD       float64 `json:"daily_cost_limit_usd"`
+			MonthlyCostLimitUSD     float64 `json:"monthly_cost_limit_usd"`
 			DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
 			AllowedChannelIDs       []int64 `json:"allowed_channel_ids"`
 			ChannelRestrictionMode  string  `json:"channel_restriction_mode"`
@@ -160,6 +162,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		if resp.Data.DailyCostLimitUSD < 0.79 || resp.Data.DailyCostLimitUSD > 0.81 {
 			t.Fatalf("daily_cost_limit_usd=%v, want ~0.8", resp.Data.DailyCostLimitUSD)
 		}
+		if resp.Data.MonthlyCostLimitUSD < 2.39 || resp.Data.MonthlyCostLimitUSD > 2.41 {
+			t.Fatalf("monthly_cost_limit_usd=%v, want ~2.4", resp.Data.MonthlyCostLimitUSD)
+		}
 		if !resp.Data.DailyLimitDoubleEnabled {
 			t.Fatalf("daily_limit_double_enabled=false, want true")
 		}
@@ -191,6 +196,9 @@ func TestHandleUpdateAuthToken(t *testing.T) {
 		}
 		if updated.DailyCostLimitMicroUSD != 800_000 {
 			t.Fatalf("DailyCostLimitMicroUSD=%d, want %d", updated.DailyCostLimitMicroUSD, 800_000)
+		}
+		if updated.MonthlyCostLimitMicroUSD != 2_400_000 {
+			t.Fatalf("MonthlyCostLimitMicroUSD=%d, want %d", updated.MonthlyCostLimitMicroUSD, 2_400_000)
 		}
 		if !updated.IsDailyLimitDoubledToday() {
 			t.Fatalf("updated daily limit double should be active today")

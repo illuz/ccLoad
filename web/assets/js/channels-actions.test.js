@@ -112,7 +112,7 @@ test('渠道卡片模板把冷却标记放到操作列上方而不是名称列',
 
   const template = templateMatch[0];
   assert.doesNotMatch(template, /<div class="ch-name-statuses">\s*\{\{\{cooldownBadge\}\}\}\s*<\/div>/);
-  assert.match(template, /<td class="ch-col-actions"[^>]*>\s*<div class="ch-actions-stack">\s*<div class="ch-action-statuses">\s*\{\{\{cooldownBadge\}\}\}\s*<\/div>\s*<div class="ch-action-group">/);
+  assert.match(template, /<td class="ch-col-actions"[^>]*>\s*<div class="ch-actions-stack">\s*<div class="ch-action-statuses">\s*\{\{\{cooldownBadge\}\}\}\s*\{\{\{protocolProbeBadge\}\}\}\s*<\/div>\s*<div class="ch-action-group">/);
 });
 
 test('渠道卡片模板为批量模型刷新结果预留行内状态槽', () => {
@@ -137,9 +137,16 @@ test('操作列把冷却标记固定到右上角，移动端再退回普通流�
   assert.match(badgeStyle[0], /position:\s*absolute/);
   assert.match(badgeStyle[0], /top:\s*8px/);
   assert.match(badgeStyle[0], /right:\s*8px/);
+  assert.match(badgeStyle[0], /flex-wrap:\s*wrap/);
+  assert.match(badgeStyle[0], /max-width:\s*calc\(100%\s*-\s*16px\)/);
+
+  const protocolBadgeStyle = css.match(/\.ch-protocol-reprobe-badge\s*\{[^}]+\}/);
+  assert.ok(protocolBadgeStyle, '缺少 .ch-protocol-reprobe-badge 样式');
+  assert.match(protocolBadgeStyle[0], /max-width:\s*100%/);
+  assert.match(protocolBadgeStyle[0], /white-space:\s*normal/);
 
   assert.match(css, /\.channel-table\s+\.ch-actions-stack\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*center;[\s\S]*?padding-top:\s*0;/);
-  assert.match(css, /\.channel-table\s+\.ch-action-statuses\s*\{[\s\S]*?position:\s*static;[\s\S]*?justify-content:\s*center;/);
+  assert.match(css, /\.channel-table\s+\.ch-action-statuses\s*\{[\s\S]*?position:\s*static;[\s\S]*?justify-content:\s*center;[\s\S]*?max-width:\s*100%/);
 });
 
 test('操作列为五个操作按钮保留足够宽度', () => {

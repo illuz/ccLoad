@@ -90,8 +90,9 @@ func (s *SQLStore) GetConfig(ctx context.Context, id int64) (*model.Config, erro
 func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName string) ([]*model.Config, error) {
 	var query string
 	var args []any
+	routingModel := model.RoutingModelName(modelName)
 
-	if modelName == "*" {
+	if routingModel == "*" {
 		// 通配符：返回所有启用的渠道
 		// 注意：不再从 channels 表读取 models 和 model_redirects
 		query = `
@@ -108,7 +109,7 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
             ORDER BY c.priority DESC, c.id ASC
         `
 	} else {
-		// 精确匹配：使用 channel_models 索引表
+		// A suffixed configured entry is also addressable through its base name.
 		query = `
 	            SELECT c.id, c.name, c.group_id, MAX(g.name) AS group_name, MAX(g.color) AS group_color, c.url, c.priority, c.rpm_limit, c.max_concurrency, c.request_delay_seconds,
 	                   c.channel_type, c.protocol_transform_mode, c.enabled, c.scheduled_check_enabled, c.scheduled_check_model, c.channel_cooldown_fixed_enabled, c.channel_cooldown_fixed_seconds, c.input_priority_bonus_enabled, c.input_priority_threshold, c.input_priority_bonus,
@@ -120,12 +121,12 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 	            LEFT JOIN channel_groups g ON c.group_id = g.id
 	            LEFT JOIN api_keys k ON c.id = k.channel_id
 	            WHERE c.enabled = 1
-              AND cm.model = ?
+	              AND (cm.model = ? OR cm.model LIKE ?)
 	              AND cm.disabled = 0
 	            GROUP BY c.id
             ORDER BY c.priority DESC, c.id ASC
         `
-		args = []any{modelName}
+		args = []any{routingModel, routingModel + "(%"}
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -143,6 +144,15 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 	// 批量加载所有渠道的模型数据
 	if err := s.loadConfigsAuxConcurrent(ctx, configs); err != nil {
 		return nil, err
+	}
+	if routingModel != "*" {
+		matched := configs[:0]
+		for _, cfg := range configs {
+			if cfg != nil && cfg.SupportsModel(routingModel) {
+				matched = append(matched, cfg)
+			}
+		}
+		configs = matched
 	}
 
 	return configs, nil
@@ -189,8 +199,9 @@ func (s *SQLStore) GetEnabledChannelsByType(ctx context.Context, channelType str
 // GetEnabledChannelsByModelAndProtocol 查询支持指定模型且暴露指定客户端协议的启用渠道（按优先级排序）
 func (s *SQLStore) GetEnabledChannelsByModelAndProtocol(ctx context.Context, modelName string, protocol string) ([]*model.Config, error) {
 	protocol = strings.TrimSpace(strings.ToLower(protocol))
+	routingModel := model.RoutingModelName(modelName)
 	if protocol == "" {
-		return s.GetEnabledChannelsByModel(ctx, modelName)
+		return s.GetEnabledChannelsByModel(ctx, routingModel)
 	}
 
 	args := []any{protocol, protocol}
@@ -214,15 +225,15 @@ func (s *SQLStore) GetEnabledChannelsByModelAndProtocol(ctx context.Context, mod
 		  )
 	`
 
-	if modelName != "*" {
+	if routingModel != "*" {
 		query += `
 		  AND EXISTS (
 		      SELECT 1
 		      FROM channel_models cm
-		      WHERE cm.channel_id = c.id AND cm.model = ? AND cm.disabled = 0
+		      WHERE cm.channel_id = c.id AND (cm.model = ? OR cm.model LIKE ?) AND cm.disabled = 0
 		  )
 	`
-		args = append(args, modelName)
+		args = append(args, routingModel, routingModel+"(%")
 	}
 
 	query += `
@@ -247,6 +258,15 @@ func (s *SQLStore) GetEnabledChannelsByModelAndProtocol(ctx context.Context, mod
 	}
 
 	configs = filterConfigsByProtocol(configs, protocol)
+	if routingModel != "*" {
+		matched := configs[:0]
+		for _, cfg := range configs {
+			if cfg != nil && cfg.SupportsModel(routingModel) {
+				matched = append(matched, cfg)
+			}
+		}
+		configs = matched
+	}
 	return configs, nil
 }
 

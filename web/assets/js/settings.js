@@ -3,6 +3,10 @@ const t = window.t;
 
 let originalSettings = {}; // 保存原始值用于比较
 let debugPreserveTokenOptions = [];
+let runtimeMetricsLoading = false;
+let runtimeMetricsPreviousFocus = null;
+let runtimeMetricsRefreshTimer = null;
+const RUNTIME_METRICS_REFRESH_MS = 3000;
 
 function isHotReloadableSetting(setting) {
   return Boolean(setting?.hot_reload);
@@ -17,6 +21,78 @@ function renderHotReloadBadge(setting) {
     </svg>
   </span>`;
 }
+
+const runtimeMetricDomains = [
+  {
+    sourceKey: 'process',
+    titleKey: 'settings.runtimeMetrics.group.process',
+    descriptionKey: 'settings.runtimeMetrics.processNote',
+    metrics: [
+      { key: 'uptime_seconds', labelKey: 'settings.runtimeMetrics.metric.uptime', format: 'duration' },
+      { key: 'concurrency_slots_in_use', labelKey: 'settings.runtimeMetrics.metric.concurrencySlotsInUse' },
+      { key: 'max_concurrency', labelKey: 'settings.runtimeMetrics.metric.maxConcurrency' },
+      { key: 'goroutines', labelKey: 'settings.runtimeMetrics.metric.goroutines' }
+    ]
+  },
+  {
+    sourceKey: 'process',
+    titleKey: 'settings.runtimeMetrics.group.resources',
+    descriptionKey: 'settings.runtimeMetrics.resourcesNote',
+    metrics: [
+      { key: 'cpu_usage_percent', labelKey: 'settings.runtimeMetrics.metric.cpuUsagePercent', format: 'percent' },
+      { key: 'cpu_user_seconds', labelKey: 'settings.runtimeMetrics.metric.cpuUserSeconds', format: 'seconds' },
+      { key: 'cpu_system_seconds', labelKey: 'settings.runtimeMetrics.metric.cpuSystemSeconds', format: 'seconds' },
+      { key: 'rss_bytes', labelKey: 'settings.runtimeMetrics.metric.rssBytes', format: 'bytes', zeroUnavailable: true },
+      { key: 'max_rss_bytes', labelKey: 'settings.runtimeMetrics.metric.maxRssBytes', format: 'bytes', zeroUnavailable: true },
+      { key: 'heap_alloc_bytes', labelKey: 'settings.runtimeMetrics.metric.heapAllocBytes', format: 'bytes' },
+      { key: 'heap_sys_bytes', labelKey: 'settings.runtimeMetrics.metric.heapSysBytes', format: 'bytes' },
+      { key: 'gc_count', labelKey: 'settings.runtimeMetrics.metric.gcCount' },
+      { key: 'gc_pause_total_ns', labelKey: 'settings.runtimeMetrics.metric.gcPauseTotal', format: 'durationNs' },
+      { key: 'gc_cpu_percent', labelKey: 'settings.runtimeMetrics.metric.gcCPUPercent', format: 'percent' }
+    ]
+  },
+  {
+    sourceKey: 'http_proxy',
+    titleKey: 'settings.runtimeMetrics.group.httpProxy',
+    descriptionKey: 'settings.runtimeMetrics.httpProxyNote',
+    metrics: [
+      { key: 'active_requests', labelKey: 'settings.runtimeMetrics.metric.httpActiveRequests' },
+      { key: 'completed_requests', labelKey: 'settings.runtimeMetrics.metric.httpCompletedRequests' },
+      { key: 'non_error_responses', labelKey: 'settings.runtimeMetrics.metric.httpNonErrorResponses' },
+      { key: 'client_error_responses', labelKey: 'settings.runtimeMetrics.metric.httpClientErrorResponses' },
+      { key: 'server_error_responses', labelKey: 'settings.runtimeMetrics.metric.httpServerErrorResponses' },
+      { key: 'streaming_requests', labelKey: 'settings.runtimeMetrics.metric.httpStreamingRequests' },
+      { key: 'non_streaming_requests', labelKey: 'settings.runtimeMetrics.metric.httpNonStreamingRequests' },
+      { key: 'request_body_bytes', labelKey: 'settings.runtimeMetrics.metric.httpRequestBodyBytes', format: 'bytes' },
+      { key: 'response_body_bytes', labelKey: 'settings.runtimeMetrics.metric.httpResponseBodyBytes', format: 'bytes' }
+    ]
+  },
+  {
+    sourceKey: 'logs',
+    titleKey: 'settings.runtimeMetrics.group.logs',
+    descriptionKey: 'settings.runtimeMetrics.logsNote',
+    metrics: [
+      { key: 'backlog_entries', labelKey: 'settings.runtimeMetrics.metric.logBacklogEntries' },
+      { key: 'queue_capacity_entries', labelKey: 'settings.runtimeMetrics.metric.logQueueCapacityEntries' },
+      { key: 'dropped_entries', labelKey: 'settings.runtimeMetrics.metric.logDroppedEntries' },
+      { key: 'persistence_failed_entries', labelKey: 'settings.runtimeMetrics.metric.logPersistenceFailedEntries' }
+    ]
+  },
+  {
+    sourceKey: 'storage',
+    titleKey: 'settings.runtimeMetrics.group.storage',
+    descriptionKey: 'settings.runtimeMetrics.storageNote',
+    optional: true,
+    metrics: [
+      { key: 'sqlite_sync_failures', labelKey: 'settings.runtimeMetrics.metric.sqliteSyncFailures' },
+      { key: 'mysql_sync_pending', labelKey: 'settings.runtimeMetrics.metric.mysqlSyncPending' },
+      { key: 'mysql_sync_queue_capacity', labelKey: 'settings.runtimeMetrics.metric.mysqlSyncQueueCapacity' },
+      { key: 'mysql_sync_failures', labelKey: 'settings.runtimeMetrics.metric.mysqlSyncFailures' },
+      { key: 'mysql_sync_dropped', labelKey: 'settings.runtimeMetrics.metric.mysqlSyncDropped' },
+      { key: 'mysql_sync_last_success_unix_ms', labelKey: 'settings.runtimeMetrics.metric.mysqlSyncLastSuccess', format: 'unixMilliseconds' }
+    ]
+  }
+];
 
 function bindSettingsPageActions() {
   const saveAllBtn = document.getElementById('save-all-btn');
@@ -33,6 +109,238 @@ function bindSettingsPageActions() {
       saveAndRestartSettings();
     });
     saveRestartBtn.dataset.bound = '1';
+  }
+
+  const runtimeMetricsBtn = document.getElementById('runtime-metrics-btn');
+  if (runtimeMetricsBtn && !runtimeMetricsBtn.dataset.bound) {
+    runtimeMetricsBtn.addEventListener('click', openRuntimeMetricsModal);
+    runtimeMetricsBtn.dataset.bound = '1';
+  }
+
+  const refreshBtn = document.getElementById('refresh-runtime-metrics-btn');
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.addEventListener('click', loadRuntimeMetrics);
+    refreshBtn.dataset.bound = '1';
+  }
+
+  document.querySelectorAll('[data-action="close-runtime-metrics"]').forEach((button) => {
+    if (button.dataset.bound) return;
+    button.addEventListener('click', closeRuntimeMetricsModal);
+    button.dataset.bound = '1';
+  });
+
+  const modal = document.getElementById('runtimeMetricsModal');
+  if (modal && !modal.dataset.bound) {
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeRuntimeMetricsModal();
+    });
+    modal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeRuntimeMetricsModal();
+      }
+    });
+    modal.dataset.bound = '1';
+  }
+}
+
+function openRuntimeMetricsModal() {
+  const modal = document.getElementById('runtimeMetricsModal');
+  if (!modal) return;
+
+  runtimeMetricsPreviousFocus = document.activeElement;
+  document.querySelector('.app-container')?.setAttribute('inert', '');
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  modal.querySelector('.close-btn')?.focus();
+  loadRuntimeMetrics();
+  if (runtimeMetricsRefreshTimer === null) {
+    runtimeMetricsRefreshTimer = setInterval(() => loadRuntimeMetrics({ silent: true }), RUNTIME_METRICS_REFRESH_MS);
+  }
+}
+
+function closeRuntimeMetricsModal() {
+  const modal = document.getElementById('runtimeMetricsModal');
+  if (!modal) return;
+
+  if (runtimeMetricsRefreshTimer !== null) {
+    clearInterval(runtimeMetricsRefreshTimer);
+    runtimeMetricsRefreshTimer = null;
+  }
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+  document.querySelector('.app-container')?.removeAttribute('inert');
+  if (runtimeMetricsPreviousFocus?.isConnected) runtimeMetricsPreviousFocus.focus();
+  runtimeMetricsPreviousFocus = null;
+}
+
+function normalizeRuntimeMetric(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function runtimeMetricsLocale() {
+  return window.i18n?.getLocale?.() || document.documentElement.lang || 'zh-CN';
+}
+
+function formatRuntimeInteger(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null) return 'N/A';
+  return new Intl.NumberFormat(runtimeMetricsLocale(), { maximumFractionDigits: 0 }).format(numeric);
+}
+
+function formatRuntimeDecimal(value, maximumFractionDigits = 1) {
+  return new Intl.NumberFormat(runtimeMetricsLocale(), { maximumFractionDigits }).format(value);
+}
+
+function formatRuntimeBytes(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null) return 'N/A';
+
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let unitIndex = 0;
+  let amount = numeric;
+  while (amount >= 1024 && unitIndex < units.length - 1) {
+    amount /= 1024;
+    unitIndex++;
+  }
+  return `${formatRuntimeDecimal(amount, unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatRuntimeDuration(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null) return 'N/A';
+
+  const seconds = Math.round(numeric);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return t('common.timeHM', { h: hours, m: minutes });
+  if (minutes > 0) return t('common.timeMS', { m: minutes, s: seconds % 60 });
+  return t('common.timeS', { s: seconds });
+}
+
+function formatRuntimeSeconds(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null) return 'N/A';
+  if (numeric < 60) return t('common.timeS', { s: formatRuntimeDecimal(numeric, 1) });
+  return formatRuntimeDuration(numeric);
+}
+
+function formatRuntimeDurationNs(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null) return 'N/A';
+  if (numeric < 1e9) return `${formatRuntimeDecimal(numeric / 1e6, 1)} ms`;
+  return formatRuntimeDuration(numeric / 1e9);
+}
+
+function formatRuntimeTimestamp(value) {
+  const numeric = normalizeRuntimeMetric(value);
+  if (numeric === null || numeric <= 0) return 'N/A';
+  const date = new Date(numeric);
+  return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString(runtimeMetricsLocale());
+}
+
+function formatRuntimeMetric(metric, stats) {
+  if (metric.zeroUnavailable && normalizeRuntimeMetric(stats[metric.key]) === 0) return 'N/A';
+  if (metric.format === 'bytes') return formatRuntimeBytes(stats[metric.key]);
+  if (metric.format === 'duration') return formatRuntimeDuration(stats[metric.key]);
+  if (metric.format === 'seconds') return formatRuntimeSeconds(stats[metric.key]);
+  if (metric.format === 'durationNs') return formatRuntimeDurationNs(stats[metric.key]);
+  if (metric.format === 'percent') {
+    const numeric = normalizeRuntimeMetric(stats[metric.key]);
+    return numeric === null ? 'N/A' : `${formatRuntimeDecimal(numeric, 1)}%`;
+  }
+  if (metric.format === 'unixMilliseconds') return formatRuntimeTimestamp(stats[metric.key]);
+  return formatRuntimeInteger(stats[metric.key]);
+}
+
+function renderRuntimeMetricDomain(domain, payload) {
+  const stats = payload[domain.sourceKey];
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) {
+    if (domain.optional) return '';
+    return `
+      <section class="runtime-metrics-section">
+        <div class="runtime-metrics-section-header"><h3>${escapeHtml(t(domain.titleKey))}</h3></div>
+        <p class="runtime-metrics-note">${escapeHtml(t('settings.runtimeMetrics.groupUnavailable'))}</p>
+      </section>`;
+  }
+
+  const cards = domain.metrics.map((metric) => `
+    <div class="runtime-metric-card">
+      <span class="runtime-metric-label">${escapeHtml(t(metric.labelKey))}</span>
+      <strong class="runtime-metric-value">${escapeHtml(formatRuntimeMetric(metric, stats))}</strong>
+      <code class="runtime-metric-key">${escapeHtml(metric.key)}</code>
+    </div>`).join('');
+
+  return `
+    <section class="runtime-metrics-section">
+      <div class="runtime-metrics-section-header"><h3>${escapeHtml(t(domain.titleKey))}</h3></div>
+      <p class="runtime-metrics-section-description">${escapeHtml(t(domain.descriptionKey))}</p>
+      <div class="runtime-metrics-grid">${cards}</div>
+    </section>`;
+}
+
+function renderRuntimeMetrics(payload) {
+  const content = document.getElementById('runtime-metrics-content');
+  if (!content) return;
+  content.innerHTML = runtimeMetricDomains.map((domain) => renderRuntimeMetricDomain(domain, payload)).join('');
+}
+
+function renderRuntimeMetricsLoading() {
+  const content = document.getElementById('runtime-metrics-content');
+  if (!content) return;
+  content.innerHTML = `
+    <div class="runtime-metrics-message">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <span>${escapeHtml(t('settings.runtimeMetrics.loading'))}</span>
+    </div>`;
+}
+
+function renderRuntimeMetricsError(error) {
+  const content = document.getElementById('runtime-metrics-content');
+  if (!content) return;
+  const message = error?.message || t('settings.runtimeMetrics.loadFailed');
+  content.innerHTML = `
+    <div class="runtime-metrics-message runtime-metrics-message--error" role="alert">
+      <strong>${escapeHtml(t('settings.runtimeMetrics.loadFailed'))}</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>`;
+}
+
+async function loadRuntimeMetrics(options) {
+  if (runtimeMetricsLoading) return;
+  const silent = options?.silent === true;
+  const content = document.getElementById('runtime-metrics-content');
+  const refreshBtn = document.getElementById('refresh-runtime-metrics-btn');
+  const updatedAt = document.getElementById('runtime-metrics-updated-at');
+
+  runtimeMetricsLoading = true;
+  if (content) content.setAttribute('aria-busy', 'true');
+  if (!silent) {
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (updatedAt) updatedAt.textContent = '';
+    renderRuntimeMetricsLoading();
+  }
+
+  try {
+    const data = await fetchDataWithAuth('/admin/runtime-metrics');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(t('settings.runtimeMetrics.invalidResponse'));
+    }
+    renderRuntimeMetrics(data);
+    if (updatedAt) {
+      updatedAt.textContent = t('settings.runtimeMetrics.updatedAt', {
+        time: new Date().toLocaleString(runtimeMetricsLocale())
+      });
+    }
+  } catch (error) {
+    console.error('Failed to load runtime metrics:', error);
+    renderRuntimeMetricsError(error);
+  } finally {
+    runtimeMetricsLoading = false;
+    if (content) content.setAttribute('aria-busy', 'false');
+    if (refreshBtn) refreshBtn.disabled = false;
   }
 }
 

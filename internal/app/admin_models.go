@@ -510,9 +510,37 @@ func mergeModelEntries(cfg *model.Config, fetched []model.ModelEntry) (added int
 func replaceModelEntries(cfg *model.Config, fetched []model.ModelEntry) (removed int, changed bool) {
 	oldEntries := cfg.ModelEntries
 	oldSet := make(map[string]struct{}, len(oldEntries))
-	metadataByAlias := make(map[string]model.ModelEntry, len(oldEntries)*2)
+	metadataByAlias := make(map[string]model.ModelEntry, len(oldEntries)*4)
+	disabledAliases := make(map[string]struct{}, len(oldEntries)*4)
 	newSet := make(map[string]struct{}, len(fetched))
+	modelIdentities := func(name string) []string {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil
+		}
+		raw := strings.ToLower(name)
+		routing := strings.ToLower(model.RoutingModelName(name))
+		if routing == raw {
+			return []string{raw}
+		}
+		return []string{raw, routing}
+	}
+	rememberDisabled := func(name string) {
+		for _, identity := range modelIdentities(name) {
+			disabledAliases[identity] = struct{}{}
+		}
+	}
+	isDisabled := func(name string) bool {
+		for _, identity := range modelIdentities(name) {
+			if _, exists := disabledAliases[identity]; exists {
+				return true
+			}
+		}
+		return false
+	}
 
+	// Exact aliases take precedence when both a base entry and a suffixed
+	// variant existed before the refresh.
 	for _, entry := range oldEntries {
 		key := strings.ToLower(entry.Model)
 		oldSet[key] = struct{}{}
@@ -523,16 +551,38 @@ func replaceModelEntries(cfg *model.Config, fetched []model.ModelEntry) (removed
 				metadataByAlias[redirectKey] = entry
 			}
 		}
+		if entry.Disabled {
+			rememberDisabled(entry.Model)
+			rememberDisabled(entry.RedirectModel)
+		}
+	}
+	for _, entry := range oldEntries {
+		for _, name := range []string{entry.Model, entry.RedirectModel} {
+			for _, identity := range modelIdentities(name) {
+				if _, exists := metadataByAlias[identity]; !exists {
+					metadataByAlias[identity] = entry
+				}
+			}
+		}
 	}
 	for i := range fetched {
 		key := strings.ToLower(fetched[i].Model)
 		newSet[key] = struct{}{}
-		previous, exists := metadataByAlias[key]
-		if !exists && fetched[i].RedirectModel != "" {
-			previous, exists = metadataByAlias[strings.ToLower(fetched[i].RedirectModel)]
+		var previous model.ModelEntry
+		var exists bool
+		for _, name := range []string{fetched[i].Model, fetched[i].RedirectModel} {
+			for _, identity := range modelIdentities(name) {
+				previous, exists = metadataByAlias[identity]
+				if exists {
+					break
+				}
+			}
+			if exists {
+				break
+			}
 		}
+		fetched[i].Disabled = fetched[i].Disabled || isDisabled(fetched[i].Model) || isDisabled(fetched[i].RedirectModel)
 		if exists {
-			fetched[i].Disabled = fetched[i].Disabled || previous.Disabled
 			if fetched[i].FixedCostPerRequest == 0 {
 				fetched[i].FixedCostPerRequest = previous.FixedCostPerRequest
 			}

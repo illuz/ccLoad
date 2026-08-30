@@ -40,6 +40,8 @@ test('page-filters 渲染 logs 布局时保留专用 class 和关键筛选控件
   assert.doesNotMatch(html, /data-i18n="logs\.showPrefix"/);
   assert.doesNotMatch(html, /data-i18n="logs\.recordsSuffix"/);
   assert.match(html, /id="f_channel_type"/);
+  assert.match(html, /id="f_client_protocol"/);
+  assert.match(html, /value="anthropic"[\s\S]*value="codex"[\s\S]*value="openai"[\s\S]*value="gemini"/);
   assert.match(html, /id="f_hours"/);
   // 渠道ID已移除，渠道名与模型均改为 combobox
   assert.doesNotMatch(html, /id="f_id"/);
@@ -70,8 +72,10 @@ test('page-filters 渲染 stats/trend 布局时保留各自特有控件', () => 
   assert.match(statsLayout, /class="filter-info stats-filter-info"/);
   assert.match(statsLayout, /class="filter-actions filter-actions--page stats-filter-actions"/);
   assert.match(statsLayout, /id="f_hide_zero_success"/);
+  assert.match(statsLayout, /id="f_client_protocol"/);
   assert.match(statsLayout, /id="statsCount"/);
   assert.match(trendLayout, /id="f_model" class="filter-select(?:\s+[^"]+)?"/);
+  assert.match(trendLayout, /id="f_client_protocol"/);
   assert.match(trendLayout, /data-i18n="trend\.allModels"/);
   assert.doesNotMatch(trendLayout, /id="f_hide_zero_success"/);
   // trend 渠道ID筛选已移除；渠道名改为 combobox 结构

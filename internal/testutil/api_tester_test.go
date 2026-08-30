@@ -91,6 +91,36 @@ func TestOpenAITesterBuild_AppliesThinkingEffortAndWebSearchOptions(t *testing.T
 	}
 }
 
+func TestOpenAITesterBuild_AppliesImageGenerationOptions(t *testing.T) {
+	cfg := &model.Config{URL: "https://api.example.com"}
+	req := &TestChannelRequest{
+		Model:   "gemini-image",
+		Content: "draw a lighthouse",
+		ImageGeneration: &ImageGenerationOptions{
+			AspectRatio: "3:2",
+			ImageSize:   "2K",
+		},
+	}
+
+	_, _, body, err := (&OpenAITester{}).Build(cfg, "sk-test", req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := sonic.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal body failed: %v; body=%s", err, body)
+	}
+	modalities, ok := payload["modalities"].([]any)
+	if !ok || len(modalities) != 1 || modalities[0] != "image" {
+		t.Fatalf("modalities = %#v, want [image]; body=%s", payload["modalities"], body)
+	}
+	imageConfig, ok := payload["image_config"].(map[string]any)
+	if !ok || imageConfig["aspect_ratio"] != "3:2" || imageConfig["image_size"] != "2K" {
+		t.Fatalf("image_config = %#v; body=%s", payload["image_config"], body)
+	}
+}
+
 func TestOpenAITesterBuild_AppliesSamplingAndSystemPrompt(t *testing.T) {
 	cfg := &model.Config{URL: "https://api.example.com"}
 	temperature := 0.7
@@ -204,8 +234,8 @@ func TestCodexTesterBuild_UsesCurrentCodexClientHeaders(t *testing.T) {
 	if got := headers.Get("Openai-Beta"); got != "" {
 		t.Fatalf("Openai-Beta header should be omitted, got %q", got)
 	}
-	if got := headers.Get("User-Agent"); !strings.HasPrefix(got, "codex-tui/0.137.0 ") {
-		t.Fatalf("User-Agent = %q, want codex-tui/0.137.0 prefix", got)
+	if got := headers.Get("User-Agent"); !strings.HasPrefix(got, "codex-tui/0.148.0 ") {
+		t.Fatalf("User-Agent = %q, want codex-tui/0.148.0 prefix", got)
 	}
 	if got := headers.Get("Accept"); got != "text/event-stream" {
 		t.Fatalf("Accept = %q, want text/event-stream", got)

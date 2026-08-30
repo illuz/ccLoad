@@ -11,6 +11,59 @@ import (
 	"ccLoad/internal/model"
 )
 
+const logsClientProtocolBackfillCase = `CASE
+		WHEN LOWER(TRIM(model)) LIKE 'gpt-5%'
+			OR LOWER(TRIM(model)) LIKE '%/gpt-5%'
+			OR LOWER(TRIM(model)) LIKE 'codex-%'
+			OR LOWER(TRIM(model)) LIKE '%/codex-%'
+			THEN 'codex'
+		WHEN LOWER(TRIM(model)) LIKE 'claude-%'
+			OR LOWER(TRIM(model)) LIKE '%/claude-%'
+			OR LOWER(TRIM(model)) LIKE 'opus-%'
+			OR LOWER(TRIM(model)) LIKE '%/opus-%'
+			OR LOWER(TRIM(model)) LIKE 'sonnet-%'
+			OR LOWER(TRIM(model)) LIKE '%/sonnet-%'
+			OR LOWER(TRIM(model)) LIKE 'haiku-%'
+			OR LOWER(TRIM(model)) LIKE '%/haiku-%'
+			THEN 'anthropic'
+		WHEN LOWER(TRIM(model)) LIKE 'gemini-%'
+			OR LOWER(TRIM(model)) LIKE '%/gemini-%'
+			THEN 'gemini'
+		ELSE 'openai'
+	END`
+
+// backfillLogsClientProtocol classifies historical proxy logs in bounded batches.
+// The model-based classification is best-effort; new rows always persist the exact entry protocol.
+func backfillLogsClientProtocol(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if hasMigration(ctx, db, clientProtocolBackfillMigrationVersion) {
+		return nil
+	}
+
+	batchSize := 5_000
+	query := "UPDATE logs SET client_protocol = " + logsClientProtocolBackfillCase +
+		" WHERE id IN (SELECT id FROM logs WHERE log_source = 'proxy' AND client_protocol = '' LIMIT ?)"
+	if dialect == DialectMySQL {
+		batchSize = 10_000
+		query = "UPDATE logs SET client_protocol = " + logsClientProtocolBackfillCase +
+			" WHERE log_source = 'proxy' AND client_protocol = '' LIMIT ?"
+	}
+
+	for {
+		result, err := db.ExecContext(ctx, query, batchSize)
+		if err != nil {
+			return fmt.Errorf("classify historical proxy logs: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			break
+		}
+	}
+	return recordMigration(ctx, db, clientProtocolBackfillMigrationVersion, dialect)
+}
+
 // backfillLogsMinuteBucketSQLite 分批回填 logs.minute_bucket（SQLite）
 func backfillLogsMinuteBucketSQLite(ctx context.Context, db *sql.DB, batchSize int) error {
 	if batchSize <= 0 {

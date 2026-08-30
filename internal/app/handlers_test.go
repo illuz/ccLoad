@@ -334,6 +334,15 @@ func TestBuildLogFilter(t *testing.T) {
 			},
 		},
 		{
+			name:  "client_protocol",
+			query: "client_protocol=OpenAI",
+			check: func(t *testing.T, lf model.LogFilter) {
+				if lf.ClientProtocol != "openai" {
+					t.Errorf("ClientProtocol=%q, want %q", lf.ClientProtocol, "openai")
+				}
+			},
+		},
+		{
 			name:  "auth_token_id",
 			query: "auth_token_id=456",
 			check: func(t *testing.T, lf model.LogFilter) {

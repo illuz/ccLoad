@@ -63,8 +63,9 @@ function loadRenderSandbox(overrides = {}) {
         if (key === 'channels.upstreamBalance.limit') return '限额';
         if (key === 'channels.upstreamBalance.usedToday') return '今日已用';
         if (key === 'channels.upstreamBalance.plan') return '套餐';
-        if (key === 'channels.upstreamBalance.updatedAt') return `更新于 ${params.time}`;
-        return key;
+		if (key === 'channels.upstreamBalance.updatedAt') return `更新于 ${params.time}`;
+		if (key === 'channels.protocolProbeRetryBadge') return `协议待重探：${params.count} · ${params.time}`;
+		return key;
       }
     },
     TemplateEngine: {
@@ -114,6 +115,22 @@ function loadRenderSandbox(overrides = {}) {
 function loadRenderHelpers() {
   return loadRenderSandbox();
 }
+
+test('协议待重探徽章显示数量和剩余时间', () => {
+  const { inlineProtocolProbeRetryBadge } = loadRenderSandbox({
+    humanizeMS(ms) {
+      return `${Math.ceil(ms / 60000)}分钟`;
+    }
+  });
+
+  const html = inlineProtocolProbeRetryBadge({
+    protocol_probe_retry_count: 2,
+    protocol_probe_retry_remaining_ms: 9 * 60 * 1000
+  });
+  assert.match(html, /ch-protocol-reprobe-badge/);
+  assert.match(html, /协议待重探：2 · 9分钟/);
+  assert.equal(inlineProtocolProbeRetryBadge({}), '');
+});
 
 test('buildEffectivePriorityHtml 不渲染优先级和健康度标签', () => {
   const { buildEffectivePriorityHtml } = loadRenderHelpers();

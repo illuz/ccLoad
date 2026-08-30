@@ -88,6 +88,7 @@ func deepCopyConfigs(src []*modelpkg.Config) []*modelpkg.Config {
 // GetEnabledChannelsByModel 缓存优先的模型查询
 // [FIX] P0-2: 返回深拷贝，防止调用方污染缓存
 func (c *ChannelCache) GetEnabledChannelsByModel(ctx context.Context, model string) ([]*modelpkg.Config, error) {
+	model = modelpkg.RoutingModelName(model)
 	if err := c.refreshIfNeeded(ctx); err != nil {
 		// 缓存失败时降级到数据库查询
 		return c.store.GetEnabledChannelsByModel(ctx, model)
@@ -154,6 +155,7 @@ func (c *ChannelCache) GetEnabledChannelsByExposedProtocol(ctx context.Context, 
 
 // GetEnabledChannelsByModelAndProtocol 缓存优先的“模型 + 暴露协议”联合查询。
 func (c *ChannelCache) GetEnabledChannelsByModelAndProtocol(ctx context.Context, modelName string, protocol string) ([]*modelpkg.Config, error) {
+	modelName = modelpkg.RoutingModelName(modelName)
 	protocol = normalizeProtocol(protocol)
 	if protocol == "" {
 		return c.GetEnabledChannelsByModel(ctx, modelName)

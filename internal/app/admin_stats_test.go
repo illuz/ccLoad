@@ -85,14 +85,14 @@ func TestAnnotateLogServiceTierMultipliers(t *testing.T) {
 		{Model: "gpt-5.6", ServiceTier: "priority"},
 		{Model: "alias", ActualModel: "gpt-5.4", ServiceTier: "fast"},
 		{Model: "gpt-5", ServiceTier: "flex"},
-		{Model: "claude-opus-4-6", ServiceTier: "fast"},
+		{Model: "claude-opus-4-8", ServiceTier: "fast"},
 		{Model: "qwen3.5-plus", ServiceTier: "priority", ServiceTierMultiplier: 9},
 		nil,
 	}
 
 	annotateLogServiceTierMultipliers(logs)
 
-	wants := []float64{2.5, 2, 0.5, 6, 0}
+	wants := []float64{2.5, 2, 0.5, 2, 0}
 	for i, want := range wants {
 		if got := logs[i].ServiceTierMultiplier; got != want {
 			t.Errorf("logs[%d].ServiceTierMultiplier = %v, want %v", i, got, want)

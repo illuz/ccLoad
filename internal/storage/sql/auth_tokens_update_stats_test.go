@@ -55,8 +55,8 @@ func TestUpdateTokenStats_SingleUpdateSemantics(t *testing.T) {
 		t.Fatalf("unexpected token totals after failure: prompt=%d completion=%d cache_read=%d cache_create=%d",
 			got.PromptTokensTotal, got.CompletionTokensTotal, got.CacheReadTokensTotal, got.CacheCreationTokensTotal)
 	}
-	if got.TotalCostUSD != 0 || got.CostUsedMicroUSD != 0 || got.DailyCostUsedMicroUSD != 0 {
-		t.Fatalf("unexpected cost after failure: total_cost_usd=%v cost_used_microusd=%d daily_cost_used_microusd=%d", got.TotalCostUSD, got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD)
+	if got.TotalCostUSD != 0 || got.CostUsedMicroUSD != 0 || got.DailyCostUsedMicroUSD != 0 || got.MonthlyCostUsedMicroUSD != 0 {
+		t.Fatalf("unexpected cost after failure: total_cost_usd=%v total=%d daily=%d monthly=%d", got.TotalCostUSD, got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD, got.MonthlyCostUsedMicroUSD)
 	}
 	if got.NonStreamCount != 1 || got.NonStreamAvgRT != 2.0 {
 		t.Fatalf("unexpected non-stream stats after failure: count=%d avg=%v", got.NonStreamCount, got.NonStreamAvgRT)
@@ -89,6 +89,9 @@ func TestUpdateTokenStats_SingleUpdateSemantics(t *testing.T) {
 	}
 	if got.DailyCostUsedMicroUSD != util.USDToMicroUSD(0.25) {
 		t.Fatalf("unexpected daily_cost_used_microusd after success: %d", got.DailyCostUsedMicroUSD)
+	}
+	if got.MonthlyCostUsedMicroUSD != util.USDToMicroUSD(0.25) {
+		t.Fatalf("unexpected monthly_cost_used_microusd after success: %d", got.MonthlyCostUsedMicroUSD)
 	}
 	if got.NonStreamCount != 2 || got.NonStreamAvgRT != 3.0 {
 		t.Fatalf("unexpected non-stream stats after success: count=%d avg=%v", got.NonStreamCount, got.NonStreamAvgRT)
@@ -199,7 +202,7 @@ func TestUpdateTokenStats_BillableFailureAccumulatesUsageAndCost(t *testing.T) {
 	if got.TotalCostUSD != 0.5 {
 		t.Fatalf("unexpected total_cost_usd: %v", got.TotalCostUSD)
 	}
-	if got.CostUsedMicroUSD != util.USDToMicroUSD(0.5) || got.DailyCostUsedMicroUSD != util.USDToMicroUSD(0.5) {
-		t.Fatalf("unexpected cost counters: total=%d daily=%d", got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD)
+	if got.CostUsedMicroUSD != util.USDToMicroUSD(0.5) || got.DailyCostUsedMicroUSD != util.USDToMicroUSD(0.5) || got.MonthlyCostUsedMicroUSD != util.USDToMicroUSD(0.5) {
+		t.Fatalf("unexpected cost counters: total=%d daily=%d monthly=%d", got.CostUsedMicroUSD, got.DailyCostUsedMicroUSD, got.MonthlyCostUsedMicroUSD)
 	}
 }

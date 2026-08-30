@@ -19,6 +19,7 @@
   <script defer src="/web/assets/js/template-engine.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/ui.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/sse-merge.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/model-test-image.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/model-test.js?v=__VERSION__"></script>
   <script defer src="/web/assets/js/logs-channel-editor.js?v=__VERSION__"></script>
 </head>
@@ -26,19 +27,25 @@
   <div class="app-container">
     <main class="main-content">
       <div class="content-area">
-        <section class="glass-card mt-2 mb-2 overflow-visible">
+        <section id="modelTestCard" class="glass-card mt-2 mb-2 overflow-visible">
           <!-- 模式切换 -->
-          <div class="model-test-tabs">
-            <button id="modeTabChannel" type="button" class="mode-tab-btn active" data-action="set-test-mode" data-mode="channel" data-i18n="modelTest.mode.channel">按渠道测试</button>
-            <button id="modeTabModel" type="button" class="mode-tab-btn" data-action="set-test-mode" data-mode="model" data-i18n="modelTest.mode.model">按模型测试</button>
+          <div class="model-test-tabs" role="tablist" data-i18n-aria-label="modelTest.mode.label" aria-label="测试模式">
+            <button id="modeTabChannel" type="button" class="mode-tab-btn active" role="tab" aria-selected="true" aria-controls="modelTestTablePanel" tabindex="0" data-action="set-test-mode" data-mode="channel" data-i18n="modelTest.mode.channel">按渠道测试</button>
+            <button id="modeTabModel" type="button" class="mode-tab-btn" role="tab" aria-selected="false" aria-controls="modelTestTablePanel" tabindex="-1" data-action="set-test-mode" data-mode="model" data-i18n="modelTest.mode.model">按模型测试</button>
+            <button id="modeTabImage" type="button" class="mode-tab-btn" role="tab" aria-selected="false" aria-controls="imagePanel" tabindex="-1" data-action="set-test-mode" data-mode="image" data-i18n="modelTest.mode.image">生图</button>
           </div>
 
+          <div id="modelTestTablePanel" role="tabpanel" aria-labelledby="modeTabChannel">
           <!-- 控制栏 -->
           <div class="model-test-toolbar">
             <div class="model-test-toolbar-section model-test-toolbar-section--filters">
               <label id="channelSelectorLabel" class="model-test-control">
                 <span class="model-test-control__label" data-i18n="modelTest.channel">渠道</span>
                 <div id="testChannelSelectContainer"></div>
+              </label>
+              <label id="keySelectorLabel" class="model-test-control model-test-control--key">
+                <span class="model-test-control__label" data-i18n="channels.tableApiKey">API Key</span>
+                <div id="testChannelKeySelectContainer" class="model-test-key-combobox"></div>
               </label>
               <label id="modelTypeLabel" class="model-test-control model-test-control--type hidden">
                 <span class="model-test-control__label" data-i18n="common.type">类型</span>
@@ -121,6 +128,89 @@
                 <tr class="model-test-empty-row"><td colspan="11" data-i18n="modelTest.selectChannelFirst">请先选择渠道</td></tr>
               </tbody>
             </table>
+          </div>
+          </div>
+
+          <!-- 生图面板 -->
+          <div id="imagePanel" class="image-test-panel hidden" role="tabpanel" aria-labelledby="modeTabImage">
+            <form id="imageGenerationForm" class="image-test-form" aria-busy="false">
+              <div class="image-test-controls-grid">
+                <label class="model-test-control image-test-control image-test-target-control">
+                  <span class="model-test-control__label" data-i18n="common.model">模型</span>
+                  <div class="filter-combobox-wrapper image-test-model-combobox">
+                    <input id="imageModelInput" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false" required data-i18n-placeholder="modelTest.modelInputPlaceholder" placeholder="输入或选择模型">
+                    <div id="imageModelDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="common.model" aria-label="模型"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-target-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.channel">渠道</span>
+                  <div class="filter-combobox-wrapper image-test-channel-combobox">
+                    <input id="imageChannelSelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false" required data-i18n-placeholder="modelTest.searchChannel" placeholder="搜索渠道...">
+                    <div id="imageChannelDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.channel" aria-label="渠道"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="channels.tableApiKey">API Key</span>
+                  <div class="filter-combobox-wrapper image-test-key-combobox">
+                    <input id="imageKeySelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false" required>
+                    <div id="imageKeyDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="channels.tableApiKey" aria-label="API Key"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.image.generationApi">生图接口</span>
+                  <div class="filter-combobox-wrapper image-test-option-combobox">
+                    <input id="imageGenerationAPISelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false">
+                    <div id="imageGenerationAPISelectDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.image.generationApi" aria-label="生图接口"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.image.size">尺寸</span>
+                  <div class="filter-combobox-wrapper image-test-option-combobox">
+                    <input id="imageSizeSelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false">
+                    <div id="imageSizeSelectDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.image.size" aria-label="尺寸"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.image.quality">质量</span>
+                  <div class="filter-combobox-wrapper image-test-option-combobox">
+                    <input id="imageQualitySelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false">
+                    <div id="imageQualitySelectDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.image.quality" aria-label="质量"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.image.background">背景</span>
+                  <div class="filter-combobox-wrapper image-test-option-combobox">
+                    <input id="imageBackgroundSelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false">
+                    <div id="imageBackgroundSelectDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.image.background" aria-label="背景"></div>
+                  </div>
+                </label>
+                <label class="model-test-control image-test-control image-test-option-control">
+                  <span class="model-test-control__label" data-i18n="modelTest.image.outputFormat">格式</span>
+                  <div class="filter-combobox-wrapper image-test-option-combobox">
+                    <input id="imageOutputFormatSelect" class="filter-select filter-combobox" type="text" autocomplete="off" spellcheck="false">
+                    <div id="imageOutputFormatSelectDropdown" class="filter-dropdown" role="listbox" data-i18n-aria-label="modelTest.image.outputFormat" aria-label="格式"></div>
+                  </div>
+                </label>
+              </div>
+
+              <label class="image-test-prompt-block" for="imagePrompt">
+                <span class="image-test-label" data-i18n="modelTest.image.prompt">提示词</span>
+                <textarea id="imagePrompt" class="form-input image-test-prompt" rows="4" maxlength="32768" required data-i18n-placeholder="modelTest.image.promptPlaceholder" placeholder="描述你想生成的图片..."></textarea>
+              </label>
+              <div class="image-test-form-actions">
+                <button id="imageGenerateBtn" type="submit" class="btn btn-primary image-test-generate-btn"><span data-i18n="modelTest.image.generate">生成图片</span></button>
+              </div>
+
+              <div id="imageGenerationFeedback" class="image-test-feedback" hidden>
+                <p id="imageGenerationStatus" class="image-test-status" role="status" aria-live="polite"></p>
+                <p id="imageGenerationError" class="image-test-error" role="alert"></p>
+              </div>
+            </form>
+
+            <section class="image-test-results-section" aria-live="polite">
+              <span id="imageGenerationSummary" class="image-test-summary"></span>
+              <div id="imageGenerationResults" class="image-test-results" aria-busy="false"></div>
+            </section>
           </div>
         </section>
       </div>

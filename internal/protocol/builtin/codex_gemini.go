@@ -18,7 +18,7 @@ type codexRequest struct {
 	Stream            util.FlexibleBool `json:"stream,omitempty"`
 	Tools             json.RawMessage   `json:"tools,omitempty"`
 	ToolChoice        json.RawMessage   `json:"tool_choice,omitempty"`
-	Input             []json.RawMessage `json:"input"`
+	Input             codexInput        `json:"input"`
 	Reasoning         *codexReasoning   `json:"reasoning,omitempty"`
 	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
 	Temperature       *float64          `json:"temperature,omitempty"`
@@ -30,6 +30,44 @@ type codexRequest struct {
 	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
 	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
 	User              string            `json:"user,omitempty"`
+}
+
+// codexInput accepts both Responses API input forms. Internally a string is
+// normalized to the same user-message item used by array input so every local
+// protocol converter shares one validation path.
+type codexInput []json.RawMessage
+
+func (input *codexInput) UnmarshalJSON(data []byte) error {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		*input = nil
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var items []json.RawMessage
+		if err := sonic.Unmarshal(data, &items); err != nil {
+			return err
+		}
+		*input = items
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "\"") {
+		var text string
+		if err := sonic.Unmarshal(data, &text); err != nil {
+			return err
+		}
+		item, err := sonic.Marshal(map[string]any{
+			"type":    "message",
+			"role":    "user",
+			"content": []map[string]any{{"type": "input_text", "text": text}},
+		})
+		if err != nil {
+			return err
+		}
+		*input = []json.RawMessage{item}
+		return nil
+	}
+	return fmt.Errorf("responses input must be a string or array")
 }
 
 type codexReasoning struct {

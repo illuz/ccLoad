@@ -1058,6 +1058,34 @@ func TestConfig_GetEnabledChannelsByModelAndProtocol(t *testing.T) {
 	}
 }
 
+func TestConfig_GetEnabledChannelsByThinkingSuffixRoutingIdentity(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t, "thinking_suffix_model_query.db")
+	ctx := context.Background()
+	created, err := store.CreateConfig(ctx, &model.Config{
+		Name:        "suffixed-model",
+		URL:         "https://api.example.com",
+		Enabled:     true,
+		ChannelType: "openai",
+		ModelEntries: []model.ModelEntry{{
+			Model: "gpt-5.6-luna(max)",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+
+	byBase, err := store.GetEnabledChannelsByModel(ctx, "gpt-5.6-luna")
+	if err != nil || len(byBase) != 1 || byBase[0].ID != created.ID {
+		t.Fatalf("GetEnabledChannelsByModel()=%v, err=%v", byBase, err)
+	}
+	bySuffix, err := store.GetEnabledChannelsByModelAndProtocol(ctx, "gpt-5.6-luna(high)", "openai")
+	if err != nil || len(bySuffix) != 1 || bySuffix[0].ID != created.ID {
+		t.Fatalf("GetEnabledChannelsByModelAndProtocol()=%v, err=%v", bySuffix, err)
+	}
+}
+
 func TestConfig_LegacyProtocolTransformsHonorCurrentCapabilityMatrix(t *testing.T) {
 	t.Parallel()
 

@@ -534,6 +534,40 @@ func TestConvertAnthropicRequestToGemini3_MapsMaxOutputConfigEffortToThinkingLev
 	}
 }
 
+func TestConvertAnthropicRequestToGemini3_NormalizesThinkingLevelByModel(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		effort string
+		want   string
+	}{
+		{name: "flash keeps minimal", model: "gemini-3.5-flash", effort: "minimal", want: "minimal"},
+		{name: "pro clamps minimal to low", model: "gemini-3.1-pro-low", effort: "minimal", want: "low"},
+		{name: "pro missing medium ties low", model: "gemini-3-pro", effort: "medium", want: "low"},
+		{name: "flash clamps max to high", model: "gemini-3.5-flash", effort: "max", want: "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := []byte(`{"model":"client-model","messages":[{"role":"user","content":"hi"}],"thinking":{"type":"adaptive"},"output_config":{"effort":"` + tt.effort + `"}}`)
+			out, err := convertAnthropicRequestToGemini(tt.model, raw, true)
+			if err != nil {
+				t.Fatalf("convertAnthropicRequestToGemini failed: %v", err)
+			}
+			var req geminiRequestPayload
+			if err := json.Unmarshal(out, &req); err != nil {
+				t.Fatalf("unmarshal request: %v", err)
+			}
+			if req.GenerationConfig == nil || req.GenerationConfig.ThinkingConfig == nil {
+				t.Fatalf("missing thinkingConfig: %s", out)
+			}
+			if got := req.GenerationConfig.ThinkingConfig.ThinkingLevel; got != tt.want {
+				t.Fatalf("thinkingLevel=%q, want %q; body=%s", got, tt.want, out)
+			}
+		})
+	}
+}
+
 func TestConvertAnthropicRequestToCodex_LiftsMessageSystemRole(t *testing.T) {
 	raw := []byte(`{
 		"model":"gpt-5-codex",

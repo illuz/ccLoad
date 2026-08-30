@@ -78,9 +78,10 @@ func TestAdminAPI_CreateAndUpdateAuthTokenGroup_DailyCostLimit(t *testing.T) {
 
 	t.Run("create", func(t *testing.T) {
 		c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/auth-token-groups", map[string]any{
-			"name":                 "Daily Limit Group",
-			"daily_cost_limit_usd": 12.34,
-			"max_concurrency":      5,
+			"name":                   "Daily Limit Group",
+			"daily_cost_limit_usd":   12.34,
+			"cost_monthly_limit_usd": 24.68,
+			"max_concurrency":        5,
 		}))
 
 		server.HandleCreateAuthTokenGroup(c)
@@ -90,16 +91,21 @@ func TestAdminAPI_CreateAndUpdateAuthTokenGroup_DailyCostLimit(t *testing.T) {
 		}
 
 		var resp struct {
-			DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
-			MaxConcurrency    int     `json:"max_concurrency"`
+			DailyCostLimitUSD   float64 `json:"daily_cost_limit_usd"`
+			MonthlyCostLimitUSD float64 `json:"monthly_cost_limit_usd"`
+			MaxConcurrency      int     `json:"max_concurrency"`
 		}
 		parsed := mustParseAPIResponse[struct {
-			DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
-			MaxConcurrency    int     `json:"max_concurrency"`
+			DailyCostLimitUSD   float64 `json:"daily_cost_limit_usd"`
+			MonthlyCostLimitUSD float64 `json:"monthly_cost_limit_usd"`
+			MaxConcurrency      int     `json:"max_concurrency"`
 		}](t, w.Body.Bytes())
 		resp = parsed.Data
 		if math.Abs(resp.DailyCostLimitUSD-12.34) > 1e-9 {
 			t.Fatalf("daily_cost_limit_usd=%v, want 12.34", resp.DailyCostLimitUSD)
+		}
+		if math.Abs(resp.MonthlyCostLimitUSD-24.68) > 1e-9 {
+			t.Fatalf("monthly_cost_limit_usd=%v, want 24.68", resp.MonthlyCostLimitUSD)
 		}
 		if resp.MaxConcurrency != 5 {
 			t.Fatalf("max_concurrency=%d, want 5", resp.MaxConcurrency)
@@ -114,8 +120,9 @@ func TestAdminAPI_CreateAndUpdateAuthTokenGroup_DailyCostLimit(t *testing.T) {
 		}
 
 		c, w := newTestContext(t, newJSONRequest(t, http.MethodPut, fmt.Sprintf("/admin/auth-token-groups/%d", group.ID), map[string]any{
-			"daily_cost_limit_usd": 40,
-			"max_concurrency":      8,
+			"daily_cost_limit_usd":   40,
+			"monthly_cost_limit_usd": 80,
+			"max_concurrency":        8,
 		}))
 		c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", group.ID)}}
 
@@ -126,11 +133,15 @@ func TestAdminAPI_CreateAndUpdateAuthTokenGroup_DailyCostLimit(t *testing.T) {
 		}
 
 		resp := mustParseAPIResponse[struct {
-			DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
-			MaxConcurrency    int     `json:"max_concurrency"`
+			DailyCostLimitUSD   float64 `json:"daily_cost_limit_usd"`
+			MonthlyCostLimitUSD float64 `json:"monthly_cost_limit_usd"`
+			MaxConcurrency      int     `json:"max_concurrency"`
 		}](t, w.Body.Bytes())
 		if math.Abs(resp.Data.DailyCostLimitUSD-40) > 1e-9 {
 			t.Fatalf("daily_cost_limit_usd=%v, want 40", resp.Data.DailyCostLimitUSD)
+		}
+		if math.Abs(resp.Data.MonthlyCostLimitUSD-80) > 1e-9 {
+			t.Fatalf("monthly_cost_limit_usd=%v, want 80", resp.Data.MonthlyCostLimitUSD)
 		}
 		if resp.Data.MaxConcurrency != 8 {
 			t.Fatalf("max_concurrency=%d, want 8", resp.Data.MaxConcurrency)
@@ -142,6 +153,9 @@ func TestAdminAPI_CreateAndUpdateAuthTokenGroup_DailyCostLimit(t *testing.T) {
 		}
 		if stored.DailyCostLimitMicroUSD != 40_000_000 {
 			t.Fatalf("DailyCostLimitMicroUSD=%d, want 40000000", stored.DailyCostLimitMicroUSD)
+		}
+		if stored.MonthlyCostLimitMicroUSD != 80_000_000 {
+			t.Fatalf("MonthlyCostLimitMicroUSD=%d, want 80000000", stored.MonthlyCostLimitMicroUSD)
 		}
 		if stored.MaxConcurrency != 8 {
 			t.Fatalf("stored max_concurrency=%d, want 8", stored.MaxConcurrency)

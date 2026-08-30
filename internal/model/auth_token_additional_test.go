@@ -116,10 +116,12 @@ func TestAuthToken_CostConversions(t *testing.T) {
 	t.Parallel()
 
 	token := &AuthToken{
-		CostUsedMicroUSD:       1_230_000, // $1.23
-		CostLimitMicroUSD:      4_500_000, // $4.50
-		DailyCostUsedMicroUSD:  120_000,   // $0.12
-		DailyCostLimitMicroUSD: 900_000,   // $0.90
+		CostUsedMicroUSD:         1_230_000, // $1.23
+		CostLimitMicroUSD:        4_500_000, // $4.50
+		DailyCostUsedMicroUSD:    120_000,   // $0.12
+		DailyCostLimitMicroUSD:   900_000,   // $0.90
+		MonthlyCostUsedMicroUSD:  340_000,   // $0.34
+		MonthlyCostLimitMicroUSD: 2_700_000, // $2.70
 	}
 	if got := token.CostUsedUSD(); math.Abs(got-1.23) > 1e-9 {
 		t.Fatalf("CostUsedUSD() = %v, want 1.23", got)
@@ -132,6 +134,12 @@ func TestAuthToken_CostConversions(t *testing.T) {
 	}
 	if got := token.DailyCostLimitUSD(); math.Abs(got-0.9) > 1e-9 {
 		t.Fatalf("DailyCostLimitUSD() = %v, want 0.9", got)
+	}
+	if got := token.MonthlyCostUsedUSD(); math.Abs(got-0.34) > 1e-9 {
+		t.Fatalf("MonthlyCostUsedUSD() = %v, want 0.34", got)
+	}
+	if got := token.MonthlyCostLimitUSD(); math.Abs(got-2.7) > 1e-9 {
+		t.Fatalf("MonthlyCostLimitUSD() = %v, want 2.7", got)
 	}
 
 	token.SetCostLimitUSD(0)
@@ -147,6 +155,10 @@ func TestAuthToken_CostConversions(t *testing.T) {
 	token.SetDailyCostLimitUSD(0.75)
 	if token.DailyCostLimitMicroUSD != 750_000 {
 		t.Fatalf("SetDailyCostLimitUSD(0.75) microUSD = %d, want 750000", token.DailyCostLimitMicroUSD)
+	}
+	token.SetMonthlyCostLimitUSD(3.25)
+	if token.MonthlyCostLimitMicroUSD != 3_250_000 {
+		t.Fatalf("SetMonthlyCostLimitUSD(3.25) microUSD = %d, want 3250000", token.MonthlyCostLimitMicroUSD)
 	}
 }
 
@@ -437,10 +449,11 @@ func TestAuthTokenGroup_MarshalJSON_ExposesDailyCostLimit(t *testing.T) {
 	t.Parallel()
 
 	group := AuthTokenGroup{
-		ID:                     7,
-		Name:                   "Group B",
-		DailyCostLimitMicroUSD: 3_500_000,
-		MaxConcurrency:         9,
+		ID:                       7,
+		Name:                     "Group B",
+		DailyCostLimitMicroUSD:   3_500_000,
+		MonthlyCostLimitMicroUSD: 7_000_000,
+		MaxConcurrency:           9,
 	}
 
 	b, err := json.Marshal(group)
@@ -449,14 +462,18 @@ func TestAuthTokenGroup_MarshalJSON_ExposesDailyCostLimit(t *testing.T) {
 	}
 
 	var got struct {
-		DailyCostLimitUSD float64 `json:"daily_cost_limit_usd"`
-		MaxConcurrency    int     `json:"max_concurrency"`
+		DailyCostLimitUSD   float64 `json:"daily_cost_limit_usd"`
+		MonthlyCostLimitUSD float64 `json:"monthly_cost_limit_usd"`
+		MaxConcurrency      int     `json:"max_concurrency"`
 	}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 	if math.Abs(got.DailyCostLimitUSD-3.5) > 1e-9 {
 		t.Fatalf("daily_cost_limit_usd = %#v, want 3.5", got.DailyCostLimitUSD)
+	}
+	if math.Abs(got.MonthlyCostLimitUSD-7) > 1e-9 {
+		t.Fatalf("monthly_cost_limit_usd = %#v, want 7", got.MonthlyCostLimitUSD)
 	}
 	if got.MaxConcurrency != 9 {
 		t.Fatalf("max_concurrency = %#v, want 9", got.MaxConcurrency)

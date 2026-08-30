@@ -1914,3 +1914,22 @@ func TestSupportedClientProtocolsForUpstream_BidirectionalMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_TranslateRequest_CodexStringInput(t *testing.T) {
+	t.Parallel()
+	reg := protocol.NewRegistry()
+	builtin.Register(reg)
+
+	for _, upstream := range []protocol.Protocol{protocol.Anthropic, protocol.OpenAI, protocol.Gemini} {
+		t.Run(string(upstream), func(t *testing.T) {
+			raw := []byte(`{"model":"target-model","input":"hello","stream":false}`)
+			got, err := reg.TranslateRequest(protocol.Codex, upstream, "target-model", raw, false)
+			if err != nil {
+				t.Fatalf("TranslateRequest failed: %v", err)
+			}
+			if !strings.Contains(string(got), "hello") {
+				t.Fatalf("translated request lost string input: %s", got)
+			}
+		})
+	}
+}

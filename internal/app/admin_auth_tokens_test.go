@@ -158,6 +158,7 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 		"group_id":                   group.ID,
 		"cost_limit_usd":             1.0,
 		"daily_cost_limit_usd":       0.5,
+		"cost_monthly_limit_usd":     2.5,
 		"daily_limit_double_enabled": true,
 		"max_concurrency":            0,
 	}))
@@ -169,15 +170,16 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 
 	type respData struct {
-		ID                      int64  `json:"id"`
-		Token                   string `json:"token"`
-		PlainToken              string `json:"plain_token"`
-		GroupID                 int64  `json:"group_id"`
-		MaxConcurrency          int    `json:"max_concurrency"`
-		DailyLimitDoubleEnabled bool   `json:"daily_limit_double_enabled"`
-		InheritQuota            bool   `json:"inherit_quota"`
-		InheritChannels         bool   `json:"inherit_channels"`
-		InheritModels           bool   `json:"inherit_models"`
+		ID                      int64   `json:"id"`
+		Token                   string  `json:"token"`
+		PlainToken              string  `json:"plain_token"`
+		GroupID                 int64   `json:"group_id"`
+		MaxConcurrency          int     `json:"max_concurrency"`
+		MonthlyCostLimitUSD     float64 `json:"monthly_cost_limit_usd"`
+		DailyLimitDoubleEnabled bool    `json:"daily_limit_double_enabled"`
+		InheritQuota            bool    `json:"inherit_quota"`
+		InheritChannels         bool    `json:"inherit_channels"`
+		InheritModels           bool    `json:"inherit_models"`
 	}
 	resp := mustParseAPIResponse[respData](t, w.Body.Bytes())
 	if resp.Data.Token != "sk-manual-token-001" || resp.Data.PlainToken != "sk-manual-token-001" {
@@ -188,6 +190,9 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 	if resp.Data.MaxConcurrency != 0 {
 		t.Fatalf("max_concurrency=%d, want 0", resp.Data.MaxConcurrency)
+	}
+	if math.Abs(resp.Data.MonthlyCostLimitUSD-2.5) > 1e-9 {
+		t.Fatalf("monthly_cost_limit_usd=%v, want 2.5", resp.Data.MonthlyCostLimitUSD)
 	}
 	if !resp.Data.DailyLimitDoubleEnabled {
 		t.Fatalf("daily_limit_double_enabled=false, want true")
@@ -208,6 +213,9 @@ func TestAdminAPI_CreateAuthToken_ManualPlainTokenAndGroup(t *testing.T) {
 	}
 	if stored.MaxConcurrency != 0 {
 		t.Fatalf("stored max_concurrency=%d, want 0", stored.MaxConcurrency)
+	}
+	if stored.MonthlyCostLimitMicroUSD != 2_500_000 {
+		t.Fatalf("stored monthly limit=%d, want 2500000", stored.MonthlyCostLimitMicroUSD)
 	}
 	if !stored.IsDailyLimitDoubledToday() {
 		t.Fatalf("stored daily limit double should be active today")

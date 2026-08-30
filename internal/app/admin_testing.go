@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ccLoad/internal/config"
 	"ccLoad/internal/cooldown"
 	"ccLoad/internal/model"
 	"ccLoad/internal/protocol"
@@ -48,16 +49,23 @@ type channelTestRequestPlan struct {
 	headers          http.Header
 	requestBody      []byte
 	clientBody       []byte
+	requestedModel   string
 	timeout          *channelTestTimeout
 	debugCapture     *debugCapture
 }
 
+const (
+	firstStreamContentPending int32 = iota
+	firstStreamContentSeen
+	firstStreamContentTimedOut
+)
+
 type channelTestTimeout struct {
-	cancel                     context.CancelFunc
-	firstByteTimeout           time.Duration
-	nonStreamTimeout           time.Duration
-	firstStreamContentTimer    *time.Timer
-	firstStreamContentTimedOut atomic.Bool
+	cancel                  context.CancelFunc
+	firstByteTimeout        time.Duration
+	nonStreamTimeout        time.Duration
+	firstStreamContentTimer *time.Timer
+	firstStreamContentState atomic.Int32
 }
 
 func (t *channelTestTimeout) cancelAll() {
@@ -76,11 +84,14 @@ func (t *channelTestTimeout) markFirstStreamContent() {
 	if t == nil || t.firstStreamContentTimer == nil {
 		return
 	}
+	if !t.firstStreamContentState.CompareAndSwap(firstStreamContentPending, firstStreamContentSeen) {
+		return
+	}
 	t.firstStreamContentTimer.Stop()
 }
 
 func (t *channelTestTimeout) firstStreamContentTimeoutTriggered() bool {
-	return t != nil && t.firstStreamContentTimedOut.Load()
+	return t != nil && t.firstStreamContentState.Load() == firstStreamContentTimedOut
 }
 
 func newChannelTester(protocolName string) testutil.ChannelTester {
@@ -172,8 +183,9 @@ func (s *Server) newChannelTestTimeoutContextWithTimeouts(parent context.Context
 	if stream {
 		if timeouts.FirstByteTimeout > 0 {
 			timeout.firstStreamContentTimer = time.AfterFunc(timeouts.FirstByteTimeout, func() {
-				timeout.firstStreamContentTimedOut.Store(true)
-				cancel()
+				if timeout.firstStreamContentState.CompareAndSwap(firstStreamContentPending, firstStreamContentTimedOut) {
+					cancel()
+				}
 			})
 		}
 		return ctx, timeout
@@ -283,6 +295,10 @@ func (s *Server) buildChannelTestRequestPlan(
 ) (*channelTestRequestPlan, error) {
 	upstreamProtocol := resolveTestUpstreamProtocol(cfgForBuild, clientProtocol)
 	clientTester := newChannelTester(clientProtocol)
+	requestedModel := strings.TrimSpace(testReq.RequestedModel)
+	if requestedModel == "" {
+		requestedModel = testReq.Model
+	}
 
 	fullURL, headers, body, err := clientTester.Build(cfgForBuild, apiKey, testReq)
 	if err != nil {
@@ -297,7 +313,11 @@ func (s *Server) buildChannelTestRequestPlan(
 		headers:          headers,
 		requestBody:      body,
 		clientBody:       body,
+		requestedModel:   requestedModel,
 	}
+	body = applyThinkingSuffix(body, protocol.Protocol(clientProtocol), requestedModel)
+	plan.requestBody = body
+	plan.clientBody = body
 
 	if clientProtocol == upstreamProtocol {
 		return plan, nil
@@ -464,8 +484,13 @@ func (s *Server) handleChannelTestRequest(c *gin.Context, requireBaseURL bool) {
 	}
 
 	requestedModel := testReq.Model
+	testReq.RequestedModel = requestedModel
 	testResult := s.executeChannelTestWithCooldown(c.Request.Context(), cfg, keySelection.keyIndex, keySelection.apiKey, &testReq, keySelection.updatePersistedCooldown)
-	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualTest, requestedModel, testReq.Model, keySelection.apiKey, c.ClientIP(), 0, testReq.ThinkingEffort, testResult))
+	requestThinking := thinkingEffortFromRequest(requestedModel, nil)
+	if requestThinking == "" {
+		requestThinking = testReq.ThinkingEffort
+	}
+	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualTest, model.RoutingModelName(requestedModel), model.RoutingModelName(testReq.Model), keySelection.apiKey, c.ClientIP(), 0, requestThinking, testResult))
 	testResult["tested_key_index"] = keySelection.keyIndex
 	testResult["total_keys"] = len(apiKeys)
 
@@ -519,6 +544,17 @@ func (s *Server) executeChannelTestWithCooldown(ctx context.Context, cfg *model.
 	clientProtocol := resolveClientProtocol(cfg, testReq)
 	actualModel := s.resolveFinalUpstreamModel(cfg, testReq.Model, resolveTestUpstreamProtocol(cfg, clientProtocol))
 	result := s.testChannelAPI(ctx, cfg, apiKey, testReq)
+	return s.applyChannelTestResultCooldown(ctx, cfg, keyIndex, actualModel, updatePersistedCooldown, result)
+}
+
+func (s *Server) applyChannelTestResultCooldown(
+	ctx context.Context,
+	cfg *model.Config,
+	keyIndex int,
+	actualModel string,
+	updatePersistedCooldown bool,
+	result map[string]any,
+) map[string]any {
 	if success, ok := result["success"].(bool); ok && success {
 		if updatePersistedCooldown {
 			if err := s.store.ResetKeyCooldown(ctx, cfg.ID, keyIndex); err != nil {
@@ -614,6 +650,9 @@ func (s *Server) testChannelAPI(reqCtx context.Context, cfg *model.Config, apiKe
 
 	// 应用完整模型改写逻辑（与正常代理流程保持一致）
 	originalModel := testReq.Model
+	if strings.TrimSpace(testReq.RequestedModel) == "" {
+		testReq.RequestedModel = originalModel
+	}
 	clientProtocol := resolveClientProtocol(cfg, testReq)
 	upstreamProto := resolveTestUpstreamProtocol(cfg, clientProtocol)
 	actualModel := s.resolveFinalUpstreamModel(cfg, originalModel, upstreamProto)
@@ -754,7 +793,12 @@ func (s *Server) testChannelAPIWithURL(
 	}
 
 	// 非流式或非SSE响应：按原逻辑读取完整响应（即便前端请求了流式，但上游未返回SSE，也按普通响应处理，确保能展示完整错误体）
-	respBody, err := io.ReadAll(resp.Body)
+	var respBody []byte
+	if testReq.ImageGeneration != nil {
+		respBody, err = readLimitedImageGenerationResponse(resp.Body, int64(config.DefaultMaxImageBodyBytes))
+	} else {
+		respBody, err = io.ReadAll(resp.Body)
+	}
 	if err != nil {
 		errorMsg := "读取响应失败: " + err.Error()
 		statusCode := resp.StatusCode
@@ -977,6 +1021,12 @@ func (s *Server) parseTestTranslatedSSEResponse(
 			return upstreamParser.IsStreamComplete() && translatedComplete
 		},
 	)
+	if streamErr == nil && requestPlan.timeout.firstStreamContentTimeoutTriggered() {
+		streamErr = ctx.Err()
+		if streamErr == nil {
+			streamErr = context.Canceled
+		}
+	}
 	if streamErr != nil {
 		errorMsg := "读取流式响应失败: " + streamErr.Error()
 		statusCode := resp.StatusCode
@@ -1178,7 +1228,7 @@ func populateTestNormalizedUsageAndCost(result map[string]any, testReq *testutil
 	cache5m, cache1h, _ := parser.GetCacheBreakdown()
 	if billableInput+output+cacheRead > 0 {
 		result["cost_usd"] = util.CalculateCostDetailed(
-			testReq.Model,
+			model.RoutingModelName(testReq.Model),
 			billableInput,
 			output,
 			cacheRead,
@@ -1192,6 +1242,11 @@ func populateTestNormalizedUsageAndCost(result map[string]any, testReq *testutil
 
 func testRequestThinkingEffort(testReq *testutil.TestChannelRequest, requestPlan *channelTestRequestPlan) string {
 	if requestPlan != nil {
+		if effort := thinkingEffortFromRequest(requestPlan.requestedModel, requestPlan.requestBody); effort != "" {
+			return effort
+		}
+	}
+	if requestPlan != nil {
 		if effort := extractThinkingEffortFromJSON(requestPlan.requestBody); effort != "" {
 			return effort
 		}
@@ -1200,6 +1255,15 @@ func testRequestThinkingEffort(testReq *testutil.TestChannelRequest, requestPlan
 		return ""
 	}
 	return normalizeThinkingEffort(testReq.ThinkingEffort)
+}
+
+func channelTestLogIdentity(requestedModel, fallbackThinking string) (logModel, thinkingEffort string) {
+	logModel = model.RoutingModelName(requestedModel)
+	thinkingEffort = thinkingEffortFromRequest(requestedModel, nil)
+	if thinkingEffort == "" {
+		thinkingEffort = fallbackThinking
+	}
+	return logModel, thinkingEffort
 }
 
 // parseTestNativeSSEResponse 处理客户端协议与上游协议一致时的原生 SSE 解析。
@@ -1234,10 +1298,18 @@ func (s *Server) parseTestNativeSSEResponse(
 		}
 	}
 
-	if err := scanner.Err(); err != nil && !usageParser.IsStreamComplete() {
-		errorMsg := "读取流式响应失败: " + err.Error()
+	streamErr := scanner.Err()
+	firstContentTimedOut := requestPlan.timeout.firstStreamContentTimeoutTriggered()
+	if streamErr == nil && firstContentTimedOut {
+		streamErr = ctx.Err()
+		if streamErr == nil {
+			streamErr = context.Canceled
+		}
+	}
+	if streamErr != nil && (!usageParser.IsStreamComplete() || firstContentTimedOut) {
+		errorMsg := "读取流式响应失败: " + streamErr.Error()
 		statusCode := resp.StatusCode
-		if timeoutStatus, timeoutMsg, ok := s.describeChannelTestTimeoutError(start, testReq, requestPlan.timeout, err); ok {
+		if timeoutStatus, timeoutMsg, ok := s.describeChannelTestTimeoutError(start, testReq, requestPlan.timeout, streamErr); ok {
 			errorMsg = timeoutMsg
 			statusCode = timeoutStatus
 		}

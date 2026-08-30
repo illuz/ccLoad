@@ -47,6 +47,17 @@
         ${buildSelect('f_channel_type', '\n                <!-- 动态加载渠道类型选项 -->\n              ', 'filter-control--compact')}`,
         groupClass
       ),
+      clientProtocol: buildFilterGroup(
+        `${buildFilterLabel('f_client_protocol', 'stats.clientProtocol', '请求协议')}
+        ${buildSelect('f_client_protocol', `
+                <option value="" data-i18n="stats.allClientProtocols">全部协议</option>
+                <option value="anthropic" data-i18n="stats.clientProtocolAnthropic">Claude Code</option>
+                <option value="codex" data-i18n="stats.clientProtocolCodex">Codex</option>
+                <option value="openai" data-i18n="stats.clientProtocolOpenAI">OpenAI</option>
+                <option value="gemini" data-i18n="stats.clientProtocolGemini">Gemini</option>
+              `, 'filter-control--compact filter-control--protocol')}`,
+        groupClass
+      ),
       timeRange: buildFilterGroup(
         `${buildFilterLabel('f_hours', 'stats.timeRange', '时间范围')}
         <div id="f_hours_custom_range_host" class="filter-custom-range-host">
@@ -155,7 +166,7 @@
       checkboxGroupClass: 'stats-filter-group stats-filter-group--checkbox',
       infoClass: 'filter-info stats-filter-info',
       actionsClass: 'stats-filter-actions',
-      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'authToken', 'statsSummary']
+      items: ['channelType', 'clientProtocol', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'authToken', 'statsSummary']
     },
     logs: {
       barClass: 'filter-bar logs-filter-bar mt-2',
@@ -167,7 +178,7 @@
       authTokenControlClass: 'logs-filter-control--token',
       infoClass: 'filter-info logs-filter-info',
       actionsClass: 'logs-filter-actions',
-      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'codexGuard', 'upstreamModelMismatch', 'authToken', 'logsSummary']
+      items: ['channelType', 'clientProtocol', 'timeRange', 'channelNameCombobox', 'modelCombobox', 'logSource', 'status', 'codexGuard', 'upstreamModelMismatch', 'authToken', 'logsSummary']
     },
     trend: {
       barClass: 'filter-bar mt-2',
@@ -175,7 +186,7 @@
       groupClass: '',
       infoClass: 'filter-info',
       actionsClass: '',
-      items: ['channelType', 'timeRange', 'channelNameCombobox', 'modelSelect', 'authToken']
+      items: ['channelType', 'clientProtocol', 'timeRange', 'channelNameCombobox', 'modelSelect', 'authToken']
     }
   };
 

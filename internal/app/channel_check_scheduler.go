@@ -136,7 +136,8 @@ func (s *Server) runScheduledChannelChecks(ctx context.Context) error {
 		}
 		requestedModel := req.Model
 		result := s.executeChannelTest(ctx, cfg, keyIndex, apiKey, req)
-		s.persistDetectionLog(ctx, detectionLogFromResult(cfg, model.LogSourceScheduledCheck, requestedModel, req.Model, apiKey, "", 0, req.ThinkingEffort, result))
+		logModel, logThinking := channelTestLogIdentity(requestedModel, req.ThinkingEffort)
+		s.persistDetectionLog(ctx, detectionLogFromResult(cfg, model.LogSourceScheduledCheck, logModel, model.RoutingModelName(req.Model), apiKey, "", 0, logThinking, result))
 		logScheduledChannelCheckResult(cfg, keyIndex, req.Model, result)
 	}
 

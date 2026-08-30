@@ -25,9 +25,23 @@ function setupImportExport() {
 }
 
 async function exportChannelsCSV(buttonEl) {
+	return downloadChannelsCSV('/admin/channels/export', buttonEl);
+}
+
+async function exportSelectedChannelsCSV() {
+  const channelIDs = typeof getSelectedChannelIDs === 'function' ? getSelectedChannelIDs() : [];
+  if (channelIDs.length === 0) {
+    if (window.showWarning) window.showWarning(window.t('channels.batchNoSelection'));
+    return;
+  }
+  const buttonEl = document.getElementById('batchExportChannelsBtn');
+  return downloadChannelsCSV(`/admin/channels/export?ids=${channelIDs.join(',')}`, buttonEl);
+}
+
+async function downloadChannelsCSV(urlPath, buttonEl) {
   try {
     if (buttonEl) buttonEl.disabled = true;
-    const res = await fetchWithAuth('/admin/channels/export');
+    const res = await fetchWithAuth(urlPath);
     if (!res.ok) {
       const errorText = await res.text();
       throw new Error(errorText || window.t('channels.import.exportHttpFailed', { status: res.status }));
@@ -50,6 +64,10 @@ async function exportChannelsCSV(buttonEl) {
   } finally {
     if (buttonEl) buttonEl.disabled = false;
   }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { setupImportExport, exportChannelsCSV, exportSelectedChannelsCSV, downloadChannelsCSV, handleImportCSV };
 }
 
 async function handleImportCSV(event, importBtn) {

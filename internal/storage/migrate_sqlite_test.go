@@ -100,6 +100,56 @@ func TestMigrate_SQLite_Idempotent(t *testing.T) {
 	}
 }
 
+func TestMigrateSQLite_ClientProtocolColumnAndBackfill(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := migrate(ctx, db, DialectSQLite); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	columns, err := sqliteExistingColumns(ctx, db, "logs")
+	if err != nil {
+		t.Fatalf("list log columns: %v", err)
+	}
+	if !columns["client_protocol"] {
+		t.Fatal("logs.client_protocol column was not created")
+	}
+
+	if _, err := db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version = ?", clientProtocolBackfillMigrationVersion); err != nil {
+		t.Fatalf("clear migration marker: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO logs (time, model, log_source, status_code, message, client_protocol)
+		VALUES
+			(1, 'gpt-5.6', 'proxy', 200, 'codex', ''),
+			(2, 'claude-sonnet-5', 'proxy', 200, 'anthropic', ''),
+			(3, 'gemini-3-flash', 'proxy', 200, 'gemini', ''),
+			(4, 'gpt-4o', 'proxy', 200, 'openai', ''),
+			(5, 'gpt-5.6', 'manual_test', 200, 'manual', '')
+	`); err != nil {
+		t.Fatalf("insert historical logs: %v", err)
+	}
+	if err := backfillLogsClientProtocol(ctx, db, DialectSQLite); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	rows, err := db.QueryContext(ctx, "SELECT message, client_protocol FROM logs ORDER BY time")
+	if err != nil {
+		t.Fatalf("query backfill: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	want := map[string]string{"codex": "codex", "anthropic": "anthropic", "gemini": "gemini", "openai": "openai", "manual": ""}
+	for rows.Next() {
+		var message, clientProtocol string
+		if err := rows.Scan(&message, &clientProtocol); err != nil {
+			t.Fatalf("scan backfill row: %v", err)
+		}
+		if clientProtocol != want[message] {
+			t.Fatalf("%s protocol=%q, want %q", message, clientProtocol, want[message])
+		}
+	}
+}
+
 func TestMigrateSQLite_ChannelRestrictionModeDefaultsAndValidation(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		db := openTestDB(t)
@@ -260,7 +310,7 @@ func TestEnsureAuthTokensCostLimit_SQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqliteExistingColumns: %v", err)
 	}
-	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "daily_limit_double_day_key", "daily_limit_triple_day_key", "daily_limit_override_microusd", "daily_limit_override_day_key"} {
+	for _, col := range []string{"cost_used_microusd", "cost_limit_microusd", "daily_cost_used_microusd", "daily_cost_limit_microusd", "daily_cost_day_key", "monthly_cost_used_microusd", "monthly_cost_limit_microusd", "monthly_cost_month_key", "daily_limit_double_day_key", "daily_limit_triple_day_key", "daily_limit_override_microusd", "daily_limit_override_day_key"} {
 		if !cols[col] {
 			t.Errorf("column %s not found in auth_tokens", col)
 		}

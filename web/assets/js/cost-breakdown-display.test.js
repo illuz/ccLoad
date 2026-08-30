@@ -159,6 +159,7 @@ test('channels 页倍率角标只读渠道配置倍率，不依赖统计聚合�
   context.buildProtocolTransformBadges = () => '';
   context.buildEffectivePriorityHtml = () => '';
   context.inlineCooldownBadge = () => '';
+  context.inlineProtocolProbeRetryBadge = () => '';
   context.getBatchRefreshResult = () => null;
   context.buildBatchRefreshStatusHtml = () => '';
   context.buildChannelLastSuccessHtml = () => '';
@@ -215,6 +216,7 @@ test('渠道卡片倍率角标：0 倍率（免费渠道）显示 0x', () => {
   context.buildProtocolTransformBadges = () => '';
   context.buildEffectivePriorityHtml = () => '';
   context.inlineCooldownBadge = () => '';
+  context.inlineProtocolProbeRetryBadge = () => '';
   context.getBatchRefreshResult = () => null;
   context.buildBatchRefreshStatusHtml = () => '';
   context.buildChannelLastSuccessHtml = () => '';
@@ -254,6 +256,7 @@ ${extractFunction(channelsSource, 'createChannelCard')}`,
 test('tokens 页总费用展示总费用和当日费用摘要', () => {
   const sandbox = createHelperSandbox();
   sandbox.getTokenEffectiveDailyCostLimit = () => 10;
+  sandbox.getTokenEffectiveMonthlyCostLimit = () => 0;
   vm.runInNewContext(
     extractBlock(tokensSource, 'formatCostValue', 'buildConcurrencyHtml'),
     sandbox

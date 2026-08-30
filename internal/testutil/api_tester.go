@@ -442,7 +442,7 @@ func appendTestTool(obj map[string]any, tool map[string]any) {
 
 func applyOpenAITestOptions(body []byte, req *TestChannelRequest) ([]byte, error) {
 	effort := normalizeTestThinkingEffort(req.ThinkingEffort)
-	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) {
+	if effort == "" && !req.BuiltinSearch && !hasTestSamplingOptions(req) && req.ImageGeneration == nil {
 		return body, nil
 	}
 	return patchBodyObject(body, func(obj map[string]any) {
@@ -455,6 +455,19 @@ func applyOpenAITestOptions(body []byte, req *TestChannelRequest) ([]byte, error
 		}
 		if req.BuiltinSearch {
 			obj["web_search_options"] = map[string]any{}
+		}
+		if req.ImageGeneration != nil {
+			obj["modalities"] = []string{"image"}
+			imageConfig := map[string]any{}
+			if aspectRatio := strings.TrimSpace(req.ImageGeneration.AspectRatio); aspectRatio != "" {
+				imageConfig["aspect_ratio"] = aspectRatio
+			}
+			if imageSize := strings.TrimSpace(req.ImageGeneration.ImageSize); imageSize != "" {
+				imageConfig["image_size"] = imageSize
+			}
+			if len(imageConfig) > 0 {
+				obj["image_config"] = imageConfig
+			}
 		}
 	})
 }
@@ -682,7 +695,7 @@ func (t *CodexTester) Build(cfg *model.Config, apiKey string, req *TestChannelRe
 	h.Set("Content-Type", "application/json")
 	h.Set("Authorization", "Bearer "+apiKey)
 	h.Set("X-Api-Key", apiKey)
-	h.Set("User-Agent", "codex-tui/0.137.0 (Mac OS 26.5.1; arm64) iTerm.app/3.7.0beta3 (codex-tui; 0.137.0)")
+	h.Set("User-Agent", "codex-tui/0.148.0 (Mac OS 26.5.2; arm64) Apple_Terminal/470.2 (codex-tui; 0.148.0)")
 	h.Set("Originator", "codex-tui")
 	h.Set("Session-Id", sessionID)
 	h.Set("Thread-Id", sessionID)

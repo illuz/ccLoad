@@ -1,8 +1,14 @@
 const TEST_MODE_CHANNEL = 'channel';
 const TEST_MODE_MODEL = 'model';
+const TEST_MODE_IMAGE = 'image';
+const STORAGE_KEY_TEST_MODE = 'ccload_model_test_mode';
 
 let channelsList = [];
 let selectedChannel = null;
+let channelKeys = [];
+const channelKeysById = new Map();
+let selectedKeyIndex = null;
+let channelKeyLoadRequestId = 0;
 let selectedModelType = '';
 let selectedModelName = '';
 let selectedProtocol = '';
@@ -12,12 +18,14 @@ let isAddingModels = false;
 let isTestingModels = false;
 
 let channelSelectCombobox = null;
+let channelKeyCombobox = null;
 let modelSelectCombobox = null;
 
 const headRow = document.getElementById('model-test-head-row');
 const tbody = document.getElementById('model-test-tbody');
 const toolbar = document.querySelector('.model-test-toolbar');
 const channelSelectorLabel = document.getElementById('channelSelectorLabel');
+const keySelectorLabel = document.getElementById('keySelectorLabel');
 const modelTypeLabel = document.getElementById('modelTypeLabel');
 const modelTypeSelect = document.getElementById('testModelType');
 const modelSelectorLabel = document.getElementById('modelSelectorLabel');
@@ -995,7 +1003,28 @@ function renderProtocolTransformOptions() {
 
 function isModelSupported(channel, modelName) {
   if (!channel || !modelName || !Array.isArray(channel.models)) return false;
-  return channel.models.some(entry => getModelName(entry) === modelName);
+  return channel.models.some(entry => {
+    const configuredModel = getModelName(entry);
+    return configuredModel === '*' || configuredModel === modelName;
+  });
+}
+
+function getAllImageModelOptions() {
+  const models = new Set();
+  channelsList.forEach(channel => {
+    (channel.models || []).forEach(entry => {
+      const modelName = getModelName(entry);
+      if (modelName && modelName !== '*') models.add(modelName);
+    });
+  });
+  return Array.from(models).sort((a, b) => a.localeCompare(b));
+}
+
+function formatImageTestChannelLabel(channel) {
+  const disabled = channel?.enabled === false
+    ? ` [${i18nText('common.disabled', '已禁用')}]`
+    : '';
+  return `[${getChannelType(channel)}] ${channel?.name || `#${channel?.id ?? '?'}`}${disabled}`;
 }
 
 function getChannelsSupportingModel(protocol, modelName) {
@@ -1280,19 +1309,70 @@ function renderRowsByMode() {
   }
 }
 
+const MODEL_TEST_MODE_TABS = [
+  { id: 'modeTabChannel', mode: TEST_MODE_CHANNEL },
+  { id: 'modeTabModel', mode: TEST_MODE_MODEL },
+  { id: 'modeTabImage', mode: TEST_MODE_IMAGE }
+];
+
+function syncModeTabState() {
+  MODEL_TEST_MODE_TABS.forEach(({ id, mode }) => {
+    const tab = document.getElementById(id);
+    if (!tab) return;
+    const active = testMode === mode;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
+  });
+
+  const tablePanel = document.getElementById('modelTestTablePanel');
+  if (tablePanel && (testMode === TEST_MODE_CHANNEL || testMode === TEST_MODE_MODEL)) {
+    tablePanel.setAttribute('aria-labelledby', testMode === TEST_MODE_MODEL ? 'modeTabModel' : 'modeTabChannel');
+  }
+}
+
+function initModeTabKeyboard() {
+  const tablist = document.querySelector('.model-test-tabs[role="tablist"]');
+  if (!tablist) return;
+  tablist.addEventListener('keydown', event => {
+    const currentTab = event.target.closest('[role="tab"]');
+    if (!currentTab || !tablist.contains(currentTab)) return;
+    const tabs = MODEL_TEST_MODE_TABS
+      .map(({ id }) => document.getElementById(id))
+      .filter(tab => tab && !tab.disabled);
+    const currentIndex = tabs.indexOf(currentTab);
+    if (currentIndex < 0) return;
+
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = tabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    setTestMode(nextTab.dataset.mode || '');
+    nextTab.focus();
+  });
+}
+
 function updateModeUI() {
   const isModelMode = testMode === TEST_MODE_MODEL;
+  const isImageMode = testMode === TEST_MODE_IMAGE;
   const fetchModelsBtn = getFetchModelsBtn();
   const addModelsBtn = getAddModelsBtn();
   const deleteModelsBtn = getDeleteModelsBtn();
 
-  const modeTabChannel = document.getElementById('modeTabChannel');
-  const modeTabModel = document.getElementById('modeTabModel');
-  modeTabChannel.classList.toggle('active', !isModelMode);
-  modeTabModel.classList.toggle('active', isModelMode);
+  syncModeTabState();
+  document.getElementById('modelTestTablePanel')?.classList.toggle('hidden', isImageMode);
+  document.getElementById('imagePanel')?.classList.toggle('hidden', !isImageMode);
+  if (isImageMode) return;
+
   toolbar?.classList.toggle('model-test-toolbar--model-mode', isModelMode);
 
   channelSelectorLabel.style.display = isModelMode ? 'none' : 'flex';
+  if (keySelectorLabel) keySelectorLabel.style.display = isModelMode ? 'none' : 'flex';
   if (modelTypeLabel) {
     modelTypeLabel.style.display = isModelMode ? 'flex' : 'none';
     modelTypeLabel.classList.toggle('hidden', !isModelMode);
@@ -1334,7 +1414,8 @@ function getSelectedTargets() {
           row,
           model: row.dataset.model || selectedModelName,
           channelId: channel.id,
-          protocolTransform: selectedProtocol
+          protocolTransform: selectedProtocol,
+          keyIndex: normalizeModelTestKeyIndex(getPreferredModelTestKey(channelKeysById.get(channel.id))?.key_index)
         };
       }
 
@@ -1343,10 +1424,21 @@ function getSelectedTargets() {
         row,
         model: row.dataset.model,
         channelId: selectedChannel.id,
-        protocolTransform: selectedProtocol
+        protocolTransform: selectedProtocol,
+        keyIndex: selectedKeyIndex
       };
     })
     .filter(Boolean);
+}
+
+async function attachModelModeKeySelection(targets) {
+  if (testMode !== TEST_MODE_MODEL || !Array.isArray(targets) || targets.length === 0) return targets;
+  const channelIDs = [...new Set(targets.map(target => target.channelId).filter(Number.isFinite))];
+  await Promise.all(channelIDs.map(channelId => getModelTestChannelKeys(channelId)));
+  return targets.map(target => ({
+    ...target,
+    keyIndex: normalizeModelTestKeyIndex(getPreferredModelTestKey(channelKeysById.get(target.channelId))?.key_index)
+  }));
 }
 
 function resetRowStatus(row) {
@@ -1537,7 +1629,9 @@ async function runBatchTests(targets) {
     row.querySelector('.response').textContent = i18nText('modelTest.testing', '测试中...');
 
     try {
-      const data = await fetchModelTestWithRPMWait(target, { model, stream: streamEnabled, content, protocol_transform: selectedProtocol });
+      const payload = { model, stream: streamEnabled, content, protocol_transform: selectedProtocol };
+      if (Number.isInteger(target.keyIndex)) payload.key_index = target.keyIndex;
+      const data = await fetchModelTestWithRPMWait(target, payload);
       applyTestResultToRow(row, data);
     } catch (e) {
       row.style.background = 'rgba(239, 68, 68, 0.1)';
@@ -1605,7 +1699,7 @@ async function runModelTests() {
     return;
   }
 
-  const targets = getSelectedTargets();
+  let targets = getSelectedTargets();
   if (targets.length === 0) {
     showError(i18nText('modelTest.selectAtLeastOne', '请至少选择一条记录'));
     return;
@@ -1615,6 +1709,7 @@ async function runModelTests() {
   clearProgress();
   setRunTestButtonDisabled(true);
   try {
+    targets = await attachModelModeKeySelection(targets);
     await runBatchTests(targets);
   } catch (error) {
     console.error('runModelTests failed:', error);
@@ -2320,13 +2415,116 @@ async function deleteSelectedModels() {
   ));
 }
 
+function normalizeModelTestKeyIndex(value) {
+  const index = Number(value);
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
+function formatModelTestKeyLabel(key) {
+  const raw = String(key?.api_key || '').trim();
+  const masked = raw.length <= 6 ? raw : `${raw.slice(0, 3)}.${raw.slice(-3)}`;
+  const note = String(key?.note || '').trim();
+  return `${note ? `${note} - ` : ''}#${key?.key_index ?? '?'} ${masked}`.trim();
+}
+
+function getFirstEnabledModelTestKey(keys) {
+  return (Array.isArray(keys) ? keys : []).find(key => key?.disabled !== true) || null;
+}
+
+function getPreferredModelTestKey(keys) {
+  const list = Array.isArray(keys) ? keys : [];
+  return getFirstEnabledModelTestKey(list) || list[0] || null;
+}
+
+async function fetchModelTestChannelKeys(channelId) {
+  if (!channelId) return [];
+  const keys = (await fetchDataWithAuth(`/admin/channels/${channelId}/keys`)) || [];
+  return Array.isArray(keys) ? keys : [];
+}
+
+async function getModelTestChannelKeys(channelId) {
+  const normalizedId = Number(channelId);
+  if (!Number.isFinite(normalizedId) || normalizedId <= 0) return [];
+  if (channelKeysById.has(normalizedId)) return channelKeysById.get(normalizedId);
+  const keys = await fetchModelTestChannelKeys(normalizedId);
+  channelKeysById.set(normalizedId, keys);
+  return keys;
+}
+
+function syncChannelKeyCombobox() {
+  let selectedKey = channelKeys.find(key => normalizeModelTestKeyIndex(key?.key_index) === selectedKeyIndex);
+  if (!selectedKey) {
+    selectedKey = getFirstEnabledModelTestKey(channelKeys);
+    selectedKeyIndex = normalizeModelTestKeyIndex(selectedKey?.key_index);
+  }
+
+  if (!channelKeyCombobox) {
+    channelKeyCombobox = createSearchableCombobox({
+      container: 'testChannelKeySelectContainer',
+      inputId: 'testChannelKeySelect',
+      dropdownId: 'testChannelKeySelectDropdown',
+      placeholder: i18nText('channels.selectApiKey', '选择 API Key'),
+      minWidth: 170,
+      initialValue: selectedKeyIndex === null ? '' : String(selectedKeyIndex),
+      initialLabel: selectedKey ? formatModelTestKeyLabel(selectedKey) : '',
+      getOptions: () => channelKeys.map(key => ({
+        value: String(key.key_index),
+        label: formatModelTestKeyLabel(key),
+        className: key.disabled === true ? 'filter-dropdown-item--disabled' : ''
+      })),
+      onSelect: (value) => {
+        selectedKeyIndex = normalizeModelTestKeyIndex(value);
+        clearProgress();
+      }
+    });
+  } else {
+    channelKeyCombobox.setValue(
+      selectedKeyIndex === null ? '' : String(selectedKeyIndex),
+      selectedKey ? formatModelTestKeyLabel(selectedKey) : ''
+    );
+    channelKeyCombobox.refresh();
+  }
+
+  const input = channelKeyCombobox?.getInput?.() || document.getElementById('testChannelKeySelect');
+  if (input) {
+    input.placeholder = channelKeys.length > 0
+      ? i18nText('channels.selectApiKey', '选择 API Key')
+      : i18nText('channels.test.noApiKey', '没有可用的 API Key');
+  }
+}
+
+async function loadChannelKeys(channelId) {
+  const requestId = ++channelKeyLoadRequestId;
+  if (!channelId) {
+    channelKeys = [];
+    selectedKeyIndex = null;
+    syncChannelKeyCombobox();
+    return;
+  }
+
+  try {
+    const keys = await getModelTestChannelKeys(channelId);
+    if (requestId !== channelKeyLoadRequestId) return;
+    channelKeys = keys;
+    selectedKeyIndex = normalizeModelTestKeyIndex(getFirstEnabledModelTestKey(keys)?.key_index);
+  } catch (error) {
+    if (requestId !== channelKeyLoadRequestId) return;
+    console.error('加载渠道 API Key 失败:', error);
+    channelKeys = [];
+    selectedKeyIndex = null;
+  }
+  syncChannelKeyCombobox();
+}
+
 async function onChannelChange() {
   if (!selectedChannel) {
+    await loadChannelKeys(null);
     renderProtocolTransformOptions();
     renderEmptyRow(i18nText('modelTest.selectChannelFirst', '请先选择渠道'));
     return;
   }
 
+  await loadChannelKeys(selectedChannel.id);
   selectedProtocol = getChannelType(selectedChannel);
   renderProtocolTransformOptions();
   populateModelTypeSelect();
@@ -2373,7 +2571,9 @@ async function loadChannels(options = {}) {
 
   try {
     const list = (await fetchDataWithAuth('/admin/channels')) || [];
+    channelKeysById.clear();
     channelsList = list.sort((a, b) => getChannelType(a).localeCompare(getChannelType(b)) || b.priority - a.priority);
+    window.ModelTestImage?.setChannels(channelsList);
 
     if (preserveSelection && preservedChannelId !== null) {
       selectedChannel = channelsList.find(c => c.id === preservedChannelId) || null;
@@ -2384,6 +2584,7 @@ async function loadChannels(options = {}) {
     }
 
     renderSearchableChannelSelect();
+    await loadChannelKeys(selectedChannel?.id);
     ensureSelectedModelType();
 
     if (preserveSelection && preservedProtocol) {
@@ -2572,11 +2773,17 @@ function bindEvents() {
 }
 
 function setTestMode(mode) {
-  if (mode !== TEST_MODE_CHANNEL && mode !== TEST_MODE_MODEL) return;
+  if (mode !== TEST_MODE_CHANNEL && mode !== TEST_MODE_MODEL && mode !== TEST_MODE_IMAGE) return;
   if (testMode === mode) return;
 
   testMode = mode;
+  saveTestModeToStorage(mode);
   clearProgress();
+  if (testMode === TEST_MODE_IMAGE) {
+    updateModeUI();
+    window.ModelTestImage?.open();
+    return;
+  }
   if (testMode === TEST_MODE_CHANNEL && selectedChannel) {
     selectedProtocol = getChannelType(selectedChannel);
   }
@@ -2588,6 +2795,22 @@ function setTestMode(mode) {
   }
 
   renderRowsByMode();
+}
+
+function saveTestModeToStorage(mode) {
+  try {
+    localStorage.setItem(STORAGE_KEY_TEST_MODE, mode);
+  } catch (_) { /* ignore */ }
+}
+
+function loadTestModeFromStorage() {
+  try {
+    const mode = localStorage.getItem(STORAGE_KEY_TEST_MODE);
+    if (mode === TEST_MODE_CHANNEL || mode === TEST_MODE_MODEL || mode === TEST_MODE_IMAGE) {
+      return mode;
+    }
+  } catch (_) { /* ignore */ }
+  return TEST_MODE_CHANNEL;
 }
 
 window.setTestMode = setTestMode;
@@ -2804,11 +3027,28 @@ async function bootstrap() {
   };
   initModelTestActions();
   bindEvents();
+  initModeTabKeyboard();
+  window.ModelTestImage?.init({
+    t: i18nText,
+    getModelName,
+    getModelOptions: getAllImageModelOptions,
+    getChannelsForModel: modelName => modelName
+      ? channelsList.filter(channel => isModelSupported(channel, modelName))
+      : channelsList.slice(),
+    isModelSupported,
+    getChannelKeys: getModelTestChannelKeys,
+    formatChannelLabel: formatImageTestChannelLabel,
+    formatKeyLabel: formatModelTestKeyLabel
+  });
+  testMode = loadTestModeFromStorage();
   await loadChannels();
   await loadDefaultTestContent();
   updateHeadByMode();
   updateModeUI();
   renderRowsByMode();
+  if (testMode === TEST_MODE_IMAGE) {
+    window.ModelTestImage?.open();
+  }
 }
 
 window.initPageBootstrap({

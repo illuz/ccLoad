@@ -60,6 +60,13 @@ func TestWhereBuilder_ApplyLogFilter(t *testing.T) {
 			expectArgsLen: 2,
 		},
 		{
+			name: "client_protocol filter",
+			filter: &model.LogFilter{
+				ClientProtocol: "openai",
+			},
+			expectArgsLen: 2,
+		},
+		{
 			name: "auth_token_id filter",
 			filter: &model.LogFilter{
 				AuthTokenID: &authTokenID,

@@ -41,6 +41,7 @@
     let channelSelectViewMode = 'type';
     let editRawCostLimitUSD = 0;
     let editRawDailyCostLimitUSD = 0;
+    let editRawMonthlyCostLimitUSD = 0;
     let editDailyLimitDoubleEnabled = false;
     let editDailyLimitTripleEnabled = false;
     let editRawMaxConcurrency = 0;
@@ -761,10 +762,16 @@
     function formatGroupQuotaSummary(group) {
       if (!group) return t('tokens.unlimited');
       const costLimitUSD = Number(group.cost_limit_usd || 0);
-      if (costLimitUSD <= 0) return t('tokens.unlimited');
+      const dailyLimitUSD = Number(group.daily_cost_limit_usd || 0);
+      const monthlyLimitUSD = Number(group.monthly_cost_limit_usd || 0);
+      const limits = [];
+      if (costLimitUSD > 0) limits.push(`${t('tokens.costLimitLabel')} $${costLimitUSD.toFixed(2)}`);
+      if (monthlyLimitUSD > 0) limits.push(`${t('tokens.monthlyCostLimitLabel')} $${monthlyLimitUSD.toFixed(2)}`);
+      if (dailyLimitUSD > 0) limits.push(`${t('tokens.dailyCostLimitLabel')} $${dailyLimitUSD.toFixed(2)}`);
+      if (limits.length === 0) limits.push(t('tokens.unlimited'));
       const maxConcurrency = Number(group.max_concurrency) || 0;
       const concurrencyText = maxConcurrency > 0 ? String(maxConcurrency) : '∞';
-      return `$${costLimitUSD.toFixed(2)} / ${concurrencyText}`;
+      return `${limits.join(' · ')} / ${concurrencyText}`;
     }
 
     function getGroupSummaryHtml(group) {
@@ -959,7 +966,7 @@
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count, window.getFirstByteTimingColor);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count, window.getDurationTimingColor);
-      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 ? '' : 'mobile-empty-cell';
+      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || token.monthly_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 || getTokenEffectiveMonthlyCostLimit(token) > 0 ? '' : 'mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : 'mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : 'mobile-empty-cell';
 
@@ -1193,6 +1200,8 @@
       const totalCostUsd = Number(token?.total_cost_usd) || 0;
       const dailyCostUsd = Number(token?.daily_cost_used_usd) || 0;
       const dailyLimitUsd = getTokenEffectiveDailyCostLimit(token);
+      const monthlyCostUsd = Number(token?.monthly_cost_used_usd) || 0;
+      const monthlyLimitUsd = getTokenEffectiveMonthlyCostLimit(token);
 
       const rows = [];
       rows.push(buildCostMetricRow(
@@ -1208,6 +1217,15 @@
         t('tokens.table.dailyCost'),
         dailyValue,
         { tone: dailyCostUsd > 0 ? 'primary' : 'muted' }
+      ));
+
+      const monthlyValue = monthlyLimitUsd > 0
+        ? `${formatCostDisplay(monthlyCostUsd)}/${formatCostDisplay(monthlyLimitUsd)}`
+        : formatCostDisplay(monthlyCostUsd);
+      rows.push(buildCostMetricRow(
+        t('tokens.table.monthlyCost'),
+        monthlyValue,
+        { tone: monthlyCostUsd > 0 ? 'primary' : 'muted' }
       ));
 
       return `<div class="token-cost-summary">${rows.join('')}</div>`;
@@ -1253,15 +1271,32 @@
       return Number(token?.cost_limit_usd) || 0;
     }
 
+    function getTokenEffectiveMonthlyCostLimit(token) {
+      if (token && token.effective_monthly_cost_limit_usd !== undefined) {
+        return Number(token.effective_monthly_cost_limit_usd) || 0;
+      }
+      return Number(token?.monthly_cost_limit_usd) || 0;
+    }
+
     function getTokenBatteryState(token) {
       const dailyLimitUsd = getTokenEffectiveDailyCostLimit(token);
+      const monthlyLimitUsd = getTokenEffectiveMonthlyCostLimit(token);
       const totalLimitUsd = getTokenEffectiveCostLimit(token);
       const dailyUsedUsd = Number(token?.daily_cost_used_usd) || 0;
-      const totalUsedUsd = Number(token?.total_cost_usd) || 0;
-      const hasDailyLimit = dailyLimitUsd > 0;
-      const hasTotalLimit = totalLimitUsd > 0;
+      const monthlyUsedUsd = Number(token?.monthly_cost_used_usd) || 0;
+      const totalUsedUsd = Number(token?.cost_used_usd ?? token?.total_cost_usd) || 0;
 
-      if (!hasDailyLimit && !hasTotalLimit) {
+      const windows = [
+        { name: 'daily', used: dailyUsedUsd, limit: dailyLimitUsd, titleKey: 'tokens.batteryDailyRemaining' },
+        { name: 'monthly', used: monthlyUsedUsd, limit: monthlyLimitUsd, titleKey: 'tokens.batteryMonthlyRemaining' },
+        { name: 'total', used: totalUsedUsd, limit: totalLimitUsd, titleKey: 'tokens.batteryTotalRemaining' }
+      ].filter((windowState) => windowState.limit > 0).map((windowState) => {
+        const remaining = Math.max(0, windowState.limit - windowState.used);
+        const ratio = Math.max(0, Math.min(1, remaining / windowState.limit));
+        return { ...windowState, remaining, ratio };
+      });
+
+      if (windows.length === 0) {
         return {
           source: 'unlimited',
           ratio: 1,
@@ -1275,35 +1310,15 @@
         };
       }
 
-      const dailyRemainingUsd = hasDailyLimit ? Math.max(0, dailyLimitUsd - dailyUsedUsd) : Infinity;
-      const totalRemainingUsd = hasTotalLimit ? Math.max(0, totalLimitUsd - totalUsedUsd) : Infinity;
-      const dailyRatio = hasDailyLimit ? Math.max(0, Math.min(1, dailyRemainingUsd / dailyLimitUsd)) : Infinity;
-      const totalRatio = hasTotalLimit ? Math.max(0, Math.min(1, totalRemainingUsd / totalLimitUsd)) : Infinity;
-      const source = hasDailyLimit && hasTotalLimit
-        ? (dailyRatio <= totalRatio ? 'both-daily' : 'both-total')
-        : (hasDailyLimit ? 'daily' : 'total');
-      const ratio = source === 'both-total' || source === 'total' ? totalRatio : dailyRatio;
+      const selected = windows.reduce((tightest, windowState) => windowState.ratio < tightest.ratio ? windowState : tightest);
+      const source = windows.length === 1 ? selected.name : `multiple-${selected.name}`;
+      const ratio = selected.ratio;
       const percent = Math.round(ratio * 100);
-      const remainingUsd = source === 'both-total' || source === 'total' ? totalRemainingUsd : dailyRemainingUsd;
-      const limitUsd = source === 'both-total' || source === 'total' ? totalLimitUsd : dailyLimitUsd;
-      const usedUsd = source === 'both-total' || source === 'total' ? totalUsedUsd : dailyUsedUsd;
-      const dailyTitle = hasDailyLimit
-        ? t('tokens.batteryDailyRemaining', {
-          remaining: formatCostDisplay(dailyRemainingUsd),
-          limit: formatCostDisplay(dailyLimitUsd),
-          percent: Math.round(dailyRatio * 100)
-        })
-        : '';
-      const totalTitle = hasTotalLimit
-        ? t('tokens.batteryTotalRemaining', {
-          remaining: formatCostDisplay(totalRemainingUsd),
-          limit: formatCostDisplay(totalLimitUsd),
-          percent: Math.round(totalRatio * 100)
-        })
-        : '';
-      const title = hasDailyLimit && hasTotalLimit
-        ? `${dailyTitle} · ${totalTitle}`
-        : (hasDailyLimit ? dailyTitle : totalTitle);
+      const title = windows.map((windowState) => t(windowState.titleKey, {
+        remaining: formatCostDisplay(windowState.remaining),
+        limit: formatCostDisplay(windowState.limit),
+        percent: Math.round(windowState.ratio * 100)
+      })).join(' · ');
 
       let tone = 'critical';
       if (ratio >= 0.8) {
@@ -1320,9 +1335,9 @@
         source,
         ratio,
         percent,
-        remainingUsd,
-        limitUsd,
-        usedUsd,
+        remainingUsd: selected.remaining,
+        limitUsd: selected.limit,
+        usedUsd: selected.used,
         levelClass: `token-battery--${tone}`,
         fillClass: `token-battery__fill--${tone}`,
         title
@@ -1467,7 +1482,7 @@
       const concurrencyHtml = buildConcurrencyHtml(getTokenEffectiveMaxConcurrency(token));
       const streamAvgHtml = buildResponseTimeHtml(token.stream_avg_ttfb, token.stream_count, window.getFirstByteTimingColor);
       const nonStreamAvgHtml = buildResponseTimeHtml(token.non_stream_avg_rt, token.non_stream_count, window.getDurationTimingColor);
-      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 ? '' : ' mobile-empty-cell';
+      const costCellClass = token.total_cost_usd > 0 || token.daily_cost_used_usd > 0 || token.monthly_cost_used_usd > 0 || getTokenEffectiveDailyCostLimit(token) > 0 || getTokenEffectiveMonthlyCostLimit(token) > 0 ? '' : ' mobile-empty-cell';
       const streamCellClass = token.stream_count ? '' : ' mobile-empty-cell';
       const nonStreamCellClass = token.non_stream_count ? '' : ' mobile-empty-cell';
 
@@ -1532,6 +1547,7 @@
       document.getElementById('tokenExpiry').value = 'never';
       document.getElementById('tokenCostLimitUSD').value = 0;
       document.getElementById('tokenDailyCostLimitUSD').value = 0;
+      document.getElementById('tokenMonthlyCostLimitUSD').value = 0;
       document.getElementById('tokenMaxConcurrency').value = 0;
       const codexGuardInput = document.getElementById('tokenCodexGuardEnabled');
       if (codexGuardInput) codexGuardInput.checked = false;
@@ -1572,6 +1588,7 @@
       const codexGuardEnabled = !!document.getElementById('tokenCodexGuardEnabled')?.checked;
       const costLimitUSD = parseFloat(document.getElementById('tokenCostLimitUSD').value) || 0;
       const dailyCostLimitUSD = parseFloat(document.getElementById('tokenDailyCostLimitUSD').value) || 0;
+      const monthlyCostLimitUSD = parseFloat(document.getElementById('tokenMonthlyCostLimitUSD').value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenMaxConcurrency').value);
       if (costLimitUSD < 0) {
         window.showNotification(t('tokens.msg.costLimitNegative'), 'error');
@@ -1579,6 +1596,10 @@
       }
       if (dailyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.dailyCostLimitNegative'), 'error');
+        return;
+      }
+      if (monthlyCostLimitUSD < 0) {
+        window.showNotification(t('tokens.msg.monthlyCostLimitNegative'), 'error');
         return;
       }
       if (maxConcurrencyResult.error) {
@@ -1600,6 +1621,7 @@
             codex_guard_enabled: codexGuardEnabled,
             cost_limit_usd: costLimitUSD,
             daily_cost_limit_usd: dailyCostLimitUSD,
+            monthly_cost_limit_usd: monthlyCostLimitUSD,
             max_concurrency: maxConcurrency,
             group_id: groupID,
             inherit_quota: groupID > 0,
@@ -1622,6 +1644,7 @@
           max_concurrency: maxConcurrency,
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
+          monthly_cost_limit_usd: monthlyCostLimitUSD,
           daily_limit_double_enabled: !!data.daily_limit_double_enabled,
           daily_limit_triple_enabled: !!data.daily_limit_triple_enabled,
           daily_limit_override_usd: Number(data.daily_limit_override_usd) || 0,
@@ -1639,6 +1662,7 @@
           effective_cost_usd: 0,
           cost_used_usd: 0,
           daily_cost_used_usd: 0,
+          monthly_cost_used_usd: 0,
           group_id: Number(data.group_id) || groupID || 0,
           group_name: getGroupByID(Number(data.group_id) || groupID || 0)?.name || '',
           inherit_quota: !!data.inherit_quota,
@@ -1730,13 +1754,19 @@
       // 初始化费用限额状态（2026-01新增）
       const costLimitInput = document.getElementById('editCostLimitUSD');
       const dailyCostLimitInput = document.getElementById('editDailyCostLimitUSD');
+      const monthlyCostLimitInput = document.getElementById('editMonthlyCostLimitUSD');
       const costUsedDisplay = document.getElementById('editCostUsedDisplay');
       const dailyCostUsedDisplay = document.getElementById('editDailyCostUsedDisplay');
+      const monthlyCostUsedDisplay = document.getElementById('editMonthlyCostUsedDisplay');
       editRawCostLimitUSD = token.cost_limit_usd || 0;
       costLimitInput.value = editRawCostLimitUSD;
       editRawDailyCostLimitUSD = token.daily_cost_limit_usd || 0;
       if (dailyCostLimitInput) {
         dailyCostLimitInput.value = editRawDailyCostLimitUSD;
+      }
+      editRawMonthlyCostLimitUSD = token.monthly_cost_limit_usd || 0;
+      if (monthlyCostLimitInput) {
+        monthlyCostLimitInput.value = editRawMonthlyCostLimitUSD;
       }
       editDailyLimitDoubleEnabled = !!token.daily_limit_double_enabled;
       editDailyLimitTripleEnabled = !!token.daily_limit_triple_enabled;
@@ -1759,6 +1789,10 @@
       const dailyCostUsed = token.daily_cost_used_usd || 0;
       if (dailyCostUsedDisplay) {
         dailyCostUsedDisplay.textContent = dailyCostUsed > 0 ? `${t('tokens.costUsedPrefix')}: $${dailyCostUsed.toFixed(4)}` : '';
+      }
+      const monthlyCostUsed = token.monthly_cost_used_usd || 0;
+      if (monthlyCostUsedDisplay) {
+        monthlyCostUsedDisplay.textContent = monthlyCostUsed > 0 ? `${t('tokens.costUsedPrefix')}: $${monthlyCostUsed.toFixed(4)}` : '';
       }
 
       const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
@@ -1810,6 +1844,7 @@
       editRawChannelRestrictionMode = 'allow';
       selectedAllowedChannelIDs.clear();
       editRawDailyCostLimitUSD = 0;
+      editRawMonthlyCostLimitUSD = 0;
       editDailyLimitDoubleEnabled = false;
       editDailyLimitTripleEnabled = false;
       editInheritQuota = false;
@@ -1837,6 +1872,7 @@
       if (!editInheritQuota) {
         editRawCostLimitUSD = parseFloat(document.getElementById('editCostLimitUSD')?.value) || 0;
         editRawDailyCostLimitUSD = parseFloat(document.getElementById('editDailyCostLimitUSD')?.value) || 0;
+        editRawMonthlyCostLimitUSD = parseFloat(document.getElementById('editMonthlyCostLimitUSD')?.value) || 0;
         const maxResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency')?.value);
         if (!maxResult.error) editRawMaxConcurrency = maxResult.value;
       }
@@ -1925,18 +1961,22 @@
 
       const costLimitInput = document.getElementById('editCostLimitUSD');
       const dailyCostLimitInput = document.getElementById('editDailyCostLimitUSD');
+      const monthlyCostLimitInput = document.getElementById('editMonthlyCostLimitUSD');
       const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
       if (editInheritQuota && group) {
         if (costLimitInput) costLimitInput.value = group.cost_limit_usd || 0;
         if (dailyCostLimitInput) dailyCostLimitInput.value = group.daily_cost_limit_usd || 0;
+        if (monthlyCostLimitInput) monthlyCostLimitInput.value = group.monthly_cost_limit_usd || 0;
         if (maxConcurrencyInput) maxConcurrencyInput.value = group.max_concurrency || 0;
       } else {
         if (costLimitInput) costLimitInput.value = editRawCostLimitUSD || 0;
         if (dailyCostLimitInput) dailyCostLimitInput.value = editRawDailyCostLimitUSD || 0;
+        if (monthlyCostLimitInput) monthlyCostLimitInput.value = editRawMonthlyCostLimitUSD || 0;
         if (maxConcurrencyInput) maxConcurrencyInput.value = editRawMaxConcurrency || 0;
       }
       if (costLimitInput) costLimitInput.disabled = editInheritQuota && hasGroup;
       if (dailyCostLimitInput) dailyCostLimitInput.disabled = editInheritQuota && hasGroup;
+      if (monthlyCostLimitInput) monthlyCostLimitInput.disabled = editInheritQuota && hasGroup;
       if (maxConcurrencyInput) maxConcurrencyInput.disabled = editInheritQuota && hasGroup;
 
       editAllowedChannelIDs = (editInheritChannels && group)
@@ -1999,6 +2039,7 @@
       const channelRestriction = readEditChannelRestrictionForSave(groupID);
       const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
       const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
+      const monthlyCostLimitUSD = editInheritQuota ? editRawMonthlyCostLimitUSD : (parseFloat(document.getElementById('editMonthlyCostLimitUSD').value) || 0);
       const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
       const dailyLimitTripleEnabled = !!document.getElementById('editDailyLimitTripleEnabled')?.checked;
       const dailyLimitOverrideUSD = parseFloat(document.getElementById('editDailyLimitOverrideUSD')?.value) || 0;
@@ -2013,6 +2054,10 @@
       }
       if (dailyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.dailyCostLimitNegative'), 'error');
+        return;
+      }
+      if (monthlyCostLimitUSD < 0) {
+        window.showNotification(t('tokens.msg.monthlyCostLimitNegative'), 'error');
         return;
       }
       if (dailyLimitOverrideUSD < 0) {
@@ -2059,6 +2104,7 @@
             allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,  // 2026-01新增：模型限制
             cost_limit_usd: costLimitUSD,        // 2026-01新增：费用上限
             daily_cost_limit_usd: dailyCostLimitUSD,
+            monthly_cost_limit_usd: monthlyCostLimitUSD,
             daily_limit_double_enabled: dailyLimitDoubleEnabled,
             daily_limit_triple_enabled: dailyLimitTripleEnabled,
             daily_limit_override_usd: dailyLimitOverrideUSD,
@@ -2301,6 +2347,7 @@
         tokenGroupDescription: '',
         tokenGroupCostLimitUSD: '0',
         tokenGroupDailyCostLimitUSD: '0',
+        tokenGroupMonthlyCostLimitUSD: '0',
         tokenGroupMaxConcurrency: '0'
       };
       Object.entries(fields).forEach(([id, value]) => {
@@ -2446,6 +2493,7 @@
       document.getElementById('tokenGroupDescription').value = group.description || '';
       document.getElementById('tokenGroupCostLimitUSD').value = group.cost_limit_usd || 0;
       document.getElementById('tokenGroupDailyCostLimitUSD').value = group.daily_cost_limit_usd || 0;
+      document.getElementById('tokenGroupMonthlyCostLimitUSD').value = group.monthly_cost_limit_usd || 0;
       document.getElementById('tokenGroupMaxConcurrency').value = group.max_concurrency || 0;
       setTokenGroupColorValue(group.color);
       tokenGroupAllowedChannelIDs = (group.allowed_channel_ids || []).map((id) => Number(id)).filter((id) => id > 0);
@@ -2479,6 +2527,7 @@
             color: getDefaultTokenGroupColor(),
             cost_limit_usd: 0,
             daily_cost_limit_usd: 0,
+            monthly_cost_limit_usd: 0,
             max_concurrency: 0,
             allowed_channel_ids: [],
             channel_restriction_mode: 'allow',
@@ -2492,6 +2541,7 @@
           color: getDefaultTokenGroupColor(),
           cost_limit_usd: 0,
           daily_cost_limit_usd: 0,
+          monthly_cost_limit_usd: 0,
           max_concurrency: 0,
           allowed_channel_ids: [],
           channel_restriction_mode: 'allow',
@@ -2520,6 +2570,7 @@
       const color = getTokenGroupColor(document.getElementById('tokenGroupColor')?.value);
       const costLimitUSD = parseFloat(document.getElementById('tokenGroupCostLimitUSD')?.value) || 0;
       const dailyCostLimitUSD = parseFloat(document.getElementById('tokenGroupDailyCostLimitUSD')?.value) || 0;
+      const monthlyCostLimitUSD = parseFloat(document.getElementById('tokenGroupMonthlyCostLimitUSD')?.value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenGroupMaxConcurrency')?.value);
       if (!name) {
         window.showNotification(t('tokens.msg.enterGroupName'), 'error');
@@ -2531,6 +2582,10 @@
       }
       if (dailyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.dailyCostLimitNegative'), 'error');
+        return;
+      }
+      if (monthlyCostLimitUSD < 0) {
+        window.showNotification(t('tokens.msg.monthlyCostLimitNegative'), 'error');
         return;
       }
       if (maxConcurrencyResult.error) {
@@ -2547,6 +2602,7 @@
             color,
             cost_limit_usd: costLimitUSD,
             daily_cost_limit_usd: dailyCostLimitUSD,
+            monthly_cost_limit_usd: monthlyCostLimitUSD,
             max_concurrency: maxConcurrencyResult.value,
             allowed_channel_ids: tokenGroupAllowedChannelIDs,
             channel_restriction_mode: tokenGroupChannelRestrictionMode,
@@ -2561,6 +2617,7 @@
           color,
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
+          monthly_cost_limit_usd: monthlyCostLimitUSD,
           max_concurrency: maxConcurrencyResult.value,
           allowed_channel_ids: tokenGroupAllowedChannelIDs.slice(),
           channel_restriction_mode: tokenGroupChannelRestrictionMode,
@@ -3190,6 +3247,7 @@
         return;
       }
 
+      const addedCount = selectedChannelsForAdd.size;
       const existingChannelIDs = new Set(editAllowedChannelIDs);
       selectedChannelsForAdd.forEach(channelID => {
         if (!existingChannelIDs.has(channelID)) {
@@ -3204,7 +3262,7 @@
       if (!isTokenGroupMode && document.getElementById('editModal')?.style.display === 'block') {
         renderAllowedChannelsTable();
       }
-      window.showNotification(t('tokens.msg.channelsAdded', { count: selectedChannelsForAdd.size }), 'success');
+      window.showNotification(t('tokens.msg.channelsAdded', { count: addedCount }), 'success');
     }
 
     /**
@@ -3506,12 +3564,12 @@
      * 确认添加选中的模型
      */
     function confirmModelSelection() {
-      
       if (selectedModelsForAdd.size === 0) {
         window.showNotification(t('tokens.msg.selectAtLeastOne'), 'warning');
         return;
       }
 
+      const addedCount = selectedModelsForAdd.size;
       // 添加到模型限制列表
       selectedModelsForAdd.forEach(model => {
         if (!editAllowedModels.includes(model)) {
@@ -3528,7 +3586,7 @@
       if (!isTokenGroupMode && document.getElementById('editModal')?.style.display === 'block') {
         renderAllowedModelsTable();
       }
-      window.showNotification(t('tokens.msg.modelsAdded', { count: selectedModelsForAdd.size }), 'success');
+      window.showNotification(t('tokens.msg.modelsAdded', { count: addedCount }), 'success');
     }
 
     // ==================== 模型手动输入 ====================

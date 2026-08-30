@@ -195,6 +195,7 @@ func (s *Server) buildPublicKeyCostQuota(ctx context.Context, token *model.AuthT
 		return PublicKeyCostQuota{}
 	}
 	token.NormalizeDailyCostForToday()
+	token.NormalizeMonthlyCostForCurrentMonth()
 
 	if token.GroupID > 0 {
 		group, err := s.store.GetAuthTokenGroup(ctx, token.GroupID)
@@ -213,6 +214,15 @@ func (s *Server) buildPublicKeyCostQuota(ctx context.Context, token *model.AuthT
 		usedMicro = token.DailyCostUsedMicroUSD
 		if s.authService != nil {
 			if used, limit, _ := s.authService.IsDailyCostLimitExceeded(token.Token); limit > 0 {
+				usedMicro = used
+				limitMicro = limit
+			}
+		}
+	} else if monthlyLimit := effectiveMonthlyLimitMicro(token); monthlyLimit > 0 {
+		usedMicro = token.MonthlyCostUsedMicroUSD
+		limitMicro = monthlyLimit
+		if s.authService != nil {
+			if used, limit, _ := s.authService.IsMonthlyCostLimitExceeded(token.Token); limit > 0 {
 				usedMicro = used
 				limitMicro = limit
 			}

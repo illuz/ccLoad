@@ -22,7 +22,9 @@ const authTokenSelectColumns = `
 	codex_guard_enabled,
 	success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 	prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-	cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency,
+	cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key,
+	monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key,
+	daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency,
 	group_id, inherit_quota, inherit_channels, inherit_models
 `
 
@@ -65,16 +67,26 @@ const updateTokenStatsQuery = `
 		daily_cost_used_microusd = CASE
 			WHEN ? = 1 THEN CASE
 				WHEN daily_cost_day_key = ? THEN daily_cost_used_microusd + ?
-				ELSE ?
+				WHEN daily_cost_day_key < ? THEN ?
+				ELSE daily_cost_used_microusd
 			END
 			ELSE daily_cost_used_microusd
 		END,
 		daily_cost_day_key = CASE
-			WHEN ? = 1 THEN CASE
-				WHEN daily_cost_day_key = ? THEN daily_cost_day_key
-				ELSE ?
-			END
+			WHEN ? = 1 AND daily_cost_day_key < ? THEN ?
 			ELSE daily_cost_day_key
+		END,
+		monthly_cost_used_microusd = CASE
+			WHEN ? = 1 THEN CASE
+				WHEN monthly_cost_month_key = ? THEN monthly_cost_used_microusd + ?
+				WHEN monthly_cost_month_key < ? THEN ?
+				ELSE monthly_cost_used_microusd
+			END
+			ELSE monthly_cost_used_microusd
+		END,
+		monthly_cost_month_key = CASE
+			WHEN ? = 1 AND monthly_cost_month_key < ? THEN ?
+			ELSE monthly_cost_month_key
 		END,
 
 		-- 增量更新平均值（new_avg = (old_avg*old_count + v)/(old_count+1)）
@@ -89,7 +101,10 @@ const updateTokenStatsQuery = `
 		END,
 		non_stream_count = non_stream_count + CASE WHEN ? = 1 THEN 1 ELSE 0 END,
 
-		last_used_at = ?
+		last_used_at = CASE
+			WHEN last_used_at IS NULL OR last_used_at < ? THEN ?
+			ELSE last_used_at
+		END
 	WHERE token = ?
 `
 
@@ -109,6 +124,9 @@ func scanAuthToken(scanner interface {
 	var dailyCostUsedMicroUSD int64
 	var dailyCostLimitMicroUSD int64
 	var dailyCostDayKey int
+	var monthlyCostUsedMicroUSD int64
+	var monthlyCostLimitMicroUSD int64
+	var monthlyCostMonthKey int
 	var dailyLimitDoubleDayKey int
 	var dailyLimitTripleDayKey int
 	var dailyLimitOverrideMicroUSD int64
@@ -144,6 +162,9 @@ func scanAuthToken(scanner interface {
 		&dailyCostUsedMicroUSD,
 		&dailyCostLimitMicroUSD,
 		&dailyCostDayKey,
+		&monthlyCostUsedMicroUSD,
+		&monthlyCostLimitMicroUSD,
+		&monthlyCostMonthKey,
 		&dailyLimitDoubleDayKey,
 		&dailyLimitTripleDayKey,
 		&dailyLimitOverrideMicroUSD,
@@ -182,6 +203,9 @@ func scanAuthToken(scanner interface {
 	token.DailyCostUsedMicroUSD = dailyCostUsedMicroUSD
 	token.DailyCostLimitMicroUSD = dailyCostLimitMicroUSD
 	token.DailyCostDayKey = dailyCostDayKey
+	token.MonthlyCostUsedMicroUSD = monthlyCostUsedMicroUSD
+	token.MonthlyCostLimitMicroUSD = monthlyCostLimitMicroUSD
+	token.MonthlyCostMonthKey = monthlyCostMonthKey
 	token.DailyLimitDoubleDayKey = dailyLimitDoubleDayKey
 	token.DailyLimitTripleDayKey = dailyLimitTripleDayKey
 	token.DailyLimitOverrideMicroUSD = dailyLimitOverrideMicroUSD
@@ -190,6 +214,7 @@ func scanAuthToken(scanner interface {
 	token.InheritChannels = inheritChannels != 0
 	token.InheritModels = inheritModels != 0
 	token.NormalizeDailyCostForToday()
+	token.NormalizeMonthlyCostForCurrentMonth()
 
 	// 解析 allowed_models JSON
 	if allowedModelsJSON != "" {
@@ -250,9 +275,14 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
 				plain_token = excluded.plain_token,
@@ -279,6 +309,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				daily_cost_used_microusd = excluded.daily_cost_used_microusd,
 				daily_cost_limit_microusd = excluded.daily_cost_limit_microusd,
 				daily_cost_day_key = excluded.daily_cost_day_key,
+				monthly_cost_used_microusd = excluded.monthly_cost_used_microusd,
+				monthly_cost_limit_microusd = excluded.monthly_cost_limit_microusd,
+				monthly_cost_month_key = excluded.monthly_cost_month_key,
 				daily_limit_double_day_key = excluded.daily_limit_double_day_key,
 				daily_limit_triple_day_key = excluded.daily_limit_triple_day_key,
 				daily_limit_override_microusd = excluded.daily_limit_override_microusd,
@@ -318,6 +351,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			token.DailyCostUsedMicroUSD,
 			token.DailyCostLimitMicroUSD,
 			token.DailyCostDayKey,
+			token.MonthlyCostUsedMicroUSD,
+			token.MonthlyCostLimitMicroUSD,
+			token.MonthlyCostMonthKey,
 			token.DailyLimitDoubleDayKey,
 			token.DailyLimitTripleDayKey,
 			token.DailyLimitOverrideMicroUSD,
@@ -342,9 +378,14 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 			success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
 			plain_token = VALUES(plain_token),
@@ -371,6 +412,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			daily_cost_used_microusd = VALUES(daily_cost_used_microusd),
 			daily_cost_limit_microusd = VALUES(daily_cost_limit_microusd),
 			daily_cost_day_key = VALUES(daily_cost_day_key),
+			monthly_cost_used_microusd = VALUES(monthly_cost_used_microusd),
+			monthly_cost_limit_microusd = VALUES(monthly_cost_limit_microusd),
+			monthly_cost_month_key = VALUES(monthly_cost_month_key),
 			daily_limit_double_day_key = VALUES(daily_limit_double_day_key),
 			daily_limit_triple_day_key = VALUES(daily_limit_triple_day_key),
 			daily_limit_override_microusd = VALUES(daily_limit_override_microusd),
@@ -410,6 +454,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		token.DailyCostUsedMicroUSD,
 		token.DailyCostLimitMicroUSD,
 		token.DailyCostDayKey,
+		token.MonthlyCostUsedMicroUSD,
+		token.MonthlyCostLimitMicroUSD,
+		token.MonthlyCostMonthKey,
 		token.DailyLimitDoubleDayKey,
 		token.DailyLimitTripleDayKey,
 		token.DailyLimitOverrideMicroUSD,
@@ -440,10 +487,15 @@ const (
 		codex_guard_enabled, success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 		prompt_tokens_total, completion_tokens_total, total_cost_usd, effective_cost_usd, allowed_models, allowed_channel_ids,
 		channel_restriction_mode,
-		cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key,
+		cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key,
 		max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models`
 
-	authTokenInsertCommonValues = `?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`
+	authTokenInsertCommonValues = `
+		?, ?, ?, ?, ?, ?, ?, ?,
+		0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0,
+		?, ?, ?,
+		0, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?,
+		?, ?, ?, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -487,7 +539,7 @@ func authTokenInsertCommonArgs(token *model.AuthToken) ([]any, error) {
 		expiresAt, lastUsedAt, boolToInt(token.IsActive),
 		boolToInt(token.CodexGuardEnabled),
 		allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode,
-		token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, model.CurrentLocalDayKey(), token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, token.MaxConcurrency,
+		token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, model.CurrentLocalDayKey(), token.MonthlyCostLimitMicroUSD, model.CurrentLocalMonthKey(), token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, token.MaxConcurrency,
 		token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels),
 	}, nil
 }
@@ -732,6 +784,7 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    codex_guard_enabled = ?,
 		    cost_limit_microusd = ?,
 		    daily_cost_limit_microusd = ?,
+		    monthly_cost_limit_microusd = ?,
 		    daily_limit_double_day_key = ?,
 		    daily_limit_triple_day_key = ?,
 		    daily_limit_override_microusd = ?,
@@ -745,7 +798,7 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    inherit_channels = ?,
 		    inherit_models = ?
 		WHERE id = ?
-	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
+	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.MonthlyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
 
 	if err != nil {
 		return fmt.Errorf("update auth token: %w", err)
@@ -838,6 +891,7 @@ func (s *SQLStore) UpdateTokenStats(
 	nowMs := time.Now().UnixMilli()
 	costMicroUSD := util.USDToMicroUSD(effectiveCostUSD)
 	currentDayKey := model.CurrentLocalDayKey()
+	currentMonthKey := model.CurrentLocalMonthKey()
 
 	result, err := s.db.ExecContext(ctx, updateTokenStatsQuery,
 		successFlag,
@@ -849,13 +903,15 @@ func (s *SQLStore) UpdateTokenStats(
 		billableFlag, costUSD,
 		billableFlag, effectiveCostUSD,
 		billableFlag, costMicroUSD,
-		billableFlag, currentDayKey, costMicroUSD, costMicroUSD,
+		billableFlag, currentDayKey, costMicroUSD, currentDayKey, costMicroUSD,
 		billableFlag, currentDayKey, currentDayKey,
+		billableFlag, currentMonthKey, costMicroUSD, currentMonthKey, costMicroUSD,
+		billableFlag, currentMonthKey, currentMonthKey,
 		streamUpdateFlag, firstByteTime,
 		streamUpdateFlag,
 		nonStreamUpdateFlag, duration,
 		nonStreamUpdateFlag,
-		nowMs,
+		nowMs, nowMs,
 		tokenHash,
 	)
 	if err != nil {

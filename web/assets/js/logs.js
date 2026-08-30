@@ -431,12 +431,30 @@ function buildThinkingEffortBadge(thinkingEffort, reasoningTokens) {
   return `<sup class="thinking-effort-badge" title="${title}">${escapeHtml(text)}</sup>`;
 }
 
+// Prefix/suffix spelling variants represent the same routed identity and do
+// not need a redirect marker (provider prefixes and thinking suffixes included).
+function isPrefixOrSuffixVariant(model, actualModel) {
+  if (!model || !actualModel) return false;
+  const a = String(model).toLowerCase();
+  const b = String(actualModel).toLowerCase();
+  if (a === b) return true;
+  const short = a.length <= b.length ? a : b;
+  const long = a.length <= b.length ? b : a;
+  if (long.startsWith(short) || long.endsWith(short)) return true;
+  let prefixLen = 0;
+  while (prefixLen < short.length && short[prefixLen] === long[prefixLen]) prefixLen++;
+  let suffixLen = 0;
+  while (suffixLen < short.length - prefixLen &&
+         short[short.length - 1 - suffixLen] === long[long.length - 1 - suffixLen]) suffixLen++;
+  return prefixLen > 0 && suffixLen > 0 && prefixLen + suffixLen === short.length;
+}
+
 function buildLogModelDisplay(model, actualModel, thinkingEffort, reasoningTokens, upstreamResponseModel, upstreamModelMismatch) {
   if (!model) {
     return '<span style="color: var(--neutral-500);">-</span>';
   }
 
-  const redirected = actualModel && actualModel !== model;
+  const redirected = actualModel && actualModel !== model && !isPrefixOrSuffixVariant(model, actualModel);
   const responseModel = String(upstreamResponseModel || '').trim();
   const auditMismatch = upstreamModelMismatch === true && responseModel !== '';
   const effort = normalizeThinkingEffortDisplay(thinkingEffort);
@@ -796,6 +814,7 @@ function filterActiveRequests(requests) {
   const model = normalizeLogsFilterValue(filters.model);
   const channelNameExact = filters.channelNameExact;
   const modelExact = filters.modelExact;
+  const clientProtocol = normalizeLogsFilterValue(filters.clientProtocol);
   const channelType = (document.getElementById('f_channel_type')?.value || '').trim();
   const tokenId = (document.getElementById('f_auth_token')?.value || '').trim();
 
@@ -808,6 +827,7 @@ function filterActiveRequests(requests) {
       const reqModel = normalizeLogsFilterValue(req.model || '');
       if (modelExact ? reqModel !== model : !reqModel.includes(model)) return false;
     }
+    if (clientProtocol && normalizeLogsFilterValue(req.client_protocol) !== clientProtocol) return false;
     // 渠道类型精确匹配（'all' 表示全部，不过滤）
     if (channelType && channelType !== 'all') {
       const reqType = (typeof req.channel_type === 'string' ? req.channel_type : '').toLowerCase();
@@ -1343,6 +1363,7 @@ async function resetLogsFilters() {
 function applyLogsFilterValues(filters) {
   window.applyFilterControlValues(filters, {
     range: 'f_hours',
+    clientProtocol: 'f_client_protocol',
     logSource: 'f_log_source',
     codexGuard: 'f_codex_guard',
     authToken: 'f_auth_token'
@@ -1592,13 +1613,14 @@ async function initFilters(restoredFilters) {
   document.getElementById('btn_filter').addEventListener('click', applyFilter);
   document.getElementById('btn_clear_filters')?.addEventListener('click', resetLogsFilters);
   document.getElementById('f_log_source')?.addEventListener('change', applyFilter);
+  document.getElementById('f_client_protocol')?.addEventListener('change', applyFilter);
   document.getElementById('f_codex_guard')?.addEventListener('change', applyFilter);
   document.getElementById('f_upstream_model_mismatch')?.addEventListener('change', applyFilter);
 
   window.bindFilterApplyInputs({
     apply: applyFilter,
     debounceInputIds: [],
-    enterInputIds: ['f_hours', 'f_auth_token', 'f_channel_type', 'f_log_source', 'f_codex_guard']
+    enterInputIds: ['f_hours', 'f_client_protocol', 'f_auth_token', 'f_channel_type', 'f_log_source', 'f_codex_guard']
   });
 }
 
@@ -2245,6 +2267,7 @@ function updateTestKeyIndexInfo(text) {
 const LOGS_FILTER_KEY = 'logs.filters';
 const LOGS_FILTER_FIELDS = [
   { key: 'range', queryKeys: ['range'], defaultValue: 'today' },
+  { key: 'clientProtocol', queryKeys: ['client_protocol'], defaultValue: '' },
   {
     key: 'customStartTime',
     queryKeys: ['start_time'],
@@ -2337,6 +2360,7 @@ function getLogsFilters() {
   const status = logsStatusCombobox ? logsStatusCombobox.getValue() : (document.getElementById('f_status')?.value || '').trim();
   const baseValues = window.readFilterControlValues({
     range: { id: 'f_hours', defaultValue: 'today', trim: true },
+    clientProtocol: { id: 'f_client_protocol', trim: true },
     codexGuard: { id: 'f_codex_guard', defaultValue: '', trim: true },
     authToken: { id: 'f_auth_token', trim: true }
   });
@@ -3609,4 +3633,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       }).catch(() => {});
     }
   });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { isPrefixOrSuffixVariant, buildLogModelDisplay };
 }

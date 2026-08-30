@@ -2247,7 +2247,7 @@
    * @param {string} text - 要复制的文本
    * @returns {Promise<void>}
    */
-  function fallbackCopyToClipboard(text) {
+  function copyWithSelection(text) {
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -2256,25 +2256,25 @@
     ta.select();
 
     try {
-      const copied = typeof document.execCommand === 'function' && document.execCommand('copy');
-      if (!copied) {
-        throw new Error('copy failed');
-      }
+      return typeof document.execCommand === 'function' && document.execCommand('copy');
     } catch {
+      return false;
+    } finally {
       document.body.removeChild(ta);
-      return Promise.reject(new Error('copy failed'));
     }
-
-    document.body.removeChild(ta);
-    return Promise.resolve();
   }
 
   function copyToClipboard(text) {
+    // Selection fallback must run synchronously while the click still owns
+    // browser user activation.
+    if (typeof document.execCommand === 'function' && copyWithSelection(text)) {
+      return Promise.resolve();
+    }
     const clipboard = globalThis.navigator && globalThis.navigator.clipboard;
     if (clipboard && typeof clipboard.writeText === 'function') {
-      return clipboard.writeText(text).catch(() => fallbackCopyToClipboard(text));
+      return clipboard.writeText(text);
     }
-    return fallbackCopyToClipboard(text);
+    return Promise.reject(new Error('copy failed'));
   }
 
   function escapeCodeHtml(str) {

@@ -1130,7 +1130,7 @@ func TestChatRequestErrorResultClassifiesLimitAndNetworkFailures(t *testing.T) {
 		})
 	}
 
-	timeout.firstStreamContentTimedOut.Store(true)
+	timeout.firstStreamContentState.Store(firstStreamContentTimedOut)
 	result := chatRequestErrorResult(start, req, timeout, context.Canceled)
 	if statusCode, _ := getResultInt(result["status_code"]); statusCode != util.StatusFirstByteTimeout {
 		t.Fatalf("status_code=%d, want %d, result=%+v", statusCode, util.StatusFirstByteTimeout, result)

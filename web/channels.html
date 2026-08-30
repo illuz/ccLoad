@@ -151,6 +151,21 @@
               <span class="channel-batch-divider" aria-hidden="true"></span>
             </div>
             <div class="channel-batch-actions">
+              <button id="batchExportChannelsBtn" type="button"
+                class="btn btn-sm channel-batch-action channel-batch-action--export"
+                data-action="batch-export-channels" data-i18n-title="channels.batchExportChannelsTitle"
+                title="导出选中渠道为CSV" disabled>
+                <span class="channel-batch-action__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M10 3.5V12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                    <path d="M6.8 8.9L10 12.1L13.2 8.9" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M4.7 14.1V15.2C4.7 15.9 5.2 16.4 5.9 16.4H14.1C14.8 16.4 15.3 15.9 15.3 15.2V14.1"
+                      stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span data-i18n="channels.batchExportChannels">导出所选</span>
+              </button>
               <button id="batchEnableChannelsBtn" type="button"
                 class="btn btn-sm channel-batch-action channel-batch-action--enable"
                 data-action="batch-enable-channels" disabled>
@@ -1379,7 +1394,7 @@
       </td>
       <td class="ch-col-actions" data-mobile-label="{{mobileLabelActions}}">
         <div class="ch-actions-stack">
-          <div class="ch-action-statuses">{{{cooldownBadge}}}</div>
+		  <div class="ch-action-statuses">{{{cooldownBadge}}}{{{protocolProbeBadge}}}</div>
           <div class="ch-action-group">
             <button class="btn-icon channel-action-btn" data-action="edit" data-channel-id="{{id}}"
               data-i18n-title="common.edit" title="编辑" aria-label="编辑">

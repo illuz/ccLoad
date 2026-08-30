@@ -40,6 +40,8 @@ type Server struct {
 	// ============================================================================
 	// 核心字段
 	// ============================================================================
+	startedAt                     time.Time
+	cpuUsage                      cpuUsageTracker
 	store                         storage.Store
 	debugLogs                     *debuglog.FileStore
 	channelCache                  *storage.ChannelCache      // 高性能渠道缓存层
@@ -53,10 +55,12 @@ type Server struct {
 	channelBalancer               *SmoothWeightedRR          // 渠道负载均衡器（平滑加权轮询）
 	urlSelector                   *URLSelector               // URL选择器（多URL场景的延迟追踪与冷却）
 	protocolRegistry              *protocol.Registry
+	protocolCapabilities          protocolCapabilityCache
 	client                        *http.Client          // HTTP客户端（全局默认）
 	proxyTransports               sync.Map              // proxyURL → *http.Client（渠道级代理缓存）
 	skipTLSVerify                 bool                  // 透传给渠道级 Transport
 	activeRequests                *activeRequestManager // 进行中请求（内存状态，不持久化）
+	httpRuntime                   httpProxyRuntimeMetrics
 	scheduledChannelChecksRunning atomic.Bool
 	channelBalanceRefreshRunning  atomic.Bool
 
@@ -107,6 +111,7 @@ func NewServer(store storage.Store) *Server {
 
 // NewServerWithDebugLogStore allows tests and alternate runtimes to isolate debug files.
 func NewServerWithDebugLogStore(store storage.Store, debugLogs *debuglog.FileStore) *Server {
+	startedAt := time.Now()
 	if debugLogs == nil {
 		debugLogs = debuglog.NewFileStore(debuglog.DirFromEnv())
 	}
@@ -163,6 +168,7 @@ func NewServerWithDebugLogStore(store storage.Store, debugLogs *debuglog.FileSto
 	baseCtx, baseCancel := context.WithCancel(context.Background())
 
 	s := &Server{
+		startedAt:        startedAt,
 		store:            store,
 		debugLogs:        debugLogs,
 		configService:    configService,
@@ -816,6 +822,8 @@ func (s *Server) InvalidateChannelListCache() {
 	if s.channelBalancer != nil {
 		s.channelBalancer.ResetAll()
 	}
+	// URL or protocol configuration may have changed.
+	s.protocolCapabilities.clear()
 	// 一并失效渠道元信息缓存，避免 admin CRUD 后 60s TTL 脏读（read-after-write 一致性）
 	s.channelMetaCacheMu.Lock()
 	s.channelMetaCache = nil
@@ -1010,6 +1018,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.DELETE("/channels/:id/models", s.HandleDeleteModels)   // 删除渠道模型
 		admin.POST("/channels/:id/test", s.HandleChannelTest)
 		admin.POST("/channels/:id/test-url", s.HandleChannelURLTest)
+		admin.POST("/channels/:id/images/generations", s.HandleChannelImageGeneration)
 		admin.POST("/channels/:id/cooldown", s.HandleSetChannelCooldown)
 		admin.POST("/channels/:id/keys/:keyIndex/cooldown", s.HandleSetKeyCooldown)
 		admin.DELETE("/channels/:id/keys/:keyIndex", s.HandleDeleteAPIKey)
@@ -1019,6 +1028,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.GET("/debug-logs/:log_id", s.HandleGetDebugLog)
 		admin.GET("/debug-log-analysis/:log_id", s.HandleGetDebugLogAnalysis)
 		admin.GET("/active-requests", s.HandleActiveRequests) // 进行中请求（内存状态）
+		admin.GET("/runtime-metrics", s.HandleRuntimeMetrics)
 		admin.GET("/active-requests/:request_id/debug-log", s.HandleGetActiveRequestDebugLog)
 		admin.POST("/active-requests/:request_id/failover", s.HandleFailoverActiveRequest)
 		admin.GET("/metrics", s.HandleMetrics)

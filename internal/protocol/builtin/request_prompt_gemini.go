@@ -125,7 +125,7 @@ func buildGeminiThinkingConfig(model string, thinking *anthropicThinkingConfig) 
 	case "adaptive":
 		if effort := normalizeAnthropicOutputEffort(thinking.Effort); effort != "" {
 			if useLevel {
-				return &geminiThinkingConfig{IncludeThoughts: true, ThinkingLevel: geminiThinkingLevelFromEffort(effort)}
+				return &geminiThinkingConfig{IncludeThoughts: true, ThinkingLevel: geminiThinkingLevelFromEffort(model, effort)}
 			}
 			b := anthropicEffortToBudget(effort)
 			return &geminiThinkingConfig{IncludeThoughts: true, ThinkingBudget: &b}
@@ -135,7 +135,7 @@ func buildGeminiThinkingConfig(model string, thinking *anthropicThinkingConfig) 
 		cfg := &geminiThinkingConfig{IncludeThoughts: true}
 		if useLevel {
 			if thinking.BudgetTokens > 0 {
-				cfg.ThinkingLevel = geminiThinkingLevelFromEffort(mapAnthropicBudgetToOpenAIEffort(thinking.BudgetTokens))
+				cfg.ThinkingLevel = geminiThinkingLevelFromEffort(model, mapAnthropicBudgetToOpenAIEffort(thinking.BudgetTokens))
 			}
 			return cfg
 		}
@@ -160,20 +160,78 @@ func geminiUsesThinkingLevel(model string) bool {
 	return strings.Contains(model, "gemini-3")
 }
 
-func geminiThinkingLevelFromEffort(effort string) string {
-	switch normalizeAnthropicOutputEffort(effort) {
-	case "low":
-		return "low"
-	case "high", "max":
-		return "high"
-	default:
+var geminiThinkingLevelOrder = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
+
+func geminiThinkingLevelFromEffort(model, effort string) string {
+	effort = normalizeAnthropicOutputEffort(effort)
+	requestedIndex := geminiThinkingLevelIndex(effort)
+	if requestedIndex < 0 {
 		return "medium"
 	}
+
+	supported := geminiSupportedThinkingLevels(model)
+	bestLevel := ""
+	bestIndex := -1
+	bestDistance := len(geminiThinkingLevelOrder) + 1
+	for _, level := range supported {
+		if level == effort {
+			return effort
+		}
+		index := geminiThinkingLevelIndex(level)
+		if index < 0 {
+			continue
+		}
+		distance := requestedIndex - index
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance || (distance == bestDistance && index < bestIndex) {
+			bestLevel = level
+			bestIndex = index
+			bestDistance = distance
+		}
+	}
+	if bestLevel != "" {
+		return bestLevel
+	}
+	if effort == "xhigh" || effort == "max" {
+		return "high"
+	}
+	return effort
+}
+
+func geminiSupportedThinkingLevels(model string) []string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	for _, suffix := range []string{"-extra-low", "-minimal", "-low", "-medium", "-high", "-xhigh", "-max"} {
+		if strings.HasSuffix(model, suffix) {
+			model = strings.TrimSuffix(model, suffix)
+			break
+		}
+	}
+	switch {
+	case strings.Contains(model, "gemini-3.1-pro"):
+		return []string{"low", "medium", "high"}
+	case strings.Contains(model, "gemini-3-pro"):
+		return []string{"low", "high"}
+	case strings.Contains(model, "gemini-3"):
+		return []string{"minimal", "low", "medium", "high"}
+	default:
+		return nil
+	}
+}
+
+func geminiThinkingLevelIndex(level string) int {
+	for index, candidate := range geminiThinkingLevelOrder {
+		if candidate == level {
+			return index
+		}
+	}
+	return -1
 }
 
 func anthropicEffortToBudget(effort string) int {
 	switch normalizeAnthropicOutputEffort(effort) {
-	case "low":
+	case "minimal", "low":
 		return 1024
 	case "high", "max":
 		return 16384

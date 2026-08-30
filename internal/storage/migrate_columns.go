@@ -354,6 +354,13 @@ func ensureLogsCostMultiplier(ctx context.Context, db *sql.DB, dialect Dialect) 
 		"REAL NOT NULL DEFAULT 1")
 }
 
+// ensureLogsClientProtocol adds the immutable client request protocol used by analytics filters.
+func ensureLogsClientProtocol(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "logs", "client_protocol",
+		"VARCHAR(32) NOT NULL DEFAULT ''",
+		"TEXT NOT NULL DEFAULT ''")
+}
+
 // ensureAuthTokensCacheFields 确保auth_tokens表有缓存token字段(2025-12新增,支持MySQL和SQLite)
 func ensureAuthTokensCacheFields(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	if dialect == DialectMySQL {
@@ -414,6 +421,9 @@ func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect)
 			{name: "daily_cost_used_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
 			{name: "daily_cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
 			{name: "daily_cost_day_key", definition: "INT NOT NULL DEFAULT 0"},
+			{name: "monthly_cost_used_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "monthly_cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "monthly_cost_month_key", definition: "INT NOT NULL DEFAULT 0"},
 		})
 	}
 
@@ -424,6 +434,9 @@ func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect)
 		{name: "daily_cost_used_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "daily_cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "daily_cost_day_key", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "monthly_cost_used_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "monthly_cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "monthly_cost_month_key", definition: "INTEGER NOT NULL DEFAULT 0"},
 	})
 }
 
@@ -499,9 +512,16 @@ func ensureAuthTokenGroupsColor(ctx context.Context, db *sql.DB, dialect Dialect
 }
 
 func ensureAuthTokenGroupsDailyCostLimit(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	return ensureColumn(ctx, db, dialect, "auth_token_groups", "daily_cost_limit_microusd",
-		"BIGINT NOT NULL DEFAULT 0",
-		"INTEGER NOT NULL DEFAULT 0")
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "auth_token_groups", []mysqlColumnDef{
+			{name: "daily_cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "monthly_cost_limit_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+		})
+	}
+	return ensureSQLiteColumns(ctx, db, "auth_token_groups", []sqliteColumnDef{
+		{name: "daily_cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "monthly_cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+	})
 }
 
 func ensureAuthTokenGroupsChannelRestrictionMode(ctx context.Context, db *sql.DB, dialect Dialect) error {

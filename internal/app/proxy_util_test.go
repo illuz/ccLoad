@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -1007,5 +1008,61 @@ func TestStripAnthropicProtocolHeaders(t *testing.T) {
 				t.Error("non-anthropic header Content-Type was incorrectly removed")
 			}
 		})
+	}
+}
+
+func TestInjectAnthropicBetaFlagMergesExactTokensAndRawKeys(t *testing.T) {
+	t.Parallel()
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/messages", nil)
+	// Direct map writes model the lowercase header keys produced by fingerprint paths.
+	req.Header["anthropic-beta"] = []string{
+		"context-1m-2025-08-070, interleaved-thinking-2025-05-14",
+		"fine-grained-tool-streaming-2025-05-14",
+	}
+	req.Header["Anthropic-Beta"] = []string{"computer-use-2025-01-24"}
+
+	injectAnthropicBetaFlag(req, "context-1m-2025-08-07")
+
+	var betaKeys []string
+	var values []string
+	for key, headerValues := range req.Header {
+		if strings.EqualFold(key, "anthropic-beta") {
+			betaKeys = append(betaKeys, key)
+			values = append(values, headerValues...)
+		}
+	}
+	if len(betaKeys) != 1 {
+		t.Fatalf("anthropic-beta keys=%v, want one consolidated key", betaKeys)
+	}
+	got := strings.Join(values, ",")
+	for _, token := range []string{
+		"context-1m-2025-08-070",
+		"interleaved-thinking-2025-05-14",
+		"fine-grained-tool-streaming-2025-05-14",
+		"computer-use-2025-01-24",
+		"context-1m-2025-08-07",
+	} {
+		if !strings.Contains(got, token) {
+			t.Fatalf("merged header %q missing exact token %q", got, token)
+		}
+	}
+
+	injectAnthropicBetaFlag(req, "context-1m-2025-08-07")
+	if strings.Count(strings.Join(req.Header[betaKeys[0]], ","), "context-1m-2025-08-07") != 2 {
+		// The longer lookalike contains the target text once; one exact token is expected.
+		t.Fatalf("exact token was duplicated: %v", req.Header[betaKeys[0]])
+	}
+}
+
+func TestStripAnthropicProtocolHeadersRemovesRawLowercaseKeys(t *testing.T) {
+	t.Parallel()
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com/v1/chat/completions", nil)
+	req.Header["anthropic-beta"] = []string{"flag"}
+	req.Header["Anthropic-Version"] = []string{"2023-06-01"}
+	stripAnthropicProtocolHeaders(req, util.ChannelTypeOpenAI)
+	for key := range req.Header {
+		if strings.HasPrefix(strings.ToLower(key), "anthropic-") {
+			t.Fatalf("raw Anthropic header survived: %q", key)
+		}
 	}
 }

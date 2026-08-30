@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	channelModelsRedirectMigrationVersion = "v1_channel_models_redirect"
-	channelModelsOrderRepairVersion       = "v2_channel_models_created_at_order"
+	channelModelsRedirectMigrationVersion  = "v1_channel_models_redirect"
+	channelModelsOrderRepairVersion        = "v2_channel_models_created_at_order"
+	clientProtocolBackfillMigrationVersion = "v3_logs_client_protocol_backfill"
 )
 
 // Dialect 数据库方言
@@ -98,6 +99,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := ensureLogsCostMultiplier(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate logs cost_multiplier: %w", err)
+			}
+			if err := ensureLogsClientProtocol(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate logs client_protocol: %w", err)
 			}
 		}
 
@@ -283,6 +287,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	// effective_cost_usd 的历史回填依赖 logs.cost_multiplier，必须等 logs 增量迁移完成后再执行。
 	if err := ensureAuthTokensEffectiveCost(ctx, db, dialect); err != nil {
 		return fmt.Errorf("migrate auth_tokens effective_cost: %w", err)
+	}
+	if err := backfillLogsClientProtocol(ctx, db, dialect); err != nil {
+		return fmt.Errorf("backfill logs client_protocol: %w", err)
 	}
 
 	// 初始化默认配置

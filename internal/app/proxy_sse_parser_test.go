@@ -618,6 +618,29 @@ func TestSSEUsageParser_ResponseCompletedRequiresCompleteMatchingEvent(t *testin
 	}
 }
 
+func TestSSEUsageParser_MessageStopRequiresMatchingPayload(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "event with empty payload", data: "event: message_stop\ndata: {}\n\n", want: true},
+		{name: "payload type without event", data: "data: {\"type\":\"message_stop\"}\n\n", want: true},
+		{name: "mismatched payload", data: "event: message_stop\ndata: {\"type\":\"content_block_delta\"}\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := newSSEUsageParser("anthropic")
+			if err := parser.Feed([]byte(tt.data)); err != nil {
+				t.Fatalf("Feed failed: %v", err)
+			}
+			if got := parser.IsStreamComplete(); got != tt.want {
+				t.Fatalf("IsStreamComplete()=%v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSSEUsageParser_OpenAIChatCompletionsSSE(t *testing.T) {
 	// 测试OpenAI Chat Completions API的SSE流式响应
 	// OpenAI Chat使用prompt_tokens + completion_tokens格式
@@ -1177,7 +1200,7 @@ func TestSSEUsageParser_SpeedFast(t *testing.T) {
 }
 
 func TestSSEUsageParser_SpeedStandard(t *testing.T) {
-	// speed:"standard" 不应设置 ServiceTier
+	// speed:"standard" 必须保留，以便覆盖请求 fast 的计费兜底。
 	sseData := `data: {"type":"message_delta","usage":{"input_tokens":100,"output_tokens":50,"speed":"standard"}}
 
 `
@@ -1185,8 +1208,8 @@ func TestSSEUsageParser_SpeedStandard(t *testing.T) {
 	if err := parser.Feed([]byte(sseData)); err != nil {
 		t.Fatalf("Feed失败: %v", err)
 	}
-	if parser.ServiceTier != "" {
-		t.Errorf("ServiceTier = %q, 期望空字符串（standard不设置tier）", parser.ServiceTier)
+	if parser.ServiceTier != "standard" {
+		t.Errorf("ServiceTier = %q, 期望 standard", parser.ServiceTier)
 	}
 }
 
@@ -1228,5 +1251,24 @@ func TestSSEUsageParser_SpeedInMessageUsage(t *testing.T) {
 	}
 	if parser.ServiceTier != "fast" {
 		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "fast")
+	}
+}
+
+func TestSSEUsageParser_UsesOnlyTerminalResponsesServiceTier(t *testing.T) {
+	t.Parallel()
+	parser := newSSEUsageParser("codex")
+	created := "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"service_tier\":\"ultrafast\"}}\n\n"
+	if err := parser.Feed([]byte(created)); err != nil {
+		t.Fatal(err)
+	}
+	if parser.ServiceTier != "" {
+		t.Fatalf("metadata request echo set service tier %q", parser.ServiceTier)
+	}
+	completed := "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"service_tier\":\"auto\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+	if err := parser.Feed([]byte(completed)); err != nil {
+		t.Fatal(err)
+	}
+	if parser.ServiceTier != "auto" {
+		t.Fatalf("terminal service tier=%q, want auto", parser.ServiceTier)
 	}
 }

@@ -61,13 +61,13 @@ test('tokens 页静态控件改为 data-action/data-change-action/data-input-act
 
 test('tokens 页费用和并发上限常驻说明 0 表示无限制', () => {
   assert.match(html, /data-i18n="tokens\.zeroUnlimitedHint">0 表示无限制<\/span>/);
-  assert.equal((html.match(/data-i18n="tokens\.zeroUnlimitedHint"/g) || []).length, 6);
+  assert.equal((html.match(/data-i18n="tokens\.zeroUnlimitedHint"/g) || []).length, 8);
   assert.match(html, /id="tokenCostLimitUSD"[\s\S]*?class="token-limit-hint token-limit-hint--inline"[\s\S]*?id="tokenMaxConcurrency"[\s\S]*?class="token-limit-hint token-limit-hint--inline"/);
   assert.match(html, /id="editCostLimitUSD"[\s\S]*?class="token-limit-hint token-limit-hint--inline"[\s\S]*?id="editMaxConcurrency"[\s\S]*?class="token-limit-hint token-limit-hint--inline"/);
 });
 
 test('tokens 页费用和并发上限输入框使用一致前缀槽位保持对齐', () => {
-  assert.equal((html.match(/class="token-limit-prefix-slot token-limit-prefix-slot--empty"/g) || []).length, 4);
+  assert.equal((html.match(/class="token-limit-prefix-slot token-limit-prefix-slot--empty"/g) || []).length, 5);
   assert.match(html, /id="tokenCostLimitUSD"[\s\S]*?id="tokenMaxConcurrency"/);
   assert.match(html, /token-cost-prefix token-limit-prefix-slot/);
   assert.match(html, /token-edit-cost-prefix token-limit-prefix-slot/);

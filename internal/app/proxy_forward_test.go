@@ -132,6 +132,24 @@ func TestClassifySSEErrorStatus_RateLimits(t *testing.T) {
 	}
 }
 
+func TestClassifySSEErrorStatus_ContextLengthExceeded(t *testing.T) {
+	body := []byte(`{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"maximum context length exceeded"}}`)
+	if got := classifySSEErrorStatus(body); got != http.StatusBadRequest {
+		t.Fatalf("classifySSEErrorStatus()=%d, want %d", got, http.StatusBadRequest)
+	}
+}
+
+func TestMarkIncompleteStreamForwardResultPreservesFirstByteTimeout(t *testing.T) {
+	res := &fwResult{Status: 598, StreamDiagMsg: "first byte timeout"}
+	markIncompleteStreamForwardResult(res)
+	if res.Status != 598 {
+		t.Fatalf("status=%d, want 598", res.Status)
+	}
+	if string(res.Body) != res.StreamDiagMsg {
+		t.Fatalf("body=%q, want diagnostic message", res.Body)
+	}
+}
+
 // TestHandleSuccessResponse_StreamDiagMsg_NormalEOF 测试正常EOF时不触发诊断
 // 新逻辑：只有当 streamErr != nil 且未检测到流结束标志时才触发诊断
 // 正常EOF（streamErr == nil）不触发诊断，即使没有流结束标志
@@ -572,5 +590,51 @@ func TestHandleErrorResponse_MergesBodyReadErrorIntoResult(t *testing.T) {
 	}
 	if !strings.Contains(res.StreamDiagMsg, "INTERNAL_ERROR") {
 		t.Fatalf("expected StreamDiagMsg to include upstream error, got %q", res.StreamDiagMsg)
+	}
+}
+
+func TestResolveBillingServiceTier(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                string
+		requested, observed string
+		want                string
+	}{
+		{name: "upstream downgrade", requested: "priority", observed: "default", want: "default"},
+		{name: "anthropic downgrade", requested: "fast", observed: "standard", want: "standard"},
+		{name: "auto actual tier", requested: "priority", observed: "auto", want: "auto"},
+		{name: "ultrafast actual tier", requested: "priority", observed: "ultrafast", want: "ultrafast"},
+		{name: "request fallback", requested: "priority", observed: "", want: "priority"},
+		{name: "ignore unrequested expensive echo", requested: "", observed: "priority", want: ""},
+		{name: "retain unrequested cheap tier", requested: "", observed: "flex", want: "flex"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveBillingServiceTier(tt.requested, tt.observed); got != tt.want {
+				t.Fatalf("resolveBillingServiceTier(%q, %q)=%q, want %q", tt.requested, tt.observed, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequestedServiceTierUsesTranslatedUpstreamBody(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		protocol protocol.Protocol
+		body     string
+		want     string
+	}{
+		{name: "codex auto", protocol: protocol.Codex, body: `{"service_tier":"AUTO"}`, want: "auto"},
+		{name: "anthropic fast", protocol: protocol.Anthropic, body: `{"speed":"fast"}`, want: "fast"},
+		{name: "unknown", protocol: protocol.OpenAI, body: `{"service_tier":"premium"}`, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := protocol.TransformPlan{UpstreamProtocol: tt.protocol, TranslatedBody: []byte(tt.body)}
+			if got := requestedServiceTier(plan); got != tt.want {
+				t.Fatalf("requestedServiceTier()=%q, want %q", got, tt.want)
+			}
+		})
 	}
 }

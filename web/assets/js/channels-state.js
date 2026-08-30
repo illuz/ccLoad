@@ -72,13 +72,14 @@ function clearChannelsCache() {
 }
 
 function humanizeMS(ms) {
-  let s = Math.ceil(ms / 1000);
-  const h = Math.floor(s / 3600);
+	let s = Math.ceil(ms / 1000);
+	const h = Math.floor(s / 3600);
   s = s % 3600;
   const m = Math.floor(s / 60);
   s = s % 60;
 
-  if (h > 0) return window.t('common.timeHM', { h, m });
+	if (h >= 48) return window.t('common.timeDH', { d: Math.floor(h / 24), h: h % 24 });
+	if (h > 0) return window.t('common.timeHM', { h, m });
   if (m > 0) return window.t('common.timeMS', { m, s });
   return window.t('common.timeS', { s });
 }

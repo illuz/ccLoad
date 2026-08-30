@@ -61,22 +61,20 @@ func (s *Server) HandleChannelChat(c *gin.Context) {
 		return
 	}
 
-	if !cfg.SupportsModel(testReq.Model) {
+	requestedModel := testReq.Model
+	if !cfg.SupportsModel(model.RoutingModelName(requestedModel)) {
 		writeChatErrorEvent(c, "模型 "+testReq.Model+" 不在此渠道的支持列表中")
 		return
 	}
+	testReq.RequestedModel = requestedModel
 
 	if strings.TrimSpace(testReq.Content) == "" && len(testReq.Messages) == 0 {
 		testReq.Content = s.configService.GetString("channel_test_content", "sonnet 4.0的发布日期是什么")
 	}
 
-	// 模型重定向
-	if redirectModel, ok := cfg.GetRedirectModel(testReq.Model); ok && redirectModel != "" {
-		testReq.Model = redirectModel
-	}
-
 	clientProtocol := resolveClientProtocol(cfg, &testReq)
 	upstreamProto := resolveTestUpstreamProtocol(cfg, clientProtocol)
+	testReq.Model = s.resolveFinalUpstreamModel(cfg, requestedModel, upstreamProto)
 	if !supportsRuntimeTestProtocol(clientProtocol, upstreamProto) {
 		writeChatErrorEvent(c, fmt.Sprintf("不支持协议转换 %s -> %s", clientProtocol, upstreamProto))
 		return
@@ -125,7 +123,8 @@ func (s *Server) HandleChannelChat(c *gin.Context) {
 
 	if lastResult != nil {
 		writeChatErrorEvent(c, chatErrorMessageFromResult(lastResult))
-		s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, testReq.Model, testReq.Model, keySelection.apiKey, c.ClientIP(), 0, testReq.ThinkingEffort, lastResult))
+		logModel, logThinking := channelTestLogIdentity(requestedModel, testReq.ThinkingEffort)
+		s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, logModel, model.RoutingModelName(testReq.Model), keySelection.apiKey, c.ClientIP(), 0, logThinking, lastResult))
 		return
 	}
 	writeChatErrorEvent(c, "渠道测试失败: 未找到可用URL")
@@ -182,7 +181,7 @@ func chatSummaryEventChunk(sr *chatStreamResult, testReq *testutil.TestChannelRe
 		cache5m, cache1h, _ := sr.usageParser.GetCacheBreakdown()
 		if input+output+cacheRead > 0 {
 			cost := util.CalculateCostDetailed(
-				testReq.Model,
+				model.RoutingModelName(testReq.Model),
 				input, output, cacheRead,
 				cache5m, cache1h,
 			) + sr.usageParser.GetToolCostUSD()
@@ -396,7 +395,8 @@ func (s *Server) streamChatNonStreamResponse(
 	result = attachTestDebugData(requestPlan, resp, result)
 	writeChatNonStreamResult(c, result)
 	writeChatNonStreamSummary(c, result)
-	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, testReq.Model, testReq.Model, apiKey, c.ClientIP(), 0, requestThinking, result))
+	logModel, logThinking := channelTestLogIdentity(testReq.RequestedModel, requestThinking)
+	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, logModel, model.RoutingModelName(testReq.Model), apiKey, c.ClientIP(), 0, logThinking, result))
 }
 
 func writeChatNonStreamResult(c *gin.Context, result map[string]any) {
@@ -510,7 +510,7 @@ func (s *Server) writeChatStreamLog(c *gin.Context, cfg *model.Config, testReq *
 			}
 		}
 		if input+output+cacheRead > 0 {
-			result["cost_usd"] = util.CalculateCostDetailed(testReq.Model, input, output, cacheRead, cache5m, cache1h) + sr.usageParser.GetToolCostUSD()
+			result["cost_usd"] = util.CalculateCostDetailed(model.RoutingModelName(testReq.Model), input, output, cacheRead, cache5m, cache1h) + sr.usageParser.GetToolCostUSD()
 		}
 		if effort := sr.usageParser.GetThinkingEffort(); effort != "" {
 			result["thinking_effort"] = effort
@@ -519,7 +519,8 @@ func (s *Server) writeChatStreamLog(c *gin.Context, cfg *model.Config, testReq *
 	if sr.debugData != nil {
 		result["debug_data"] = sr.debugData
 	}
-	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, testReq.Model, testReq.Model, apiKey, c.ClientIP(), 0, sr.requestThinking, result))
+	logModel, logThinking := channelTestLogIdentity(testReq.RequestedModel, sr.requestThinking)
+	s.persistDetectionLog(c.Request.Context(), detectionLogFromResult(cfg, model.LogSourceManualChat, logModel, model.RoutingModelName(testReq.Model), apiKey, c.ClientIP(), 0, logThinking, result))
 }
 
 // streamChatNative 原生协议时把上游 SSE 实时透传给前端（提取 delta 文本）。

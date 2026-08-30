@@ -94,6 +94,10 @@ func (s *Server) buildProxyRequest(
 	// 1.6 自定义请求体规则（仅对 JSON body 生效）
 	body = applyBodyRules(hdr.Get("Content-Type"), body, cfg.BodyRules())
 
+	// Codex Responses 的 HTTP Create schema 不接受 input item status。工具
+	// 完成态由 function_call/function_call_output 配对表达，无需该字段。
+	body = responsesBodyForHTTPTransport(reqCtx, body)
+
 	// 1.7 Codex Responses 缓存提示：向 body 注入 prompt_cache_key
 	codexSessionID := resolveCodexSessionHint(reqCtx, body, apiKey, hdr)
 	if codexSessionID != "" {
@@ -269,7 +273,7 @@ func streamAndParseResponse(
 	}
 	copySSE := func(stream io.Reader, parser *sseUsageParser) error {
 		feed := makeFeed(parser)
-		if channelType != util.ChannelTypeCodex {
+		if channelType != util.ChannelTypeCodex && channelType != util.ChannelTypeAnthropic {
 			return streamCopySSE(ctx, stream, w, feed)
 		}
 		return streamCopySSE(ctx, stream, w, func(data []byte) error {
@@ -814,7 +818,7 @@ func (s *Server) handleSuccessResponse(
 				}
 				return nil
 			}
-			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if shouldMarkUpstreamFirstByte(parser) {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
 			if parser.HasTextOutput() {
@@ -1046,7 +1050,7 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			if err := parser.Feed(rawEvent); err != nil {
 				return err
 			}
-			if parser.GetLastError() != nil || parser.HasStreamOutput() || parser.IsStreamComplete() {
+			if shouldMarkUpstreamFirstByte(parser) {
 				markFirstStreamResponse(reqCtx, readStats, observer)
 			}
 			if parser.HasTextOutput() {
@@ -1080,7 +1084,9 @@ func (s *Server) handleTranslatedStreamSuccessResponse(
 			return chunks, nil
 		},
 		func() bool {
-			return reqCtx.transformPlan.UpstreamProtocol == protocol.Codex && parser.IsStreamComplete() && translatedComplete
+			terminalProtocol := reqCtx.transformPlan.UpstreamProtocol == protocol.Codex ||
+				reqCtx.transformPlan.UpstreamProtocol == protocol.Anthropic
+			return terminalProtocol && parser.IsStreamComplete() && translatedComplete
 		},
 	)
 
@@ -1251,6 +1257,11 @@ func markFirstStreamTextResponse(reqCtx *requestContext, observer *ForwardObserv
 	observer.Timing.MarkFirstTextToken()
 }
 
+func shouldMarkUpstreamFirstByte(parser usageParser) bool {
+	return parser != nil && (parser.GetLastError() != nil || parser.HasStreamOutput() ||
+		parser.IsStreamComplete() || parser.HasResponsesMetadata())
+}
+
 func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, cfg *model.Config, channelType string) bool {
 	if resp.StatusCode != http.StatusOK {
 		return false
@@ -1267,8 +1278,11 @@ func shouldProbeSoftError(reqCtx *requestContext, resp *http.Response, cfg *mode
 }
 
 // classifySSEErrorStatus 根据响应体内容判定 SSE 错误的内部状态码：
-// 1308 配额超限 → 596；明确限流 → 429；其他 → 597。
+// 上下文超限 → 400；1308 配额超限 → 596；明确限流 → 429；其他 → 597。
 func classifySSEErrorStatus(body []byte) int {
+	if util.IsContextLengthExceededError(body) {
+		return http.StatusBadRequest
+	}
 	if _, is1308 := util.ParseResetTimeFrom1308Error(body); is1308 {
 		return util.StatusQuotaExceeded
 	}
@@ -1589,7 +1603,10 @@ func markSSEErrorForwardResult(res *fwResult) {
 
 func markIncompleteStreamForwardResult(res *fwResult) {
 	res.Body = []byte(res.StreamDiagMsg)
-	res.Status = util.StatusStreamIncomplete
+	// 598 已经表达了更精确的首字节故障语义，不要降级覆盖成 599。
+	if !util.IsModelScopedStreamFailure(res.Status) {
+		res.Status = util.StatusStreamIncomplete
+	}
 }
 
 func (s *Server) handleCommittedAwareProxyError(
@@ -1725,7 +1742,20 @@ func (s *Server) forwardAttempt(
 	}
 
 	forceReturnClient := false
-	if retryBody, retryStrategy, ok := codexRetryBodyFor400(upstreamProtocol, cfg, plan, res); ok {
+	retryStrategies := make([]string, 0, 3)
+	missingStoredItemRetries := 0
+	for {
+		retryBody, retryStrategy, ok := codexRetryBodyFor400(upstreamProtocol, cfg, plan, res)
+		if !ok || hasRetryStrategy(retryStrategies, retryStrategy) {
+			break
+		}
+		if strings.HasPrefix(retryStrategy, stripMissingStoredInputItemStrategy+":") {
+			if missingStoredItemRetries >= responsesMissingStoredItemRetryLimit {
+				break
+			}
+			missingStoredItemRetries++
+		}
+		retryStrategies = append(retryStrategies, retryStrategy)
 		retryPlan := plan
 		retryPlan.TranslatedBody = retryBody
 		res, duration, err = s.forwardOnceAsync(attemptCtx, cfg, selectedKey, reqCtx.requestMethod,
@@ -1736,16 +1766,25 @@ func (s *Server) forwardAttempt(
 		if res != nil && res.DebugData != nil {
 			reqCtx.debugData = res.DebugData
 		}
+		plan = retryPlan
 		if err == nil && res != nil && res.Status >= 200 && res.Status < 300 {
-			res.RetryStrategy = retryStrategy
+			res.RetryStrategy = strings.Join(retryStrategies, ",")
+			if len(res.SSEErrorEvent) == 0 {
+				break
+			}
+			continue
 		}
-		forceReturnClient = true
+		if upstreamProtocol != protocol.Anthropic {
+			forceReturnClient = true
+		}
+		if err != nil || res == nil {
+			break
+		}
 	}
-	// Codex 请求用 service_tier=priority 明确开启 Fast 模式。计费不能依赖上游
-	// 是否在响应里回显该字段，否则同一请求会因上游响应形状不同而少扣 credits。
-	if res != nil && reqCtx.clientProtocol == protocol.Codex &&
-		requestServiceTier(reqCtx.body) == "priority" {
-		res.ServiceTier = "priority"
+	// 请求档位只是计费兜底；上游终态明确声明实际档位时按实际档位计费。
+	// 未声明时保留请求档位，避免兼容网关不回显 service_tier/usage.speed 时少记账。
+	if res != nil {
+		res.ServiceTier = resolveBillingServiceTier(requestedServiceTier(plan), res.ServiceTier)
 	}
 
 	// 处理网络错误或异常响应（如空响应）
@@ -1755,6 +1794,13 @@ func (s *Server) forwardAttempt(
 		if errors.Is(err, ErrChannelRPMExceeded) || errors.Is(err, ErrChannelConcurrencyExceeded) {
 			reqCtx.attemptNumber--
 			return nil, cooldown.ActionRetryChannel, err
+		}
+		if res != nil && res.StreamDiagMsg != "" {
+			markIncompleteStreamForwardResult(res)
+			result, action := s.handleCommittedAwareProxyError(
+				ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
+			)
+			return result, action, nil
 		}
 		result, action := s.handleNetworkError(
 			ctx, cfg, keyIndex, actualModel, selectedKey, reqCtx.tokenID, reqCtx.clientIP,
@@ -1790,6 +1836,76 @@ func requestServiceTier(body []byte) string {
 		return ""
 	}
 	return request.ServiceTier
+}
+
+func requestedServiceTier(plan protocol.TransformPlan) string {
+	body := plan.TranslatedBody
+	if len(body) == 0 {
+		body = plan.OriginalBody
+	}
+	if len(body) == 0 {
+		return ""
+	}
+	if plan.UpstreamProtocol == protocol.Anthropic {
+		var request struct {
+			Speed string `json:"speed"`
+		}
+		if err := sonic.Unmarshal(body, &request); err != nil {
+			return ""
+		}
+		return normalizeBillingServiceTier(request.Speed)
+	}
+	return normalizeBillingServiceTier(requestServiceTier(body))
+}
+
+func normalizeBillingServiceTier(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "ultrafast", "auto", "priority", "fast", "flex", "default", "standard":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+func serviceTierCostRank(value string) (int, bool) {
+	switch normalizeBillingServiceTier(value) {
+	case "flex":
+		return 0, true
+	case "default", "standard":
+		return 1, true
+	case "auto", "priority", "fast":
+		return 2, true
+	case "ultrafast":
+		return 3, true
+	default:
+		return 0, false
+	}
+}
+
+// resolveBillingServiceTier combines a request fallback with the tier actually
+// declared by the upstream terminal response. Explicit auto/ultrafast values
+// must win because they carry Fast or ultrafast charges.
+func resolveBillingServiceTier(requested, observed string) string {
+	requested = normalizeBillingServiceTier(requested)
+	observed = normalizeBillingServiceTier(observed)
+	if observed == "auto" || observed == "ultrafast" {
+		return observed
+	}
+	if requested == "" {
+		if rank, ok := serviceTierCostRank(observed); ok && rank <= 1 {
+			return observed
+		}
+		return ""
+	}
+	if observed == "" {
+		return requested
+	}
+	requestedRank, requestedOK := serviceTierCostRank(requested)
+	observedRank, observedOK := serviceTierCostRank(observed)
+	if !requestedOK || !observedOK || observedRank > requestedRank {
+		return requested
+	}
+	return observed
 }
 
 func shouldRetryCodexInvalidEncryptedContent(upstreamProtocol protocol.Protocol, plan protocol.TransformPlan, res *fwResult) bool {
@@ -1871,6 +1987,15 @@ func codexRetryBodyFor400(
 		if retryBody, ok := codexBodyWithoutThinking(plan.TranslatedBody); ok {
 			return retryBody, "strip_codex_thinking", true
 		}
+	}
+	if retryBody, strategy, ok := responsesRetryBodyForUnknownParameter(upstreamProtocol, plan, res); ok {
+		return retryBody, strategy, true
+	}
+	if retryBody, strategy, ok := responsesRetryBodyForMissingRequiredParameter(plan, res); ok {
+		return retryBody, strategy, true
+	}
+	if retryBody, strategy, ok := responsesRetryBodyForMissingStoredInputItem(plan, res); ok {
+		return retryBody, strategy, true
 	}
 	return nil, "", false
 }
@@ -2174,6 +2299,22 @@ urlLoop:
 			s.activeRequests.SetBaseURL(reqCtx.activeReqID, urlEntry.url)
 		}
 
+		capabilityKey, tracksCapability := protocolCapabilityKeyForRequest(cfg, reqCtx, urlEntry.url)
+		if tracksCapability {
+			if _, pending := s.protocolCapabilities.pending(capabilityKey, time.Now()); pending {
+				channelID := cfg.ID
+				urlLastFailure = &proxyResult{
+					status:                    http.StatusNotFound,
+					body:                      []byte(`{"error":"upstream protocol endpoint pending re-probe"}`),
+					channelID:                 &channelID,
+					succeeded:                 false,
+					protocolCapabilityMissing: true,
+					nextAction:                cooldown.ActionRetryChannel,
+				}
+				continue
+			}
+		}
+
 		for {
 			shouldDeferChannelCooldown := urlsCount > 1 && urlIdx < len(sortedURLs)-1
 			result, nextAction, attemptErr := s.forwardAttempt(
@@ -2183,6 +2324,9 @@ urlLoop:
 			}
 
 			if result != nil && result.succeeded {
+				if tracksCapability {
+					s.protocolCapabilities.clearKey(capabilityKey)
+				}
 				// 成功：记录TTFB到URLSelector（仅多URL场景）
 				recordSuccessTTFBToSelector(selector, cfg.ID, urlsCount, urlEntry.url, result)
 				return result, nil, nil
@@ -2227,6 +2371,11 @@ urlLoop:
 			}
 			if nextAction == cooldown.ActionReturnClient {
 				return urlLastFailure, nil, nil
+			}
+			if result != nil && result.protocolCapabilityMissing {
+				// Protocol capability misses are not URL-health failures. Try the
+				// next configured URL without cooling this one.
+				break
 			}
 			if urlsCount > 1 {
 				// 模型作用域故障不应改打同渠道的其他 URL 或冷却 URL。
@@ -2310,7 +2459,7 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	// [FIX] 2026-01: 模型名变更时同步替换 URL 路径
 	// 场景：Gemini API 的模型名在 URL 路径中（如 /v1beta/models/gemini-3-flash:streamGenerateContent）
 	// 如果模糊匹配将 gemini-3-flash 改为 gemini-3-flash-preview，URL 路径也需要同步更新
-	requestPath := replaceModelInPath(reqCtx.requestPath, reqCtx.originalModel, actualModel)
+	requestPath := rewriteUpstreamRequestPath(reqCtx.requestPath, actualModel)
 
 	// 获取渠道URL列表（单URL时退化为单元素切片）
 	urls := cfg.GetURLs()
@@ -2318,14 +2467,6 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 		return nil, fmt.Errorf("no valid URLs configured for channel %d", cfg.ID)
 	}
 	selector := s.urlSelector
-
-	// 多URL场景：异步做TCP连接探测预热
-	// 目的：通过TCP连接耗时（纯网络延迟，与模型推理无关）为URLSelector提供初始EWMA种子，
-	// 避免首次请求随机选到网络延迟更高的URL。
-	if len(urls) > 1 && selector != nil {
-		urlsSnapshot := append([]string(nil), urls...)
-		go selector.ProbeURLs(s.baseCtx, cfg.ID, urlsSnapshot)
-	}
 
 	// Key重试循环
 	for range maxKeyRetries {

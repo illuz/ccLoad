@@ -222,16 +222,17 @@ func (r *proxyRequestContext) getEndToEndFirstByteTime() float64 {
 
 // proxyResult 代理请求结果
 type proxyResult struct {
-	status           int
-	header           http.Header
-	body             []byte
-	channelID        *int64
-	duration         float64
-	firstByteTime    float64
-	succeeded        bool
-	isClientCanceled bool            // 客户端主动取消请求（context.Canceled）
-	modelScoped      bool            // 原始故障只影响当前实际上游模型，即使动作已升级为渠道级也保留
-	nextAction       cooldown.Action // 统一重试决策：RetryKey/RetryModel/RetryChannel/ReturnClient
+	status                    int
+	header                    http.Header
+	body                      []byte
+	channelID                 *int64
+	duration                  float64
+	firstByteTime             float64
+	succeeded                 bool
+	isClientCanceled          bool            // 客户端主动取消请求（context.Canceled）
+	modelScoped               bool            // 原始故障只影响当前实际上游模型，即使动作已升级为渠道级也保留
+	protocolCapabilityMissing bool            // 显式上游协议端点暂不支持，等待重探且不写渠道冷却
+	nextAction                cooldown.Action // 统一重试决策：RetryKey/RetryModel/RetryChannel/ReturnClient
 }
 
 // ErrorAction 已迁移到 cooldown.Action (internal/cooldown/manager.go)
@@ -418,25 +419,68 @@ var anthropicProtocolHeaders = []string{
 
 // stripAnthropicProtocolHeaders 当上游非 Anthropic 时，移除客户端携带的 Anthropic 专属头。
 func stripAnthropicProtocolHeaders(req *http.Request, upstreamType string) {
+	if req == nil {
+		return
+	}
 	if upstreamType == util.ChannelTypeAnthropic {
 		return
 	}
 	for _, h := range anthropicProtocolHeaders {
-		req.Header.Del(h)
+		deleteHeaderCaseInsensitive(req.Header, h)
 	}
 }
 
-// injectAnthropicBetaFlag 确保 anthropic-beta 头包含指定 flag
+// injectAnthropicBetaFlag 确保 anthropic-beta 头包含指定 flag。Header 中可能
+// 存在指纹代码直接写入的小写键，因此不能依赖 Header.Get/Set 的 canonical 键。
 func injectAnthropicBetaFlag(req *http.Request, flag string) {
-	existing := req.Header.Get("anthropic-beta")
-	if existing == "" {
+	flag = strings.TrimSpace(flag)
+	if req == nil || flag == "" {
+		return
+	}
+
+	var keys []string
+	for key := range req.Header {
+		if strings.EqualFold(key, "anthropic-beta") {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
 		req.Header.Set("anthropic-beta", flag)
 		return
 	}
-	if strings.Contains(existing, flag) {
-		return
+
+	tokens := make([]string, 0, len(keys)+1)
+	found := false
+	for _, key := range keys {
+		for _, value := range req.Header[key] {
+			for _, token := range strings.Split(value, ",") {
+				token = strings.TrimSpace(token)
+				if token == "" {
+					continue
+				}
+				if token == flag {
+					found = true
+				}
+				tokens = append(tokens, token)
+			}
+		}
 	}
-	req.Header.Set("anthropic-beta", existing+","+flag)
+	if !found {
+		tokens = append(tokens, flag)
+	}
+	primaryKey := keys[0]
+	for _, key := range keys[1:] {
+		delete(req.Header, key)
+	}
+	req.Header[primaryKey] = []string{strings.Join(tokens, ",")}
+}
+
+func deleteHeaderCaseInsensitive(headers http.Header, name string) {
+	for key := range headers {
+		if strings.EqualFold(key, name) {
+			delete(headers, key)
+		}
+	}
 }
 
 func ensureAnthropicVersionHeader(req *http.Request, upstreamType string) {
@@ -555,6 +599,10 @@ func replaceModelInPath(path string, originalModel string, actualModel string) s
 	return path[:idx+len(modelPrefix)] + actualModel + path[end:]
 }
 
+func rewriteUpstreamRequestPath(path, actualModel string) string {
+	return replaceModelInPath(path, extractModelFromPath(path), actualModel)
+}
+
 func buildGeminiGeneratePath(model string, isStreaming bool) string {
 	if isStreaming {
 		return "/v1beta/models/" + model + ":streamGenerateContent"
@@ -582,17 +630,18 @@ func buildCodexResponsesPath() string {
 // 2. 模糊匹配（启用 model_fuzzy_match 时）
 // 3. [FIX] 2026-01: 模糊匹配结果的重定向（链式解析）
 func (s *Server) resolveActualModel(cfg *model.Config, originalModel string) string {
-	actualModel := originalModel
+	routedModel := model.RoutingModelName(originalModel)
+	actualModel := routedModel
 	// 1. 检查模型重定向（精确匹配优先）
-	if redirectModel, ok := cfg.GetRedirectModel(originalModel); ok && redirectModel != "" {
+	if redirectModel, ok := cfg.GetRedirectModel(routedModel); ok && redirectModel != "" {
 		actualModel = redirectModel
 	}
 
 	// 2. 模糊匹配回退（仅当未触发重定向时）
-	if actualModel == originalModel && s.modelFuzzyMatch {
+	if actualModel == routedModel && s.modelFuzzyMatch {
 		// 先检查精确匹配，避免不必要的模糊匹配
-		if !cfg.SupportsModel(originalModel) {
-			if matched, ok := cfg.FuzzyMatchModel(originalModel); ok {
+		if !cfg.SupportsModel(routedModel) {
+			if matched, ok := cfg.FuzzyMatchModel(routedModel); ok {
 				actualModel = matched
 			}
 		}
@@ -601,12 +650,12 @@ func (s *Server) resolveActualModel(cfg *model.Config, originalModel string) str
 	// 3. [FIX] 2026-01: 模糊匹配结果的重定向（链式解析）
 	// 场景：请求 gemini-3-flash → 模糊匹配 gemini-3-flash-preview → 重定向 gemini-3-flash-preview-0719
 	// 仅当模型已变更且变更后的模型有重定向配置时触发
-	if actualModel != originalModel {
+	if actualModel != routedModel {
 		if redirectModel, ok := cfg.GetRedirectModel(actualModel); ok && redirectModel != "" {
 			actualModel = redirectModel
 		}
 	}
-	return actualModel
+	return model.RoutingModelName(actualModel)
 }
 
 // resolveFinalUpstreamModel 返回真正发送给上游的模型身份。
@@ -625,23 +674,36 @@ func (s *Server) prepareRequestBody(cfg *model.Config, reqCtx *proxyRequestConte
 	actualModel = s.resolveFinalUpstreamModel(cfg, reqCtx.originalModel, upstreamProtocol)
 
 	bodyToSend = reqCtx.body
-
-	// 如果模型发生变更，修改请求体
-	if actualModel != reqCtx.originalModel {
-		var reqData map[string]json.RawMessage
-		if err := sonic.Unmarshal(reqCtx.body, &reqData); err == nil {
-			modelRaw, err := sonic.Marshal(actualModel)
-			if err != nil {
-				return actualModel, bodyToSend
-			}
-			reqData["model"] = modelRaw
-			if modifiedBody, err := sonic.Marshal(reqData); err == nil {
-				bodyToSend = modifiedBody
-			}
-		}
-	}
+	bodyToSend = replaceJSONRequestModel(bodyToSend, actualModel)
 
 	return actualModel, bodyToSend
+}
+
+func replaceJSONRequestModel(body []byte, actualModel string) []byte {
+	if len(body) == 0 || actualModel == "" {
+		return body
+	}
+	var reqData map[string]json.RawMessage
+	if err := sonic.Unmarshal(body, &reqData); err != nil {
+		return body
+	}
+	var current string
+	if raw, ok := reqData["model"]; ok {
+		_ = sonic.Unmarshal(raw, &current)
+	}
+	if strings.TrimSpace(current) == "" || current == actualModel {
+		return body
+	}
+	modelRaw, err := sonic.Marshal(actualModel)
+	if err != nil {
+		return body
+	}
+	reqData["model"] = modelRaw
+	modifiedBody, err := sonic.Marshal(reqData)
+	if err != nil {
+		return body
+	}
+	return modifiedBody
 }
 
 // stripAnthropicBillingHeaders 从 Anthropic /v1/messages 请求体的 system 数组中
@@ -853,6 +915,7 @@ type logEntryParams struct {
 	APIKeyUsed              string
 	AuthTokenID             int64
 	AuthTokenKey            string
+	ClientProtocol          protocol.Protocol
 	ClientIP                string
 	BaseURL                 string // 请求使用的上游URL
 	Result                  *fwResult
@@ -892,6 +955,7 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		APIKeyUsed:            p.APIKeyUsed,
 		AuthTokenID:           p.AuthTokenID,
 		AuthTokenKey:          p.AuthTokenKey,
+		ClientProtocol:        string(p.ClientProtocol),
 		ClientIP:              p.ClientIP,
 		BaseURL:               p.BaseURL,
 	}

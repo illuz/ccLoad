@@ -43,6 +43,7 @@ test('tokens 页费用摘要按 0 位小数显示', () => {
     'formatCostDisplay',
     'buildCostMetricRow',
     'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveMonthlyCostLimit',
     'buildCostSummaryHtml'
   ]), sandbox);
 
@@ -67,6 +68,7 @@ test('tokens 页电池图标根据剩余额度显示多档颜色和百分比', (
   vm.runInNewContext(joinFunctions([
     'formatCostDisplay',
     'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveMonthlyCostLimit',
     'getTokenEffectiveCostLimit',
     'getTokenBatteryState',
     'buildTokenBatteryHtml'
@@ -106,6 +108,7 @@ test('tokens 页同时存在当日和总额度时按更紧的剩余额度展示�
   vm.runInNewContext(joinFunctions([
     'formatCostDisplay',
     'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveMonthlyCostLimit',
     'getTokenEffectiveCostLimit',
     'getTokenBatteryState',
     'buildTokenBatteryHtml'
@@ -124,6 +127,42 @@ test('tokens 页同时存在当日和总额度时按更紧的剩余额度展示�
   assert.match(html, /title="日剩余 \$8\/\$10 \(80%\) · 总剩余 \$1\/\$10 \(10%\)"/);
 });
 
+test('tokens 页把月额度纳入最紧剩余额度且不应用每日倍率', () => {
+  const sandbox = {
+    escapeHtml(value) { return String(value ?? ''); },
+    t(key, params = {}) {
+      if (key === 'tokens.batteryDailyRemaining') return `日剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      if (key === 'tokens.batteryMonthlyRemaining') return `月剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      if (key === 'tokens.batteryTotalRemaining') return `总剩余 ${params.remaining}/${params.limit} (${params.percent}%)`;
+      return key;
+    }
+  };
+
+  vm.runInNewContext(joinFunctions([
+    'formatCostDisplay',
+    'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveMonthlyCostLimit',
+    'getTokenEffectiveCostLimit',
+    'getTokenBatteryState',
+    'buildTokenBatteryHtml'
+  ]), sandbox);
+
+  const html = sandbox.buildTokenBatteryHtml({
+    daily_cost_used_usd: 1,
+    daily_cost_limit_usd: 10,
+    daily_limit_triple_enabled: true,
+    monthly_cost_used_usd: 18,
+    monthly_cost_limit_usd: 20,
+    cost_used_usd: 20,
+    cost_limit_usd: 100
+  });
+
+  assert.match(html, /token-battery--critical/);
+  assert.match(html, /width: 10%/);
+  assert.match(html, /月剩余 \$2\/\$20 \(10%\)/);
+  assert.match(html, /日剩余 \$29\/\$30 \(97%\)/);
+});
+
 test('tokens 页电池图标在无限额或缺少数据时不显示 undefined', () => {
   const sandbox = {
     escapeHtml(value) { return String(value ?? ''); },
@@ -135,6 +174,7 @@ test('tokens 页电池图标在无限额或缺少数据时不显示 undefined', 
 
   vm.runInNewContext(joinFunctions([
     'getTokenEffectiveDailyCostLimit',
+    'getTokenEffectiveMonthlyCostLimit',
     'getTokenEffectiveCostLimit',
     'getTokenBatteryState',
     'buildTokenBatteryHtml'
