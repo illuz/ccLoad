@@ -103,6 +103,7 @@ test('日志页令牌编辑保存后刷新日志令牌筛选和列表', () => {
   assert.match(tokenEditorScript, /authTokens = tokens;/);
   assert.match(tokenEditorScript, /if \(typeof load === 'function'\)/);
   assert.match(tokenEditorScript, /await load\(true\);/);
+  assert.match(tokenEditorScript, /window\.LogsChannelQuickPanel\.refresh\(\{ silent: true \}\)/);
 });
 
 test('日志页令牌编辑器保存支持令牌页同款预设过期时间', () => {

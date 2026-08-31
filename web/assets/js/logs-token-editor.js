@@ -1225,6 +1225,16 @@
     if (typeof load === 'function') {
       await load(true);
     }
+
+    // Keep the logs quick-control panel in sync when an edited token changes
+    // its description, group, or active state.
+    if (window.LogsChannelQuickPanel && typeof window.LogsChannelQuickPanel.refresh === 'function') {
+      try {
+        await window.LogsChannelQuickPanel.refresh({ silent: true });
+      } catch (error) {
+        console.warn('Failed to refresh logs token quick controls after save', error);
+      }
+    }
   }
 
   async function updateToken() {

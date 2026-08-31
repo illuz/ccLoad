@@ -138,6 +138,25 @@
   <aside id="logsChannelPanel" class="logs-channel-panel" data-state="collapsed" aria-label="渠道快捷控制">
     <button
       type="button"
+      id="logsTokenPanelTrigger"
+      class="logs-channel-panel__trigger logs-channel-panel__trigger--token"
+      data-channel-panel-action="open-token"
+      aria-controls="logsChannelPanelSurface"
+      aria-expanded="false"
+      data-i18n-title="logs.channelPanel.openTokens"
+      data-i18n-aria-label="logs.channelPanel.openTokens"
+      title="打开令牌快速控制"
+      aria-label="打开令牌快速控制"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8.5" cy="12" r="4.5"></circle>
+        <path d="M12.8 12H21V14.6H19.2V16.4H17.4V14.6H15.6V13H12.8"></path>
+      </svg>
+      <span id="logsTokenPanelBadge" class="logs-channel-panel__badge" hidden></span>
+    </button>
+
+    <button
+      type="button"
       id="logsChannelPanelTrigger"
       class="logs-channel-panel__trigger"
       data-channel-panel-action="expand"
@@ -165,7 +184,7 @@
     <section id="logsChannelPanelSurface" class="logs-channel-panel__surface" hidden>
       <header class="logs-channel-panel__header">
         <div class="logs-channel-panel__heading">
-          <h2 data-i18n="logs.channelPanel.title">渠道快捷控制</h2>
+          <h2 id="logsChannelPanelHeading" data-i18n="logs.channelPanel.title">渠道快捷控制</h2>
           <span id="logsChannelPanelSummary" class="logs-channel-panel__summary"></span>
         </div>
         <div class="logs-channel-panel__header-actions">
@@ -199,7 +218,32 @@
           </button>
         </div>
       </header>
-      <div id="logsChannelPanelBody" class="logs-channel-panel__body">
+      <div class="logs-channel-panel__tabs" role="tablist" data-i18n-aria-label="logs.channelPanel.tabList" aria-label="快捷控制类型">
+        <button
+          type="button"
+          id="logsChannelPanelChannelTab"
+          class="logs-channel-panel__tab is-active"
+          role="tab"
+          aria-selected="true"
+          aria-controls="logsChannelPanelBody"
+          data-channel-panel-action="select-tab"
+          data-panel-tab="channels"
+          data-i18n="logs.channelPanel.channelTab"
+        >渠道</button>
+        <button
+          type="button"
+          id="logsChannelPanelTokenTab"
+          class="logs-channel-panel__tab"
+          role="tab"
+          aria-selected="false"
+          aria-controls="logsChannelPanelBody"
+          data-channel-panel-action="select-tab"
+          data-panel-tab="tokens"
+          tabindex="-1"
+          data-i18n="logs.channelPanel.tokenTab"
+        >令牌快速控制</button>
+      </div>
+      <div id="logsChannelPanelBody" class="logs-channel-panel__body" role="tabpanel" aria-live="polite">
         <div class="logs-channel-panel__state">
           <span class="logs-channel-panel__spinner" aria-hidden="true"></span>
           <span data-i18n="logs.channelPanel.loading">正在加载渠道...</span>

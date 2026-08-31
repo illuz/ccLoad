@@ -41,6 +41,20 @@ test('日志页接入默认折叠的渠道快捷浮窗', () => {
   assert.doesNotMatch(html, /id="logsChannelPanel"[\s\S]*?onclick=/);
 });
 
+test('日志快捷浮窗提供渠道和令牌两个 tab，并有独立令牌入口', () => {
+  assert.match(html, /id="logsTokenPanelTrigger"[\s\S]*data-channel-panel-action="open-token"/);
+  assert.ok(
+    html.indexOf('id="logsTokenPanelTrigger"') < html.indexOf('id="logsChannelPanelTrigger"'),
+    '令牌入口应位于渠道入口上方'
+  );
+  assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?flex-direction:\s*column;/);
+  assert.match(html, /id="logsChannelPanelChannelTab"[\s\S]*role="tab"/);
+  assert.match(html, /id="logsChannelPanelTokenTab"[\s\S]*data-panel-tab="tokens"/);
+  assert.match(html, /data-channel-panel-action="select-tab"/);
+  assert.match(source, /setActiveTab\(TOKEN_TAB/);
+  assert.match(source, /\/admin\/auth-tokens/);
+});
+
 test('浮窗使用固定右下角工具布局并适配窄屏', () => {
   assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:[\s\S]*?bottom:/);
   assert.match(css, /\.logs-channel-panel__surface\s*\{[\s\S]*?width:\s*min\(380px,[\s\S]*?max-height:/);
@@ -73,6 +87,38 @@ test('分组构建按优先级排列渠道并统计启用数量', () => {
     { key: '8', name: 'Beta', color: '#64748b', ids: [3], enabled: 1, total: 1 },
     { key: '0', name: 'No group', color: '#64748b', ids: [4], enabled: 1, total: 1 }
   ]);
+});
+
+test('令牌快捷控制按分组展示启用统计并提供编辑/启停操作', () => {
+  const api = loadTestAPI();
+  const grouped = plain(api.buildTokenGroups([
+    { id: 2, description: 'Backup', group_id: 9, is_active: false, last_used_at: 100 },
+    { id: 1, description: 'Primary', group_id: 9, is_active: true, last_used_at: 200 },
+    { id: 3, description: 'Loose', group_id: 0, is_active: true }
+  ], [{ id: 9, name: 'Production', color: '#22c55e' }], 'No group'));
+  assert.deepEqual(grouped.map((group) => ({
+    key: group.key,
+    name: group.name,
+    ids: group.tokens.map((token) => token.id),
+    enabled: group.enabledCount,
+    total: group.totalCount
+  })), [
+    { key: '9', name: 'Production', ids: [1, 2], enabled: 1, total: 2 },
+    { key: '0', name: 'No group', ids: [3], enabled: 1, total: 1 }
+  ]);
+  const row = api.renderTokenRow({
+    id: 4,
+    description: 'Customer token',
+    is_active: true,
+    plain_token: 'sk-1234567890',
+    success_count: 4,
+    failure_count: 1,
+    daily_cost_used_usd: 0.125
+  }, '9');
+  assert.match(row, /data-channel-panel-action="edit-token"/);
+  assert.match(row, /data-channel-panel-action="toggle-token"[^>]*aria-checked="true"/);
+  assert.match(row, /sk-1\*\*\*\*7890/);
+  assert.doesNotMatch(row, /sk-1234567890[^<]/);
 });
 
 test('同组重排保留其他分组的相对位置并生成全局递减优先级', () => {
@@ -111,6 +157,8 @@ test('快捷启停复用批量接口并在失败时回滚本地状态', () => {
   assert.match(source, /channel\.enabled\s*=\s*nextEnabled;[\s\S]*?\/admin\/channels\/batch-enabled/);
   assert.match(source, /catch\s*\(error\)[\s\S]*?channel\.enabled\s*=\s*previousEnabled;/);
   assert.match(source, /role="switch"[\s\S]*?aria-checked=/);
+  assert.match(source, /\/admin\/auth-tokens\/\$\{encodeURIComponent\(id\)\}/);
+  assert.match(source, /token\.is_active\s*=\s*previousActive/);
 });
 
 test('渠道行提供快速编辑图标并复用日志页渠道编辑器', () => {
@@ -156,6 +204,16 @@ test('渠道浮窗文案同时提供中英文键值', () => {
     'enabledSummary', 'dailyCost', 'dragHandle', 'editChannel', 'toggleFailed', 'orderSaved', 'orderFailed'
   ];
   for (const suffix of requiredKeys) {
+    const key = `logs.channelPanel.${suffix}`;
+    assert.ok(zhLocale.includes(`'${key}'`), `中文缺少 ${key}`);
+    assert.ok(enLocale.includes(`'${key}'`), `英文缺少 ${key}`);
+  }
+  for (const suffix of [
+    'openTokens', 'collapseTokens', 'refreshTokens', 'channelTab', 'tokenTab', 'loadingTokens',
+    'tokenLoadFailed', 'emptyTokens', 'tokenEnabledSummary', 'tokenUsage',
+    'tokenDailyCost', 'tokenLastUsed', 'tokenID', 'editToken',
+    'tokenToggleEnabled', 'tokenToggleDisabled', 'tokenToggleFailed'
+  ]) {
     const key = `logs.channelPanel.${suffix}`;
     assert.ok(zhLocale.includes(`'${key}'`), `中文缺少 ${key}`);
     assert.ok(enLocale.includes(`'${key}'`), `英文缺少 ${key}`);

@@ -3,6 +3,9 @@
 
   const ROOT_ID = 'logsChannelPanel';
   const COLLAPSED_GROUPS_KEY = 'ccload.logs.channelPanel.collapsedGroups';
+  const ACTIVE_TAB_KEY = 'ccload.logs.channelPanel.activeTab';
+  const CHANNEL_TAB = 'channels';
+  const TOKEN_TAB = 'tokens';
   const REFRESH_MAX_AGE_MS = 15000;
   const GROUP_COLORS = new Set([
     '#64748b', '#ef4444', '#f97316', '#f59e0b',
@@ -12,22 +15,43 @@
   const FALLBACK_TEXT = Object.freeze({
     'logs.channelPanel.title': 'Channel controls',
     'logs.channelPanel.open': 'Open channel controls',
+    'logs.channelPanel.openTokens': 'Open token controls',
     'logs.channelPanel.collapse': 'Collapse channel controls',
+    'logs.channelPanel.collapseTokens': 'Collapse token controls',
     'logs.channelPanel.refresh': 'Refresh channels',
+    'logs.channelPanel.refreshTokens': 'Refresh tokens',
+    'logs.channelPanel.channelTab': 'Channels',
+    'logs.channelPanel.tokenTab': 'Token controls',
+    'logs.channelPanel.tabList': 'Quick control type',
     'logs.channelPanel.loading': 'Loading channels...',
+    'logs.channelPanel.loadingTokens': 'Loading tokens...',
     'logs.channelPanel.loadFailed': 'Failed to load channels',
+    'logs.channelPanel.tokenLoadFailed': 'Failed to load tokens',
     'logs.channelPanel.retry': 'Retry',
     'logs.channelPanel.empty': 'No channels',
+    'logs.channelPanel.emptyTokens': 'No tokens',
     'logs.channelPanel.ungrouped': 'Ungrouped',
+    'logs.channelPanel.tokenUngrouped': 'Ungrouped',
     'logs.channelPanel.enabledSummary': '{enabled}/{total} enabled',
+    'logs.channelPanel.tokenEnabledSummary': '{enabled}/{total} enabled',
     'logs.channelPanel.priority': 'Priority {priority}',
     'logs.channelPanel.dailyCost': 'Today {cost}',
+    'logs.channelPanel.tokenDailyCost': 'Today {cost}',
+    'logs.channelPanel.tokenUsage': '{count} calls',
+    'logs.channelPanel.tokenLastUsed': 'Last used {time}',
+    'logs.channelPanel.tokenID': 'ID {id}',
     'logs.channelPanel.cooldown': 'Cooling down',
     'logs.channelPanel.dragHandle': 'Reorder {name}',
     'logs.channelPanel.editChannel': 'Edit {name}',
+    'logs.channelPanel.editToken': 'Edit {name}',
     'logs.channelPanel.toggleEnabled': '{name} enabled',
     'logs.channelPanel.toggleDisabled': '{name} disabled',
     'logs.channelPanel.toggleFailed': 'Failed to update {name}',
+    'logs.channelPanel.tokenToggleEnabled': '{name} enabled',
+    'logs.channelPanel.tokenToggleDisabled': '{name} disabled',
+    'logs.channelPanel.tokenToggleFailed': 'Failed to update {name}',
+    'common.enable': 'Enable',
+    'common.disable': 'Disable',
     'logs.channelPanel.orderSaving': 'Saving channel order...',
     'logs.channelPanel.orderSaved': 'Channel order saved',
     'logs.channelPanel.orderFailed': 'Failed to save channel order',
@@ -45,14 +69,21 @@
     root: null,
     initialized: false,
     expanded: false,
+    activeTab: CHANNEL_TAB,
+    restoreFocusID: 'logsChannelPanelTrigger',
     loaded: false,
+    tokenLoaded: false,
     loading: false,
     loadError: null,
+    tokenLoadError: null,
     lastLoadedAt: 0,
     channels: [],
     groups: [],
+    tokens: [],
+    tokenGroups: [],
     collapsedGroups: new Set(),
     pendingChannelIDs: new Set(),
+    pendingTokenIDs: new Set(),
     orderSaving: false,
     nativeDragArmed: null,
     nativeDrag: null,
@@ -211,7 +242,12 @@
     try {
       const parsed = JSON.parse(window.localStorage.getItem(COLLAPSED_GROUPS_KEY) || '[]');
       if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.map(normalizeGroupKey));
+      return new Set(parsed.map((value) => {
+        const raw = String(value || '');
+        return raw.startsWith('token:')
+          ? `token:${normalizeGroupKey(raw.slice('token:'.length))}`
+          : normalizeGroupKey(raw);
+      }));
     } catch (_) {
       return new Set();
     }
@@ -225,6 +261,26 @@
     }
   }
 
+  function normalizeTab(value) {
+    return value === TOKEN_TAB ? TOKEN_TAB : CHANNEL_TAB;
+  }
+
+  function readActiveTab() {
+    try {
+      return normalizeTab(window.localStorage.getItem(ACTIVE_TAB_KEY));
+    } catch (_) {
+      return CHANNEL_TAB;
+    }
+  }
+
+  function persistActiveTab() {
+    try {
+      window.localStorage.setItem(ACTIVE_TAB_KEY, normalizeTab(state.activeTab));
+    } catch (_) {
+      // Storage is optional for this UI preference.
+    }
+  }
+
   function getElement(id) {
     return document.getElementById(id);
   }
@@ -232,6 +288,91 @@
   function getChannel(channelID) {
     const id = normalizeChannelID(channelID);
     return state.channels.find((channel) => normalizeChannelID(channel && channel.id) === id) || null;
+  }
+
+  function normalizeTokenID(value) {
+    const id = Number(value);
+    if (!Number.isFinite(id) || id <= 0) return 0;
+    return Math.trunc(id);
+  }
+
+  function isTokenActive(token) {
+    return Boolean(token && (token.is_active === true || token.is_active === 1 || token.is_active === 'true' || token.is_active === '1'));
+  }
+
+  function getToken(tokenID) {
+    const id = normalizeTokenID(tokenID);
+    return state.tokens.find((token) => normalizeTokenID(token && token.id) === id) || null;
+  }
+
+  function tokenEnabledSummary(tokens = state.tokens) {
+    const list = Array.isArray(tokens) ? tokens : [];
+    return {
+      enabled: list.filter((token) => isTokenActive(token)).length,
+      total: list.length
+    };
+  }
+
+  function normalizeTimestamp(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function compareTokens(a, b) {
+    const activeDifference = Number(isTokenActive(b)) - Number(isTokenActive(a));
+    if (activeDifference !== 0) return activeDifference;
+    const lastUsedDifference = normalizeTimestamp(b && b.last_used_at) - normalizeTimestamp(a && a.last_used_at);
+    if (lastUsedDifference !== 0) return lastUsedDifference;
+    const nameDifference = String(a && a.description || '').localeCompare(String(b && b.description || ''));
+    if (nameDifference !== 0) return nameDifference;
+    return normalizeTokenID(a && a.id) - normalizeTokenID(b && b.id);
+  }
+
+  function buildTokenGroups(tokens = [], groups = [], ungroupedLabel = 'Ungrouped') {
+    const definitions = new Map();
+    for (const group of Array.isArray(groups) ? groups : []) {
+      const key = normalizeGroupKey(group && group.id);
+      if (key === '0') continue;
+      definitions.set(key, group);
+    }
+
+    const buckets = new Map();
+    for (const token of Array.isArray(tokens) ? tokens : []) {
+      if (!normalizeTokenID(token && token.id)) continue;
+      const key = normalizeGroupKey(token && token.group_id);
+      const definition = definitions.get(key) || null;
+      if (!buckets.has(key)) {
+        const fallbackName = key === '0'
+          ? ungroupedLabel
+          : (token.group_name || `#${key}`);
+        buckets.set(key, {
+          key,
+          id: Number(key),
+          name: String(definition && definition.name || fallbackName),
+          description: String(definition && definition.description || ''),
+          color: normalizeGroupColor(definition && definition.color || token.group_color),
+          tokens: []
+        });
+      }
+      buckets.get(key).tokens.push(token);
+    }
+
+    return Array.from(buckets.values())
+      .map((group) => {
+        group.tokens.sort(compareTokens);
+        group.totalCount = group.tokens.length;
+        group.enabledCount = group.tokens.filter((token) => isTokenActive(token)).length;
+        return group;
+      })
+      .sort((a, b) => {
+        if (a.key === '0') return 1;
+        if (b.key === '0') return -1;
+        const nameDifference = a.name.localeCompare(b.name);
+        return nameDifference !== 0 ? nameDifference : a.id - b.id;
+      });
   }
 
   function isChannelCoolingDown(channel) {
@@ -249,28 +390,52 @@
   function updateChrome() {
     if (!state.root) return;
     const trigger = getElement('logsChannelPanelTrigger');
+    const tokenTrigger = getElement('logsTokenPanelTrigger');
     const surface = getElement('logsChannelPanelSurface');
     const badge = getElement('logsChannelPanelBadge');
+    const tokenBadge = getElement('logsTokenPanelBadge');
     const summary = getElement('logsChannelPanelSummary');
+    const heading = getElement('logsChannelPanelHeading');
     const refresh = getElement('logsChannelPanelRefresh');
+    const channelTab = getElement('logsChannelPanelChannelTab');
+    const tokenTab = getElement('logsChannelPanelTokenTab');
+    const body = getElement('logsChannelPanelBody');
     const openLabel = translate('logs.channelPanel.open');
-    const collapseLabel = translate('logs.channelPanel.collapse');
-    const refreshLabel = translate('logs.channelPanel.refresh');
+    const openTokenLabel = translate('logs.channelPanel.openTokens');
+    const collapseLabel = translate(state.activeTab === TOKEN_TAB
+      ? 'logs.channelPanel.collapseTokens'
+      : 'logs.channelPanel.collapse');
+    const refreshLabel = state.activeTab === TOKEN_TAB
+      ? translate('logs.channelPanel.refreshTokens')
+      : translate('logs.channelPanel.refresh');
+    const activeLoaded = state.activeTab === TOKEN_TAB ? state.tokenLoaded : state.loaded;
 
     state.root.dataset.state = state.expanded ? 'expanded' : 'collapsed';
-    state.root.setAttribute('aria-label', translate('logs.channelPanel.title'));
+    state.root.dataset.activeTab = state.activeTab;
+    state.root.setAttribute('aria-label', state.activeTab === TOKEN_TAB
+      ? translate('logs.channelPanel.tokenTab')
+      : translate('logs.channelPanel.title'));
     if (trigger) {
       trigger.hidden = state.expanded;
       trigger.setAttribute('aria-expanded', String(state.expanded));
       trigger.title = openLabel;
       trigger.setAttribute('aria-label', openLabel);
     }
+    if (tokenTrigger) {
+      tokenTrigger.hidden = state.expanded;
+      tokenTrigger.setAttribute('aria-expanded', String(state.expanded && state.activeTab === TOKEN_TAB));
+      tokenTrigger.title = openTokenLabel;
+      tokenTrigger.setAttribute('aria-label', openTokenLabel);
+    }
     if (surface) {
       surface.hidden = !state.expanded;
-      surface.classList.toggle('is-refreshing', state.loading && state.loaded);
+      surface.classList.toggle('is-refreshing', state.loading && activeLoaded);
     }
     if (refresh) {
-      refresh.disabled = state.loading || state.orderSaving;
+      refresh.disabled = state.loading
+        || state.orderSaving
+        || state.pendingChannelIDs.size > 0
+        || state.pendingTokenIDs.size > 0;
       refresh.title = refreshLabel;
       refresh.setAttribute('aria-label', refreshLabel);
     }
@@ -280,16 +445,47 @@
       collapseButton.setAttribute('aria-label', collapseLabel);
     }
 
-    const counts = enabledSummary();
+    if (heading) {
+      heading.textContent = state.activeTab === TOKEN_TAB
+        ? translate('logs.channelPanel.tokenTab')
+        : translate('logs.channelPanel.title');
+    }
+    if (channelTab) {
+      const selected = state.activeTab === CHANNEL_TAB;
+      channelTab.setAttribute('aria-selected', String(selected));
+      channelTab.tabIndex = selected ? 0 : -1;
+      channelTab.classList.toggle('is-active', selected);
+    }
+    if (tokenTab) {
+      const selected = state.activeTab === TOKEN_TAB;
+      tokenTab.setAttribute('aria-selected', String(selected));
+      tokenTab.tabIndex = selected ? 0 : -1;
+      tokenTab.classList.toggle('is-active', selected);
+    }
+    if (body) {
+      body.dataset.activeTab = state.activeTab;
+      body.setAttribute('aria-labelledby', state.activeTab === TOKEN_TAB
+        ? 'logsChannelPanelTokenTab'
+        : 'logsChannelPanelChannelTab');
+    }
+
+    const counts = state.activeTab === TOKEN_TAB ? tokenEnabledSummary() : enabledSummary();
     if (summary) {
-      summary.textContent = state.loaded
-        ? translate('logs.channelPanel.enabledSummary', counts)
+      summary.textContent = activeLoaded
+        ? translate(state.activeTab === TOKEN_TAB ? 'logs.channelPanel.tokenEnabledSummary' : 'logs.channelPanel.enabledSummary', counts)
         : '';
     }
     if (badge) {
       badge.hidden = !state.loaded;
-      badge.textContent = counts.enabled > 99 ? '99+' : String(counts.enabled);
-      badge.title = state.loaded ? translate('logs.channelPanel.enabledSummary', counts) : '';
+      const channelCounts = enabledSummary();
+      badge.textContent = channelCounts.enabled > 99 ? '99+' : String(channelCounts.enabled);
+      badge.title = state.loaded ? translate('logs.channelPanel.enabledSummary', channelCounts) : '';
+    }
+    if (tokenBadge) {
+      tokenBadge.hidden = !state.tokenLoaded;
+      const tokenCounts = tokenEnabledSummary();
+      tokenBadge.textContent = tokenCounts.enabled > 99 ? '99+' : String(tokenCounts.enabled);
+      tokenBadge.title = state.tokenLoaded ? translate('logs.channelPanel.tokenEnabledSummary', tokenCounts) : '';
     }
   }
 
@@ -373,6 +569,67 @@
       </div>`;
   }
 
+  function formatTokenLastUsed(value) {
+    const timestamp = normalizeTimestamp(value);
+    if (!timestamp) return '';
+    try {
+      return new Date(timestamp).toLocaleString(window.i18n?.getLocale?.() || undefined, {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (_) {
+      return new Date(timestamp).toISOString();
+    }
+  }
+
+  function maskToken(value) {
+    const token = String(value || '').trim();
+    if (!token) return '';
+    if (token.length <= 8) return '****';
+    return `${token.slice(0, 4)}****${token.slice(-4)}`;
+  }
+
+  function renderTokenRow(token, groupKey) {
+    const id = normalizeTokenID(token && token.id);
+    const active = isTokenActive(token);
+    const pending = state.pendingTokenIDs.has(id);
+    const name = String(token && token.description || `#${id}`);
+    const successCount = Number(token && token.success_count || 0);
+    const failureCount = Number(token && token.failure_count || 0);
+    const usage = (Number.isFinite(successCount) ? successCount : 0)
+      + (Number.isFinite(failureCount) ? failureCount : 0);
+    const dailyCost = translate('logs.channelPanel.tokenDailyCost', {
+      cost: formatDailyCost(token && token.daily_cost_used_usd)
+    });
+    const usageText = translate('logs.channelPanel.tokenUsage', { count: usage });
+    const lastUsed = formatTokenLastUsed(token && token.last_used_at);
+    const lastUsedText = lastUsed
+      ? translate('logs.channelPanel.tokenLastUsed', { time: lastUsed })
+      : '';
+    const tokenIDText = translate('logs.channelPanel.tokenID', { id });
+    const editLabel = translate('logs.channelPanel.editToken', { name });
+    const switchLabel = `${translate(active ? 'common.disable' : 'common.enable')} ${name}`;
+    const masked = maskToken(token && token.plain_token);
+    const tokenMeta = [tokenIDText, usageText, dailyCost, lastUsedText].filter(Boolean);
+
+    return `
+      <div class="logs-channel-panel__row logs-channel-panel__token-row${active ? '' : ' is-disabled'}" role="listitem" data-token-id="${id}" data-group-id="${escapeHTML(groupKey)}">
+        <div class="logs-channel-panel__info">
+          <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+          <div class="logs-channel-panel__meta" title="${escapeHTML(tokenMeta.join(' / '))}">
+            ${tokenMeta.map((item, index) => `${index ? '<span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>' : ''}<span class="logs-channel-panel__meta-item">${escapeHTML(item)}</span>`).join('')}
+          </div>
+          ${masked ? `<div class="logs-channel-panel__token-mask" title="${escapeHTML(masked)}">${escapeHTML(masked)}</div>` : ''}
+        </div>
+        <div class="logs-channel-panel__row-actions">
+          <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-token" data-token-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
+          <button type="button" class="logs-channel-panel__switch" data-channel-panel-action="toggle-token" data-token-id="${id}" role="switch" aria-checked="${active}" aria-disabled="${pending}" title="${escapeHTML(switchLabel)}" aria-label="${escapeHTML(switchLabel)}"></button>
+        </div>
+      </div>`;
+  }
+
   function renderGroup(group) {
     const collapsed = state.collapsedGroups.has(group.key);
     const description = group.description ? ` title="${escapeHTML(group.description)}"` : '';
@@ -389,34 +646,66 @@
       </section>`;
   }
 
+  function renderTokenGroup(group) {
+    const collapsed = state.collapsedGroups.has(`token:${group.key}`);
+    const description = group.description ? ` title="${escapeHTML(group.description)}"` : '';
+    const rows = group.tokens.map((token) => renderTokenRow(token, group.key)).join('');
+    return `
+      <section class="logs-channel-panel__group logs-channel-panel__token-group${collapsed ? ' is-collapsed' : ''}" data-group-id="${escapeHTML(group.key)}" data-token-group="true">
+        <button type="button" class="logs-channel-panel__group-toggle" data-channel-panel-action="toggle-token-group" data-group-id="${escapeHTML(group.key)}" aria-expanded="${!collapsed}" aria-controls="logsChannelPanelTokenGroup-${escapeHTML(group.key)}"${description}>
+          ${ICONS.chevron}
+          <span class="logs-channel-panel__group-dot" style="background-color:${escapeHTML(group.color)}" aria-hidden="true"></span>
+          <span class="logs-channel-panel__group-name">${escapeHTML(group.name)}</span>
+          <span class="logs-channel-panel__group-count">${escapeHTML(translate('logs.channelPanel.tokenEnabledSummary', { enabled: group.enabledCount, total: group.totalCount }))}</span>
+        </button>
+        <div id="logsChannelPanelTokenGroup-${escapeHTML(group.key)}" class="logs-channel-panel__group-list logs-channel-panel__token-group-list" role="list" data-group-id="${escapeHTML(group.key)}" data-token-group="true"${collapsed ? ' hidden' : ''}>${rows}</div>
+      </section>`;
+  }
+
   function renderPanel(options = {}) {
     updateChrome();
     if (!state.expanded) return;
-    if (state.loading && !state.loaded) {
-      renderState('logs.channelPanel.loading', { loading: true });
+    const tokenTabActive = state.activeTab === TOKEN_TAB;
+    const activeLoaded = tokenTabActive ? state.tokenLoaded : state.loaded;
+    const activeError = tokenTabActive ? state.tokenLoadError : state.loadError;
+    if (state.loading && !activeLoaded) {
+      renderState(tokenTabActive ? 'logs.channelPanel.loadingTokens' : 'logs.channelPanel.loading', { loading: true });
       return;
     }
-    if (state.loadError && !state.loaded) {
-      renderState('logs.channelPanel.loadFailed', { error: true });
+    if (activeError && !activeLoaded) {
+      renderState(tokenTabActive ? 'logs.channelPanel.tokenLoadFailed' : 'logs.channelPanel.loadFailed', { error: true });
       return;
     }
 
     const body = getElement('logsChannelPanelBody');
     if (!body) return;
     const scrollTop = body.scrollTop;
-    const groups = buildChannelGroups(state.channels, state.groups, translate('logs.channelPanel.ungrouped'));
-    if (groups.length === 0) {
-      renderState('logs.channelPanel.empty');
-      return;
+    if (tokenTabActive) {
+      const groups = buildTokenGroups(state.tokens, state.tokenGroups, translate('logs.channelPanel.tokenUngrouped'));
+      if (groups.length === 0) {
+        renderState('logs.channelPanel.emptyTokens');
+        return;
+      }
+      body.innerHTML = groups.map(renderTokenGroup).join('');
+    } else {
+      const groups = buildChannelGroups(state.channels, state.groups, translate('logs.channelPanel.ungrouped'));
+      if (groups.length === 0) {
+        renderState('logs.channelPanel.empty');
+        return;
+      }
+      body.innerHTML = groups.map(renderGroup).join('');
     }
-    body.innerHTML = groups.map(renderGroup).join('');
     body.scrollTop = scrollTop;
 
     if (options.focusGroupKey !== undefined) {
-      body.querySelector(`[data-channel-panel-action="toggle-group"][data-group-id="${String(options.focusGroupKey).replace(/"/g, '')}"]`)?.focus();
-    } else if (options.focusChannelID) {
+      const groupAction = tokenTabActive ? 'toggle-token-group' : 'toggle-group';
+      body.querySelector(`[data-channel-panel-action="${groupAction}"][data-group-id="${String(options.focusGroupKey).replace(/"/g, '')}"]`)?.focus();
+    } else if (!tokenTabActive && options.focusChannelID) {
       const action = options.focusAction || 'toggle-channel';
       body.querySelector(`[data-channel-panel-action="${action}"][data-channel-id="${normalizeChannelID(options.focusChannelID)}"]`)?.focus();
+    } else if (tokenTabActive && options.focusTokenID) {
+      const action = options.focusAction || 'toggle-token';
+      body.querySelector(`[data-channel-panel-action="${action}"][data-token-id="${normalizeTokenID(options.focusTokenID)}"]`)?.focus();
     }
   }
 
@@ -426,31 +715,75 @@
     const refreshSequence = ++state.refreshSequence;
     state.loading = true;
     state.loadError = null;
+    state.tokenLoadError = null;
     updateChrome();
-    if (!state.loaded) renderPanel();
+    if (!state.loaded || !state.tokenLoaded) renderPanel();
 
     try {
       const groupRequest = window.fetchDataWithAuth('/admin/channel-groups').catch((error) => {
         console.warn('Channel group metadata unavailable:', error);
         return { groups: [] };
       });
-      const [channels, groupData] = await Promise.all([
-        window.fetchDataWithAuth('/admin/channels'),
-        groupRequest
+      const channelRequest = window.fetchDataWithAuth('/admin/channels')
+        .then((data) => ({ ok: true, data }))
+        .catch((error) => ({ ok: false, error }));
+      const tokenRequest = window.fetchDataWithAuth('/admin/auth-tokens')
+        .then((data) => ({ ok: true, data }))
+        .catch((error) => ({ ok: false, error }));
+      const [channelResult, groupData, tokenResult] = await Promise.all([
+        channelRequest,
+        groupRequest,
+        tokenRequest
       ]);
       if (lifecycleID !== state.lifecycleID || refreshSequence !== state.refreshSequence) return;
-      if (!Array.isArray(channels)) throw new Error('Invalid channel list');
-      state.channels = channels;
-      state.groups = Array.isArray(groupData && groupData.groups) ? groupData.groups : [];
-      state.loaded = true;
-      state.lastLoadedAt = Date.now();
+
+      if (channelResult && channelResult.ok && Array.isArray(channelResult.data)) {
+        state.channels = channelResult.data;
+        state.groups = Array.isArray(groupData && groupData.groups) ? groupData.groups : [];
+        state.loaded = true;
+        state.lastLoadedAt = Date.now();
+      } else {
+        state.loadError = channelResult && channelResult.error
+          ? channelResult.error
+          : new Error('Invalid channel list');
+        console.error('Failed to load quick channel controls:', state.loadError);
+      }
+
+      if (tokenResult && tokenResult.ok) {
+        const tokenData = tokenResult.data;
+        const tokenList = Array.isArray(tokenData)
+          ? tokenData
+          : (tokenData && Array.isArray(tokenData.tokens) ? tokenData.tokens : null);
+        if (tokenList) {
+          state.tokens = tokenList;
+          state.tokenGroups = Array.isArray(tokenData && tokenData.groups) ? tokenData.groups : [];
+          state.tokenLoaded = true;
+          state.lastLoadedAt = Date.now();
+        } else {
+          state.tokenLoadError = new Error('Invalid token list');
+          console.error('Failed to load quick token controls:', state.tokenLoadError);
+        }
+      } else {
+        state.tokenLoadError = tokenResult && tokenResult.error
+          ? tokenResult.error
+          : new Error('Failed to load token list');
+        console.error('Failed to load quick token controls:', state.tokenLoadError);
+      }
+
+      if (!options.silent) {
+        if (state.activeTab === TOKEN_TAB && state.tokenLoadError && state.tokenLoaded) {
+          setStatus(translate('logs.channelPanel.tokenLoadFailed'), 'error');
+        } else if (state.activeTab === CHANNEL_TAB && state.loadError && state.loaded) {
+          setStatus(translate('logs.channelPanel.loadFailed'), 'error');
+        }
+      }
     } catch (error) {
       if (lifecycleID !== state.lifecycleID || refreshSequence !== state.refreshSequence) return;
       state.loadError = error;
-      console.error('Failed to load quick channel controls:', error);
-      if (state.loaded && !options.silent) {
-        setStatus(translate('logs.channelPanel.loadFailed'), 'error');
-      }
+      console.error('Failed to load quick controls:', error);
+      if (!options.silent) setStatus(translate(state.activeTab === TOKEN_TAB
+        ? 'logs.channelPanel.tokenLoadFailed'
+        : 'logs.channelPanel.loadFailed'), 'error');
     } finally {
       if (lifecycleID !== state.lifecycleID || refreshSequence !== state.refreshSequence) return;
       state.loading = false;
@@ -460,22 +793,49 @@
 
   function setExpanded(expanded, options = {}) {
     state.expanded = Boolean(expanded);
+    if (options.restoreFocusID) state.restoreFocusID = options.restoreFocusID;
     updateChrome();
     if (!state.expanded) {
       cancelPointerDrag(false);
       cancelNativeDrag(false);
-      if (options.restoreFocus !== false) getElement('logsChannelPanelTrigger')?.focus();
+      if (options.restoreFocus !== false) {
+        const restoreID = options.restoreFocusID || state.restoreFocusID || 'logsChannelPanelTrigger';
+        getElement(restoreID)?.focus();
+      }
       return;
     }
 
     renderPanel();
     const stale = Date.now() - state.lastLoadedAt > REFRESH_MAX_AGE_MS;
-    if (!state.loaded || stale) void refreshPanel({ silent: state.loaded });
+    if (!state.loaded || !state.tokenLoaded || stale) {
+      void refreshPanel({ silent: state.loaded && state.tokenLoaded });
+    }
     const lifecycleID = state.lifecycleID;
     requestAnimationFrame(() => {
       if (lifecycleID !== state.lifecycleID || !state.expanded) return;
       state.root?.querySelector('[data-channel-panel-action="collapse"]')?.focus();
     });
+  }
+
+  function setActiveTab(tab, options = {}) {
+    const nextTab = normalizeTab(tab);
+    state.activeTab = nextTab;
+    state.restoreFocusID = nextTab === TOKEN_TAB ? 'logsTokenPanelTrigger' : 'logsChannelPanelTrigger';
+    persistActiveTab();
+    renderPanel();
+
+    if (state.expanded && nextTab === TOKEN_TAB && (!state.tokenLoaded || state.tokenLoadError) && !state.loading) {
+      void refreshPanel({ silent: state.tokenLoaded });
+    }
+    if (options.focus !== false) {
+      requestAnimationFrame(() => {
+        if (!state.expanded || !state.root) return;
+        const target = nextTab === TOKEN_TAB
+          ? getElement('logsChannelPanelTokenTab')
+          : getElement('logsChannelPanelChannelTab');
+        target?.focus();
+      });
+    }
   }
 
   async function toggleChannel(channelID) {
@@ -509,6 +869,41 @@
       if (lifecycleID !== state.lifecycleID) return;
       state.pendingChannelIDs.delete(id);
       renderPanel({ focusChannelID: id, focusAction: 'toggle-channel' });
+    }
+  }
+
+  async function toggleToken(tokenID) {
+    const id = normalizeTokenID(tokenID);
+    const token = getToken(id);
+    if (!token || state.pendingTokenIDs.has(id)) return;
+    const previousActive = isTokenActive(token);
+    const nextActive = !previousActive;
+    const name = String(token.description || `#${id}`);
+    const lifecycleID = state.lifecycleID;
+
+    token.is_active = nextActive;
+    state.pendingTokenIDs.add(id);
+    renderPanel({ focusTokenID: id, focusAction: 'toggle-token' });
+
+    try {
+      await window.fetchDataWithAuth(`/admin/auth-tokens/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: nextActive })
+      });
+      if (lifecycleID !== state.lifecycleID) return;
+      setStatus(translate(nextActive
+        ? 'logs.channelPanel.tokenToggleEnabled'
+        : 'logs.channelPanel.tokenToggleDisabled', { name }), 'success');
+    } catch (error) {
+      if (lifecycleID !== state.lifecycleID) return;
+      token.is_active = previousActive;
+      console.error('Failed to toggle token from logs:', error);
+      setStatus(translate('logs.channelPanel.tokenToggleFailed', { name }), 'error');
+    } finally {
+      if (lifecycleID !== state.lifecycleID) return;
+      state.pendingTokenIDs.delete(id);
+      renderPanel({ focusTokenID: id, focusAction: 'toggle-token' });
     }
   }
 
@@ -751,6 +1146,12 @@
   }
 
   function handleRootKeydown(event) {
+    const tab = event.target.closest('[role="tab"]');
+    if (tab && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault();
+      setActiveTab(event.key === 'ArrowRight' ? TOKEN_TAB : CHANNEL_TAB);
+      return;
+    }
     const handle = event.target.closest('[data-channel-panel-action="drag"]');
     if (!handle || state.orderSaving || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
     const row = handle.closest('.logs-channel-panel__row');
@@ -769,21 +1170,37 @@
     if (!actionTarget || !state.root || !state.root.contains(actionTarget)) return;
     const action = actionTarget.dataset.channelPanelAction;
     if (action === 'expand') {
-      setExpanded(true);
+      setActiveTab(CHANNEL_TAB, { focus: false });
+      setExpanded(true, { restoreFocusID: 'logsChannelPanelTrigger' });
+    } else if (action === 'open-token') {
+      setActiveTab(TOKEN_TAB, { focus: false });
+      setExpanded(true, { restoreFocusID: 'logsTokenPanelTrigger' });
     } else if (action === 'collapse') {
       setExpanded(false);
     } else if (action === 'refresh' || action === 'retry') {
       void refreshPanel();
+    } else if (action === 'select-tab') {
+      setActiveTab(actionTarget.dataset.panelTab);
     } else if (action === 'toggle-channel') {
       void toggleChannel(actionTarget.dataset.channelId);
     } else if (action === 'edit-channel' && typeof window.openLogChannelEditor === 'function') {
       void window.openLogChannelEditor(actionTarget.dataset.channelId);
+    } else if (action === 'toggle-token') {
+      void toggleToken(actionTarget.dataset.tokenId);
+    } else if (action === 'edit-token' && typeof window.openLogTokenEditor === 'function') {
+      void window.openLogTokenEditor(actionTarget.dataset.tokenId);
     } else if (action === 'toggle-group') {
       const key = normalizeGroupKey(actionTarget.dataset.groupId);
       if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key);
       else state.collapsedGroups.add(key);
       persistCollapsedGroups();
       renderPanel({ focusGroupKey: key });
+    } else if (action === 'toggle-token-group') {
+      const key = `token:${normalizeGroupKey(actionTarget.dataset.groupId)}`;
+      if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key);
+      else state.collapsedGroups.add(key);
+      persistCollapsedGroups();
+      renderPanel({ focusGroupKey: normalizeGroupKey(actionTarget.dataset.groupId) });
     }
   }
 
@@ -854,13 +1271,20 @@
     state.lifecycleID += 1;
     state.refreshSequence += 1;
     state.expanded = false;
+    state.activeTab = readActiveTab();
+    state.restoreFocusID = state.activeTab === TOKEN_TAB ? 'logsTokenPanelTrigger' : 'logsChannelPanelTrigger';
     state.loaded = false;
+    state.tokenLoaded = false;
     state.loading = false;
     state.loadError = null;
+    state.tokenLoadError = null;
     state.lastLoadedAt = 0;
     state.channels = [];
     state.groups = [];
+    state.tokens = [];
+    state.tokenGroups = [];
     state.pendingChannelIDs.clear();
+    state.pendingTokenIDs.clear();
     state.orderSaving = false;
     state.collapsedGroups = readCollapsedGroups();
     bindEvents();
@@ -884,6 +1308,8 @@
     state.root = null;
     state.initialized = false;
     state.expanded = false;
+    state.activeTab = CHANNEL_TAB;
+    state.restoreFocusID = 'logsChannelPanelTrigger';
   }
 
   window.LogsChannelQuickPanel = Object.freeze({
@@ -896,7 +1322,12 @@
       compareChannelsByPriority,
       formatDailyCost,
       normalizeGroupKey,
-      renderChannelRow
+      renderChannelRow,
+      normalizeTokenID,
+      compareTokens,
+      buildTokenGroups,
+      renderTokenRow,
+      tokenEnabledSummary
     })
   });
 })();
