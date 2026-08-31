@@ -42,9 +42,11 @@ function createElement(props = {}) {
     style: props.style || {},
     textContent: props.textContent || '',
     children: [],
+    options: props.options || null,
     classList: createClassList(),
     appendChild(child) {
       this.children.push(child);
+      if (Array.isArray(this.options)) this.options.push(child);
       return child;
     },
     addEventListener(type, handler) {
@@ -225,6 +227,19 @@ function createHarness({
   elements.channelScheduledCheckModelWrapper = createElement({ id: 'channelScheduledCheckModelWrapper', hidden: false });
   elements.channelScheduledCheckEnabledWrapper = createElement({ id: 'channelScheduledCheckEnabledWrapper', hidden: false });
   elements.channelScheduledCheckModelHint = createElement({ id: 'channelScheduledCheckModelHint', textContent: '' });
+  elements.channelCooldownFixedEnabled = createElement({ id: 'channelCooldownFixedEnabled', type: 'checkbox', checked: !!(channel && channel.channel_cooldown_fixed_enabled), dataset: {} });
+  elements.channelCooldownFixedSeconds = createElement({ id: 'channelCooldownFixedSeconds', value: channel ? String(channel.channel_cooldown_fixed_seconds || 10) : '10' });
+  elements.channelInputPriorityBonusEnabled = createElement({ id: 'channelInputPriorityBonusEnabled', type: 'checkbox', checked: !!(channel && channel.input_priority_bonus_enabled), dataset: {} });
+  elements.channelInputPriorityThreshold = createElement({ id: 'channelInputPriorityThreshold', value: channel ? String(channel.input_priority_threshold || 12000) : '12000' });
+  elements.channelInputPriorityBonus = createElement({ id: 'channelInputPriorityBonus', value: channel ? String(channel.input_priority_bonus || 100) : '100' });
+  elements.channelModelFixedPriceEnabled = createElement({ id: 'channelModelFixedPriceEnabled', type: 'checkbox', checked: !!(channel && channel.model_fixed_price_enabled), dataset: {} });
+  const initialGroupID = String(channel && channel.group_id || 0);
+  elements.channelGroup = createElement({
+    id: 'channelGroup',
+    value: initialGroupID,
+    dataset: {},
+    options: [{ value: '0' }].concat(initialGroupID === '0' ? [] : [{ value: initialGroupID }])
+  });
   elements.channelDuplicateHint = createElement({ id: 'channelDuplicateHint', hidden: true, textContent: '' });
   elements.channelModal = createElement({ id: 'channelModal' });
   elements.channelSaveBtn = createElement({ id: 'channelSaveBtn', disabled: false });
@@ -263,6 +278,7 @@ function createHarness({
       note: String(key?.note || '')
     })),
     inlineKeyVisible: true,
+    customRulesState: null,
     currentModelFilter: '',
     deletingChannelRequest: null,
     selectedChannelIds: new Set(),
@@ -367,6 +383,9 @@ function createHarness({
     },
     document: {
       body: {},
+      createElement(tagName) {
+        return createElement({ type: tagName });
+      },
       createDocumentFragment() {
         return {
           children: [],
@@ -440,6 +459,12 @@ function createHarness({
           };
         }
       },
+      resetCustomRulesState(value) {
+        sandbox.customRulesState = value ? JSON.parse(JSON.stringify(value)) : null;
+      },
+      collectCustomRulesForSubmit() {
+        return sandbox.customRulesState;
+      },
       showSuccess() {},
       showError(message) {
         throw new Error(message);
@@ -488,6 +513,15 @@ function createHarness({
     },
     getCurrentKeyCooldowns() {
       return sandbox.currentChannelKeyCooldowns.map((item) => ({ ...item }));
+    },
+    getInlineKeyRows() {
+      return sandbox.inlineKeyTableData.map((item) => ({ ...item }));
+    },
+    getModelRows() {
+      return sandbox.redirectTableData.map((item) => ({ ...item }));
+    },
+    getCustomRulesState() {
+      return sandbox.customRulesState ? JSON.parse(JSON.stringify(sandbox.customRulesState)) : null;
     },
     setInlineURLs(urls) {
       sandbox.inlineURLTableData = Array.isArray(urls) ? urls.slice() : [];
@@ -792,6 +826,170 @@ test('复制渠道会按复制后的 URL 触发重复渠道提前检测', async 
     channel_type: 'anthropic',
     urls: ['https://api.example.com']
   });
+});
+
+test('复制渠道会保留协议转换及其它渠道配置并提交完整 payload', async () => {
+  const channel = {
+    id: 8,
+    name: 'terra-source',
+    url: 'https://terra.example.com',
+    channel_type: 'gemini',
+    protocol_transform_mode: 'local',
+    protocol_transforms: ['anthropic', 'openai'],
+    key_strategy: 'round_robin',
+    priority: 37,
+    rpm_limit: 88,
+    max_concurrency: 6,
+    request_delay_seconds: 4,
+    group_id: 42,
+    group_name: 'Terra',
+    daily_cost_limit: 12.5,
+    cost_multiplier: 0.75,
+    enabled: false,
+    channel_cooldown_fixed_enabled: true,
+    channel_cooldown_fixed_seconds: 23,
+    input_priority_bonus_enabled: true,
+    input_priority_threshold: 9000,
+    input_priority_bonus: 140,
+    scheduled_check_enabled: true,
+    scheduled_check_model: 'gpt-5.6-terra',
+    model_fixed_price_enabled: true,
+    custom_request_rules: {
+      headers: [{ action: 'append', name: 'X-Trace', value: 'terra' }],
+      body: [{ action: 'override', path: 'service_tier', value: '"fast"' }]
+    },
+    balance_query_script: '({ request: { url: "{{baseUrl}}/balance" } })',
+    proxy_url: 'socks5://127.0.0.1:1080',
+    models: [
+      { model: 'gpt-5.6-terra', redirect_model: 'gpt-5.6-upstream', fixed_cost_per_request: 0.35, disabled: false },
+      { model: 'gpt-5.4', redirect_model: '', fixed_cost_per_request: 0, disabled: true }
+    ]
+  };
+  const apiKeys = [
+    { api_key: 'sk-terra-1', note: 'primary' },
+    { api_key: 'sk-terra-2', note: 'backup' }
+  ];
+  const listedChannel = {
+    ...channel,
+    url: 'https://stale.example.com',
+    channel_type: 'anthropic',
+    protocol_transform_mode: 'upstream',
+    protocol_transforms: [],
+    key_strategy: 'sequential',
+    priority: -1,
+    rpm_limit: 0,
+    max_concurrency: 0,
+    request_delay_seconds: 0,
+    group_id: 7,
+    group_name: 'Stale',
+    daily_cost_limit: 0,
+    cost_multiplier: 1,
+    channel_cooldown_fixed_enabled: false,
+    input_priority_bonus_enabled: false,
+    scheduled_check_enabled: false,
+    scheduled_check_model: '',
+    model_fixed_price_enabled: false,
+    custom_request_rules: null,
+    balance_query_script: '',
+    proxy_url: '',
+    models: [{ model: 'stale-model', redirect_model: '', fixed_cost_per_request: 0, disabled: false }]
+  };
+  const harness = createHarness({
+    channel: listedChannel,
+    apiKeys: [{ api_key: 'sk-stale', note: 'stale' }],
+    editorResponse: {
+      channel,
+      keys: apiKeys,
+      model_stats: { available: true, items: [] },
+      url_stats: { available: true, items: [] },
+      features: { scheduled_check_enabled: true }
+    },
+    duplicateResponses: [
+      { success: true, data: { duplicates: [] } },
+      { success: true, data: { duplicates: [] } }
+    ]
+  });
+
+  await harness.api.copyChannel(channel.id, listedChannel.name);
+
+  assert.equal(harness.getProtocolTransformInput('anthropic').checked, true);
+  assert.equal(harness.getProtocolTransformInput('openai').checked, true);
+  assert.equal(harness.getProtocolTransformInput('gemini').disabled, true);
+  assert.equal(harness.getProtocolTransformModeInput('local').checked, true);
+  assert.equal(harness.getProtocolTransformModeInput('upstream').checked, false);
+  assert.equal(String(harness.elements.channelPriority.value), '37');
+  assert.equal(String(harness.elements.channelRPMLimit.value), '88');
+  assert.equal(harness.elements.channelMaxConcurrency.value, '6');
+  assert.equal(harness.elements.channelRequestDelaySeconds.value, '4');
+  assert.equal(harness.elements.channelGroup.value, '42');
+  assert.equal(String(harness.elements.channelDailyCostLimit.value), '12.5');
+  assert.equal(String(harness.elements.channelCostMultiplier.value), '0.75');
+  assert.equal(harness.elements.channelEnabled.checked, true);
+  assert.equal(harness.elements.channelCooldownFixedEnabled.checked, true);
+  assert.equal(harness.elements.channelCooldownFixedSeconds.value, '23');
+  assert.equal(harness.elements.channelInputPriorityBonusEnabled.checked, true);
+  assert.equal(harness.elements.channelInputPriorityThreshold.value, '9000');
+  assert.equal(harness.elements.channelInputPriorityBonus.value, '140');
+  assert.equal(harness.elements.channelScheduledCheckEnabled.checked, true);
+  assert.equal(harness.elements.channelScheduledCheckModel.value, 'gpt-5.6-terra');
+  assert.equal(harness.elements.channelModelFixedPriceEnabled.checked, true);
+  assert.equal(harness.elements.channelProxyURL.value, channel.proxy_url);
+  assert.equal(harness.elements.channelBalanceQueryScript.value, channel.balance_query_script);
+  assert.deepEqual(harness.getInlineKeyRows(), [
+    { api_key: 'sk-terra-1', note: 'primary' },
+    { api_key: 'sk-terra-2', note: 'backup' }
+  ]);
+  assert.deepEqual(harness.getModelRows(), [
+    { model: 'gpt-5.6-terra', redirect_model: 'gpt-5.6-upstream', fixed_cost_per_request: '0.35', disabled: false },
+    { model: 'gpt-5.4', redirect_model: '', fixed_cost_per_request: '', disabled: true }
+  ]);
+  assert.deepEqual(harness.getCustomRulesState(), channel.custom_request_rules);
+  assert.deepEqual(Array.from(harness.dataFetchCalls), [
+    `/admin/channels/${channel.id}/editor`
+  ]);
+
+  await harness.runTimers();
+  // 模拟浏览器对同名单选框的互斥行为。
+  harness.setCheckedRadio('channelType', 'gemini');
+  harness.setCheckedRadio('keyStrategy', 'round_robin');
+  harness.api.initChannelEditorActions();
+  await harness.submitForm();
+  const saveCall = harness.fetchCalls.find((call) => call.path === '/admin/channels');
+  assert.ok(saveCall);
+  const payload = JSON.parse(saveCall.options.body);
+  assert.equal(payload.name, 'terra-source - Copy');
+  assert.equal(payload.url, channel.url);
+  assert.equal(payload.channel_type, 'gemini');
+  assert.equal(payload.protocol_transform_mode, 'local');
+  assert.deepEqual(payload.protocol_transforms, ['anthropic', 'openai']);
+  assert.equal(payload.key_strategy, 'round_robin');
+  assert.equal(payload.priority, 37);
+  assert.equal(payload.rpm_limit, 88);
+  assert.equal(payload.max_concurrency, 6);
+  assert.equal(payload.request_delay_seconds, 4);
+  assert.equal(payload.group_id, 42);
+  assert.equal(payload.daily_cost_limit, 12.5);
+  assert.equal(payload.cost_multiplier, 0.75);
+  assert.equal(payload.enabled, true);
+  assert.equal(payload.channel_cooldown_fixed_enabled, true);
+  assert.equal(payload.channel_cooldown_fixed_seconds, 23);
+  assert.equal(payload.input_priority_bonus_enabled, true);
+  assert.equal(payload.input_priority_threshold, 9000);
+  assert.equal(payload.input_priority_bonus, 140);
+  assert.equal(payload.scheduled_check_enabled, true);
+  assert.equal(payload.scheduled_check_model, 'gpt-5.6-terra');
+  assert.equal(payload.model_fixed_price_enabled, true);
+  assert.deepEqual(payload.api_keys, [
+    { api_key: 'sk-terra-1', note: 'primary' },
+    { api_key: 'sk-terra-2', note: 'backup' }
+  ]);
+  assert.deepEqual(payload.models, [
+    { model: 'gpt-5.6-terra', redirect_model: 'gpt-5.6-upstream', fixed_cost_per_request: 0.35, disabled: false },
+    { model: 'gpt-5.4', redirect_model: '', fixed_cost_per_request: 0, disabled: true }
+  ]);
+  assert.deepEqual(payload.custom_request_rules, channel.custom_request_rules);
+  assert.equal(payload.balance_query_script, channel.balance_query_script);
+  assert.equal(payload.proxy_url, channel.proxy_url);
 });
 
 test('保存渠道时 payload 带上 protocol_transforms', async () => {

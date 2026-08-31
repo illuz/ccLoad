@@ -633,6 +633,82 @@ async function showAddModal() {
   document.getElementById('channelModal').classList.add('show');
 }
 
+function buildChannelEditorModelRows(channel, modelStats) {
+  const includeRuntimeState = modelStats !== undefined;
+  const modelCooldowns = includeRuntimeState
+    ? new Map((channel.model_cooldowns || []).map(cooldown => [cooldown.model, cooldown]))
+    : null;
+
+  return (channel.models || []).map(m => {
+    const modelName = m.model || '';
+    const redirectModel = m.redirect_model || '';
+    const row = {
+      model: modelName,
+      redirect_model: redirectModel,
+      fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request),
+      disabled: !!m.disabled
+    };
+    if (!includeRuntimeState) return row;
+
+    const actualModel = redirectModel || modelName;
+    const cooldown = modelCooldowns.get(actualModel);
+    const stats = modelStats?.get(normalizeModelStatsKey(modelName));
+    return {
+      ...row,
+      cooldown_until: cooldown?.cooldown_until || '',
+      cooldown_remaining_ms: cooldown?.cooldown_remaining_ms || 0,
+      model_stats: stats || null,
+      model_stats_unavailable: modelStats === null
+    };
+  });
+}
+
+function populateChannelConfigForm(channel, options = {}) {
+  const channelType = channel.channel_type || 'anthropic';
+  const radioButton = document.querySelector(`input[name="channelType"][value="${channelType}"]`);
+  if (radioButton) radioButton.checked = true;
+
+  renderProtocolTransformOptions(channelType, channel.protocol_transforms || []);
+  renderProtocolTransformModeOptions(channel.protocol_transform_mode || 'upstream');
+
+  const keyStrategy = channel.key_strategy || 'sequential';
+  const strategyRadio = document.querySelector(`input[name="keyStrategy"][value="${keyStrategy}"]`);
+  if (strategyRadio) strategyRadio.checked = true;
+
+  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
+  setChannelGroupSelectValue(channel.group_id || 0, channel.group_name || '');
+  setChannelInputValue('channelPriority', channel.priority);
+  setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
+  setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
+  setChannelInputValue('channelRequestDelaySeconds', String(channel.request_delay_seconds || 0));
+  setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
+  setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
+  setChannelCheckboxChecked('channelEnabled', options.enabled === undefined ? channel.enabled : options.enabled);
+  setChannelCheckboxChecked('channelCooldownFixedEnabled', !!channel.channel_cooldown_fixed_enabled);
+  setChannelInputValue('channelCooldownFixedSeconds', String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10));
+  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', !!channel.input_priority_bonus_enabled);
+  setChannelInputValue('channelInputPriorityThreshold', String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000));
+  setChannelInputValue('channelInputPriorityBonus', String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100));
+  setChannelCheckboxChecked('channelScheduledCheckEnabled', !!channel.scheduled_check_enabled);
+  setChannelInputValue('channelScheduledCheckModel', channel.scheduled_check_model || '');
+  setChannelCheckboxChecked('channelModelFixedPriceEnabled', !!channel.model_fixed_price_enabled);
+
+  redirectTableData = buildChannelEditorModelRows(channel, options.modelStats);
+  selectedModelIndices.clear();
+  currentModelFilter = '';
+  const modelFilterInput = document.getElementById('modelFilterInput');
+  if (modelFilterInput) modelFilterInput.value = '';
+  renderRedirectTable();
+  syncModelFixedPriceVisibility();
+  syncChannelCooldownFixedState();
+  syncInputPriorityBonusState();
+  syncScheduledCheckModelState();
+
+  invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
+  setChannelInputValue('channelProxyURL', channel.proxy_url || '');
+  setChannelInputValue('channelBalanceQueryScript', channel.balance_query_script || '');
+}
+
 async function editChannel(id) {
   let editorData;
   try {
@@ -708,69 +784,7 @@ async function editChannel(id) {
   document.getElementById('inlineEyeOffIcon').style.display = 'block';
   renderInlineKeyTable();
 
-  renderProtocolTransformOptions(channelType, channel.protocol_transforms || []);
-  renderProtocolTransformModeOptions(channel.protocol_transform_mode || 'upstream');
-  const keyStrategy = channel.key_strategy || 'sequential';
-  const strategyRadio = document.querySelector(`input[name="keyStrategy"][value="${keyStrategy}"]`);
-  if (strategyRadio) {
-    strategyRadio.checked = true;
-  }
-  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
-  setChannelGroupSelectValue(channel.group_id || 0, channel.group_name || '');
-  setChannelInputValue('channelPriority', channel.priority);
-  setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
-  setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
-  setChannelInputValue('channelRequestDelaySeconds', String(channel.request_delay_seconds || 0));
-  setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
-  setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
-  setChannelCheckboxChecked('channelEnabled', channel.enabled);
-  setChannelCheckboxChecked('channelCooldownFixedEnabled', !!channel.channel_cooldown_fixed_enabled);
-  setChannelInputValue('channelCooldownFixedSeconds', String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10));
-  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', !!channel.input_priority_bonus_enabled);
-  setChannelInputValue('channelInputPriorityThreshold', String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000));
-  setChannelInputValue('channelInputPriorityBonus', String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100));
-  setChannelCheckboxChecked('channelScheduledCheckEnabled', !!channel.scheduled_check_enabled);
-  setChannelInputValue('channelScheduledCheckModel', channel.scheduled_check_model || '');
-  const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
-  if (fixedPriceEnabled) fixedPriceEnabled.checked = !!channel.model_fixed_price_enabled;
-
-  // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
-  const modelCooldowns = new Map(
-    (channel.model_cooldowns || []).map(cooldown => [cooldown.model, cooldown])
-  );
-  redirectTableData = (channel.models || []).map(m => {
-    const modelName = m.model || '';
-    const redirectModel = m.redirect_model || '';
-    const actualModel = redirectModel || modelName;
-    const cooldown = modelCooldowns.get(actualModel);
-    const stats = modelStats?.get(normalizeModelStatsKey(modelName));
-    return {
-      model: modelName,
-      redirect_model: redirectModel,
-      fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request),
-      disabled: !!m.disabled,
-      cooldown_until: cooldown?.cooldown_until || '',
-      cooldown_remaining_ms: cooldown?.cooldown_remaining_ms || 0,
-      model_stats: stats || null,
-      model_stats_unavailable: modelStats === null
-    };
-  });
-  selectedModelIndices.clear();
-  currentModelFilter = '';
-  const modelFilterInput = document.getElementById('modelFilterInput');
-  if (modelFilterInput) modelFilterInput.value = '';
-  renderRedirectTable();
-  syncModelFixedPriceVisibility();
-  syncChannelCooldownFixedState();
-  syncInputPriorityBonusState();
-  syncScheduledCheckModelState();
-
-  invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
-
-  const proxyUrlInput = document.getElementById('channelProxyURL');
-  if (proxyUrlInput) proxyUrlInput.value = channel.proxy_url || '';
-  const balanceScriptInput = document.getElementById('channelBalanceQueryScript');
-  if (balanceScriptInput) balanceScriptInput.value = channel.balance_query_script || '';
+  populateChannelConfigForm(channel, { modelStats });
 
   resetChannelFormDirty();
   document.getElementById('channelModal').classList.add('show');
@@ -1638,11 +1652,37 @@ function batchRefreshSelectedChannelsReplace() {
 }
 
 async function copyChannel(id, name) {
-  const channel = channels.find(c => c.id === id);
-  if (!channel) return;
-  await syncScheduledCheckVisibility();
+  let editorData;
+  try {
+    editorData = await fetchDataWithAuth(`/admin/channels/${id}/editor`);
+  } catch (error) {
+    console.error('Failed to fetch channel editor data', error);
+    if (window.showError) window.showError(window.t('channels.loadChannelsFailed'));
+    return;
+  }
 
-  const copiedName = generateCopyName(name);
+  const channel = editorData && editorData.channel;
+  const apiKeys = editorData && Array.isArray(editorData.keys) ? editorData.keys : null;
+  if (!channel || apiKeys === null) {
+    console.error('Invalid channel editor data', editorData);
+    if (window.showError) window.showError(window.t('channels.loadChannelsFailed'));
+    return;
+  }
+
+  const scheduledCheckEnabled = Boolean(
+    editorData.features && editorData.features.scheduled_check_enabled
+  );
+  const channelType = channel.channel_type || 'anthropic';
+  const scheduledVisibilityPromise = syncScheduledCheckVisibility(scheduledCheckEnabled);
+  const channelTypeRenderPromise = window.ChannelTypeManager && typeof window.ChannelTypeManager.renderChannelTypeRadios === 'function'
+    ? window.ChannelTypeManager.renderChannelTypeRadios('channelTypeRadios', channelType)
+    : Promise.resolve();
+  await Promise.all([
+    scheduledVisibilityPromise,
+    channelTypeRenderPromise
+  ]);
+
+  const copiedName = generateCopyName(channel.name || name);
 
   editingChannelId = null;
   clearChannelDuplicateHint();
@@ -1651,13 +1691,6 @@ async function copyChannel(id, name) {
   document.getElementById('channelName').value = copiedName;
   setInlineURLTableData(channel.url);
 
-  let apiKeys = [];
-  try {
-    apiKeys = (await fetchDataWithAuth(`/admin/channels/${id}/keys`)) || [];
-  } catch (e) {
-    console.error('Failed to fetch API Keys', e);
-  }
-
   setInlineKeyTableDataFromAPI(apiKeys);
 
   inlineKeyVisible = true;
@@ -1665,57 +1698,8 @@ async function copyChannel(id, name) {
   document.getElementById('inlineEyeOffIcon').style.display = 'block';
   renderInlineKeyTable();
 
-  const channelType = channel.channel_type || 'anthropic';
-  const radioButton = document.querySelector(`input[name="channelType"][value="${channelType}"]`);
-  if (radioButton) {
-    radioButton.checked = true;
-  }
+  populateChannelConfigForm(channel, { enabled: true });
   scheduleChannelDuplicateHintCheck();
-  const keyStrategy = channel.key_strategy || 'sequential';
-  const strategyRadio = document.querySelector(`input[name="keyStrategy"][value="${keyStrategy}"]`);
-  if (strategyRadio) {
-    strategyRadio.checked = true;
-  }
-  if (typeof refreshChannelGroupOptions === 'function') refreshChannelGroupOptions();
-  setChannelGroupSelectValue(channel.group_id || 0, channel.group_name || '');
-  setChannelInputValue('channelPriority', channel.priority);
-  setChannelInputValue('channelRPMLimit', channel.rpm_limit || 0);
-  setChannelInputValue('channelMaxConcurrency', String(channel.max_concurrency || 0));
-  setChannelInputValue('channelRequestDelaySeconds', String(channel.request_delay_seconds || 0));
-  setChannelInputValue('channelDailyCostLimit', channel.daily_cost_limit || 0);
-  setChannelInputValue('channelCostMultiplier', (Number(channel.cost_multiplier) >= 0 ? Number(channel.cost_multiplier) : 1));
-  setChannelCheckboxChecked('channelEnabled', true);
-  setChannelCheckboxChecked('channelCooldownFixedEnabled', !!channel.channel_cooldown_fixed_enabled);
-  setChannelInputValue('channelCooldownFixedSeconds', String(Number(channel.channel_cooldown_fixed_seconds) > 0 ? Number(channel.channel_cooldown_fixed_seconds) : 10));
-  setChannelCheckboxChecked('channelInputPriorityBonusEnabled', !!channel.input_priority_bonus_enabled);
-  setChannelInputValue('channelInputPriorityThreshold', String(Number(channel.input_priority_threshold) > 0 ? Number(channel.input_priority_threshold) : 12000));
-  setChannelInputValue('channelInputPriorityBonus', String(Number.isFinite(Number(channel.input_priority_bonus)) && Number(channel.input_priority_bonus) !== 0 ? Number(channel.input_priority_bonus) : 100));
-  setChannelCheckboxChecked('channelScheduledCheckEnabled', !!channel.scheduled_check_enabled);
-  setChannelInputValue('channelScheduledCheckModel', channel.scheduled_check_model || '');
-  const fixedPriceEnabled = document.getElementById('channelModelFixedPriceEnabled');
-  if (fixedPriceEnabled) fixedPriceEnabled.checked = !!channel.model_fixed_price_enabled;
-
-  // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
-  redirectTableData = (channel.models || []).map(m => ({
-    model: m.model || '',
-    redirect_model: m.redirect_model || '',
-    fixed_cost_per_request: formatFixedCostPerRequestValue(m.fixed_cost_per_request),
-    disabled: !!m.disabled
-  }));
-  selectedModelIndices.clear();
-  currentModelFilter = '';
-  const modelFilterInput = document.getElementById('modelFilterInput');
-  if (modelFilterInput) modelFilterInput.value = '';
-  renderRedirectTable();
-  syncModelFixedPriceVisibility();
-  syncChannelCooldownFixedState();
-  syncInputPriorityBonusState();
-  syncScheduledCheckModelState();
-  invokeChannelEditorAction('resetCustomRulesState', channel.custom_request_rules || null);
-  const proxyUrlInput = document.getElementById('channelProxyURL');
-  if (proxyUrlInput) proxyUrlInput.value = channel.proxy_url || '';
-  const balanceScriptInput = document.getElementById('channelBalanceQueryScript');
-  if (balanceScriptInput) balanceScriptInput.value = channel.balance_query_script || '';
 
   resetChannelFormDirty();
   document.getElementById('channelModal').classList.add('show');
