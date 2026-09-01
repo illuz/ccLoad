@@ -967,6 +967,7 @@ window.I18N_LOCALES['en'] = {
   'logs.channelPanel.tokenEnabledSummary': '{enabled}/{total} enabled',
   'logs.channelPanel.priority': 'Priority {priority}',
   'logs.channelPanel.dailyCost': 'Today {cost}',
+  'logs.channelPanel.recentCacheHitRate': 'Last 30m cache hit rate {rate}',
   'logs.channelPanel.tokenDailyCost': 'Today {cost}',
   'logs.channelPanel.tokenUsage': '{count} calls',
   'logs.channelPanel.tokenLastUsed': 'Last used {time}',

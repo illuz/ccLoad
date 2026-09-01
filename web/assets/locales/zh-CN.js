@@ -967,6 +967,7 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.channelPanel.tokenEnabledSummary': '{enabled}/{total} 已启用',
   'logs.channelPanel.priority': '优先级 {priority}',
   'logs.channelPanel.dailyCost': '当日 {cost}',
+  'logs.channelPanel.recentCacheHitRate': '近半小时缓存命中率 {rate}',
   'logs.channelPanel.tokenDailyCost': '当日 {cost}',
   'logs.channelPanel.tokenUsage': '{count} 次调用',
   'logs.channelPanel.tokenLastUsed': '最后使用 {time}',

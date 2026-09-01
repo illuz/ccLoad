@@ -190,6 +190,84 @@ test('渠道行在优先级旁展示格式化的当日使用费用', () => {
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*?grid-template-areas:\s*"priority daily-cost"\s*"type cooldown";/);
 });
 
+test('缓存命中率使用按分钟对齐的近半小时窗口', () => {
+  const api = loadTestAPI();
+  const range = api.buildRecentCacheRange(1700000123456);
+  assert.deepEqual(plain(range), {
+    startMs: 1699998300000,
+    endMs: 1700000100000
+  });
+  assert.match(source, /\/admin\/stats\?\$\{recentRangeQuery\}/);
+  assert.match(source, /\/admin\/auth-tokens\?\$\{recentRangeQuery\}/);
+});
+
+test('渠道和令牌缓存统计按实体聚合并计算命中率', () => {
+  const api = loadTestAPI();
+  const channelStats = api.buildChannelCacheStats({ stats: [
+    {
+      channel_id: 7,
+      total_input_tokens: 100,
+      total_cache_read_input_tokens: 50,
+      total_cache_creation_input_tokens: 10
+    },
+    {
+      channel_id: '7',
+      total_input_tokens: 20,
+      total_cache_read_input_tokens: 10,
+      total_cache_creation_input_tokens: 0
+    },
+    {
+      channel_id: 8,
+      total_input_tokens: 100,
+      total_cache_read_input_tokens: 0,
+      total_cache_creation_input_tokens: 0
+    }
+  ] });
+  assert.equal(channelStats.get(7).denominator, 190);
+  assert.equal(channelStats.get(7).rate, 60 / 190);
+  assert.equal(channelStats.get(8).rate, 0);
+
+  const tokenStats = api.buildTokenCacheStats({ tokens: [
+    {
+      id: 3,
+      prompt_tokens_total: 80,
+      cache_read_tokens_total: 20,
+      cache_creation_tokens_total: 0
+    },
+    {
+      id: 3,
+      prompt_tokens_total: 20,
+      cache_read_tokens_total: 0,
+      cache_creation_tokens_total: 10
+    }
+  ] });
+  assert.equal(tokenStats.get(3).denominator, 130);
+  assert.equal(tokenStats.get(3).rate, 20 / 130);
+  assert.equal(api.buildCacheMetric(0, 0, 0), null);
+});
+
+test('渠道和令牌行展示近半小时缓存命中率', () => {
+  const api = loadTestAPI();
+  const channelRow = api.renderChannelRow({
+    id: 7,
+    name: 'Cache channel',
+    channel_type: 'openai',
+    priority: 10,
+    enabled: true
+  }, '1', api.buildCacheMetric(100, 25, 0));
+  assert.match(channelRow, /logs-channel-panel__cache-rate[^>]*>Last 30m cache hit rate 20\.0%<\/div>/);
+
+  const tokenRow = api.renderTokenRow({
+    id: 3,
+    description: 'Cache token',
+    is_active: true
+  }, '1', api.buildCacheMetric(100, 0, 0));
+  assert.match(tokenRow, /logs-channel-panel__cache-rate[^>]*>Last 30m cache hit rate 0\.0%<\/div>/);
+
+  assert.equal(api.formatRecentCacheHitRate(null), '');
+  assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
+});
+
 test('排序复用批量优先级接口且限制为同组拖放', () => {
   assert.match(source, /\/admin\/channels\/batch-priority/);
   assert.match(source, /list\s*!==\s*state\.nativeDrag\.list/);
@@ -212,7 +290,7 @@ test('渠道浮窗文案同时提供中英文键值', () => {
     'openTokens', 'collapseTokens', 'refreshTokens', 'channelTab', 'tokenTab', 'loadingTokens',
     'tokenLoadFailed', 'emptyTokens', 'tokenEnabledSummary', 'tokenUsage',
     'tokenDailyCost', 'tokenLastUsed', 'tokenID', 'editToken',
-    'tokenToggleEnabled', 'tokenToggleDisabled', 'tokenToggleFailed'
+    'tokenToggleEnabled', 'tokenToggleDisabled', 'tokenToggleFailed', 'recentCacheHitRate'
   ]) {
     const key = `logs.channelPanel.${suffix}`;
     assert.ok(zhLocale.includes(`'${key}'`), `中文缺少 ${key}`);

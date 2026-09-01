@@ -330,7 +330,7 @@
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
-  min-height: 54px;
+  min-height: 66px;
   padding: 5px 12px 5px 7px;
   background: transparent;
   border-top: 1px solid var(--surface-border);
@@ -338,7 +338,7 @@
 
 .logs-channel-panel__token-row {
   grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 62px;
+  min-height: 76px;
   padding-left: 12px;
 }
 
@@ -362,6 +362,19 @@
   color: var(--neutral-500);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-channel-panel__cache-rate {
+  max-width: 100%;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--success-600);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-medium);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -586,11 +599,11 @@
   }
 
   .logs-channel-panel__row {
-    min-height: 56px;
+    min-height: 68px;
   }
 
   .logs-channel-panel__token-row {
-    min-height: 62px;
+    min-height: 76px;
   }
 
   .logs-channel-panel__token-row .logs-channel-panel__meta {
