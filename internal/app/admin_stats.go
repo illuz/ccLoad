@@ -118,6 +118,39 @@ func (s *Server) HandleStats(c *gin.Context) {
 	})
 }
 
+// HandleRecentCacheStats returns cache aggregates for each channel and token's
+// latest requests. The request limit is intentionally bounded in the storage
+// layer so this endpoint remains inexpensive even with a malformed query.
+// GET /admin/cache-stats/recent?limit=50
+func (s *Server) HandleRecentCacheStats(c *gin.Context) {
+	requestLimit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			requestLimit = parsed
+		}
+	}
+
+	stats, err := s.store.GetRecentCacheStats(c.Request.Context(), requestLimit)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	if stats == nil {
+		stats = &model.RecentCacheStats{
+			RequestLimit: requestLimit,
+			Channels:     []model.RecentCacheStat{},
+			Tokens:       []model.RecentCacheStat{},
+		}
+	}
+	if stats.Channels == nil {
+		stats.Channels = []model.RecentCacheStat{}
+	}
+	if stats.Tokens == nil {
+		stats.Tokens = []model.RecentCacheStat{}
+	}
+	RespondJSON(c, http.StatusOK, stats)
+}
+
 // HandlePublicSummary 获取基础统计摘要（路由层要求管理员登录）
 // GET /public/summary?range=today
 // 按渠道类型分组统计，Claude和Codex类型包含Token和成本信息

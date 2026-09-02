@@ -9,6 +9,7 @@
   const REFRESH_MAX_AGE_MS = 15000;
   const RECENT_CACHE_WINDOW_MS = 30 * 60 * 1000;
   const RECENT_CACHE_BUCKET_MS = 60 * 1000;
+  const RECENT_REQUEST_CACHE_COUNT = 50;
   const GROUP_COLORS = new Set([
     '#64748b', '#ef4444', '#f97316', '#f59e0b',
     '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6'
@@ -39,10 +40,27 @@
     'logs.channelPanel.priority': 'Priority {priority}',
     'logs.channelPanel.dailyCost': 'Today {cost}',
     'logs.channelPanel.recentCacheHitRate': 'Last 30m cache hit rate {rate}',
+    'logs.channelPanel.recentCacheHitRateShort': 'Hit rate {rate}',
+    'logs.channelPanel.recentCacheHitRateWindowShort': '30m {rate}',
+    'logs.channelPanel.recent50CacheHitRate': 'Last 50 requests cache hit rate {rate}',
+    'logs.channelPanel.recent50CacheHitRateShort': '50 req {rate}',
     'logs.channelPanel.tokenDailyCost': 'Today {cost}',
+    'logs.channelPanel.tokenDailyCostWithLimit': 'Today {cost}/{limit}',
     'logs.channelPanel.tokenUsage': '{count} calls',
     'logs.channelPanel.tokenLastUsed': 'Last used {time}',
     'logs.channelPanel.tokenID': 'ID {id}',
+    'logs.channelPanel.tokenDailyLimitDouble': 'Double',
+    'logs.channelPanel.tokenDailyLimitTriple': 'Triple',
+    'logs.channelPanel.tokenDailyLimitOverride': 'Temporary',
+    'logs.channelPanel.tokenDailyLimitDoubleTitle': "Today's limit doubled: {base} -> {effective}",
+    'logs.channelPanel.tokenDailyLimitTripleTitle': "Today's limit tripled: {base} -> {effective}",
+    'logs.channelPanel.tokenDailyLimitOverrideTitle': "Today's temporary limit: {base} -> {effective}",
+    'logs.channelPanel.tokenDailyLimitHint': 'Applies today only and resets after midnight',
+    'logs.channelPanel.tokenBatteryUnlimited': 'Unlimited quota',
+    'logs.channelPanel.tokenBatteryDailyRemaining': 'Daily remaining {remaining}/{limit} ({percent}%)',
+    'logs.channelPanel.tokenBatteryMonthlyRemaining': 'Monthly remaining {remaining}/{limit} ({percent}%)',
+    'logs.channelPanel.tokenBatteryTotalRemaining': 'Total remaining {remaining}/{limit} ({percent}%)',
+    'logs.channelPanel.tokenUnlimited': 'Unlimited',
     'logs.channelPanel.cooldown': 'Cooling down',
     'logs.channelPanel.dragHandle': 'Reorder {name}',
     'logs.channelPanel.editChannel': 'Edit {name}',
@@ -86,6 +104,8 @@
     tokenGroups: [],
     recentChannelCacheStats: new Map(),
     recentTokenCacheStats: new Map(),
+    recentChannel50CacheStats: new Map(),
+    recentToken50CacheStats: new Map(),
     collapsedGroups: new Set(),
     pendingChannelIDs: new Set(),
     pendingTokenIDs: new Set(),
@@ -243,6 +263,135 @@
     });
   }
 
+  function formatRecentCacheHitRateShort(metric) {
+    if (!metric || !Number.isFinite(Number(metric.rate))) return '';
+    return translate('logs.channelPanel.recentCacheHitRateShort', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
+    });
+  }
+
+  function formatRecentCacheHitRateWindowShort(metric) {
+    if (!metric || !Number.isFinite(Number(metric.rate))) return '';
+    return translate('logs.channelPanel.recentCacheHitRateWindowShort', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
+    });
+  }
+
+  function formatRecent50CacheHitRate(metric) {
+    if (!metric || !Number.isFinite(Number(metric.rate))) return '';
+    return translate('logs.channelPanel.recent50CacheHitRate', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
+    });
+  }
+
+  function formatRecent50CacheHitRateShort(metric) {
+    if (!metric || !Number.isFinite(Number(metric.rate))) return '';
+    return translate('logs.channelPanel.recent50CacheHitRateShort', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
+    });
+  }
+
+  function buildRecentRequestCacheQuery(limit = RECENT_REQUEST_CACHE_COUNT) {
+    const numericLimit = Number(limit);
+    const safeLimit = Number.isFinite(numericLimit) && numericLimit > 0
+      ? Math.min(1000, Math.trunc(numericLimit))
+      : RECENT_REQUEST_CACHE_COUNT;
+    const query = { limit: String(safeLimit) };
+    if (typeof URLSearchParams === 'function') return new URLSearchParams(query).toString();
+    return Object.entries(query)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join('&');
+  }
+
+  function buildRecentEntityCacheStats(entries, normalizeID, idFields = ['id', 'entity_id', 'entityID']) {
+    const rawStats = new Map();
+    if (!Array.isArray(entries)) return finalizeCacheMetrics(rawStats);
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const idValue = idFields.map((field) => entry[field]).find((value) => value !== undefined && value !== null);
+      const id = normalizeID(idValue);
+      if (!id) continue;
+      accumulateCacheMetric(
+        rawStats,
+        id,
+        entry.input_tokens ?? entry.inputTokens ?? entry.total_input_tokens ?? entry.prompt_tokens_total,
+        entry.cache_read_tokens ?? entry.cacheReadTokens ?? entry.total_cache_read_input_tokens ?? entry.cache_read_tokens_total,
+        entry.cache_creation_tokens ?? entry.cacheCreationTokens ?? entry.total_cache_creation_input_tokens ?? entry.cache_creation_tokens_total
+      );
+    }
+    return finalizeCacheMetrics(rawStats);
+  }
+
+  function buildRecentLogCacheStats(entries) {
+    const channelRawStats = new Map();
+    const tokenRawStats = new Map();
+    if (!Array.isArray(entries)) return { channels: new Map(), tokens: new Map() };
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const inputTokens = entry.input_tokens ?? entry.inputTokens;
+      const cacheReadTokens = entry.cache_read_input_tokens ?? entry.cacheReadInputTokens;
+      const cacheCreationTokens = entry.cache_creation_input_tokens ?? entry.cacheCreationInputTokens;
+      const channelID = normalizeChannelID(entry.channel_id ?? entry.channelID);
+      if (channelID) accumulateCacheMetric(channelRawStats, channelID, inputTokens, cacheReadTokens, cacheCreationTokens);
+      const tokenID = normalizeTokenID(entry.auth_token_id ?? entry.authTokenID);
+      if (tokenID) accumulateCacheMetric(tokenRawStats, tokenID, inputTokens, cacheReadTokens, cacheCreationTokens);
+    }
+    return {
+      channels: finalizeCacheMetrics(channelRawStats),
+      tokens: finalizeCacheMetrics(tokenRawStats)
+    };
+  }
+
+  function buildRecentRequestCacheStats(data) {
+    const payload = data && typeof data === 'object' && data.data && typeof data.data === 'object'
+      ? data.data
+      : data;
+    if (!payload || typeof payload !== 'object') {
+      return { channels: new Map(), tokens: new Map() };
+    }
+    if (Array.isArray(payload.channels) || Array.isArray(payload.tokens)) {
+      return {
+        channels: buildRecentEntityCacheStats(payload.channels, normalizeChannelID, ['id', 'entity_id', 'entityID', 'channel_id', 'channelID']),
+        tokens: buildRecentEntityCacheStats(payload.tokens, normalizeTokenID, ['id', 'entity_id', 'entityID', 'auth_token_id', 'authTokenID'])
+      };
+    }
+    const legacyEntries = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload.logs) ? payload.logs : []);
+    return buildRecentLogCacheStats(legacyEntries);
+  }
+
+  function buildChannelRecentRequestCacheStats(data) {
+    return buildRecentRequestCacheStats(data).channels;
+  }
+
+  function buildTokenRecentRequestCacheStats(data) {
+    return buildRecentRequestCacheStats(data).tokens;
+  }
+
+  function buildCacheRateBadge(shortText, fullText, modifier = '') {
+    if (!shortText || !fullText) return '';
+    const modifierClass = modifier ? ` logs-channel-panel__cache-rate--${modifier}` : '';
+    return `<span class="logs-channel-panel__cache-rate${modifierClass}" title="${escapeHTML(fullText)}" aria-label="${escapeHTML(fullText)}">${escapeHTML(shortText)}</span>`;
+  }
+
+  function buildRecentCacheRatesHtml(recentMetric, recent50Metric) {
+    const badges = [
+      buildCacheRateBadge(
+        formatRecentCacheHitRateWindowShort(recentMetric),
+        formatRecentCacheHitRate(recentMetric)
+      ),
+      buildCacheRateBadge(
+        formatRecent50CacheHitRateShort(recent50Metric),
+        formatRecent50CacheHitRate(recent50Metric),
+        'recent50'
+      )
+    ].filter(Boolean);
+    return badges.length
+      ? `<span class="logs-channel-panel__cache-rates">${badges.join('')}</span>`
+      : '';
+  }
+
   function formatDailyCost(value) {
     const numericValue = Number(value);
     const cost = Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0;
@@ -251,6 +400,173 @@
       if (formatted) return String(formatted);
     }
     return cost === 0 ? '$0' : `$${cost.toFixed(3)}`;
+  }
+
+  // Quota values stay compact while the current usage keeps the page's
+  // three-decimal cost precision.
+  function formatQuotaCost(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) return '$0';
+    return `$${numericValue.toFixed(3).replace(/\.?0+$/, '')}`;
+  }
+
+  function isTokenFlagEnabled(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+  }
+
+  function getTokenEffectiveDailyCostLimit(token) {
+    if (token && token.effective_daily_cost_limit_usd !== undefined) {
+      return Math.max(0, Number(token.effective_daily_cost_limit_usd) || 0);
+    }
+    const overrideLimit = Number(token && token.daily_limit_override_usd) || 0;
+    if (overrideLimit > 0) return overrideLimit;
+    const baseLimit = Number(token && token.daily_cost_limit_usd) || 0;
+    if (isTokenFlagEnabled(token && token.daily_limit_triple_enabled)) return Math.max(0, baseLimit * 3);
+    if (isTokenFlagEnabled(token && token.daily_limit_double_enabled)) return Math.max(0, baseLimit * 2);
+    return Math.max(0, baseLimit);
+  }
+
+  function getTokenEffectiveMonthlyCostLimit(token) {
+    if (token && token.effective_monthly_cost_limit_usd !== undefined) {
+      return Math.max(0, Number(token.effective_monthly_cost_limit_usd) || 0);
+    }
+    return Math.max(0, Number(token && token.monthly_cost_limit_usd) || 0);
+  }
+
+  function getTokenEffectiveCostLimit(token) {
+    if (token && token.effective_cost_limit_usd !== undefined) {
+      return Math.max(0, Number(token.effective_cost_limit_usd) || 0);
+    }
+    return Math.max(0, Number(token && token.cost_limit_usd) || 0);
+  }
+
+  function getTokenBatteryState(token) {
+    const windows = [
+      {
+        name: 'daily',
+        used: Math.max(0, Number(token && token.daily_cost_used_usd) || 0),
+        limit: getTokenEffectiveDailyCostLimit(token),
+        titleKey: 'logs.channelPanel.tokenBatteryDailyRemaining'
+      },
+      {
+        name: 'monthly',
+        used: Math.max(0, Number(token && token.monthly_cost_used_usd) || 0),
+        limit: getTokenEffectiveMonthlyCostLimit(token),
+        titleKey: 'logs.channelPanel.tokenBatteryMonthlyRemaining'
+      },
+      {
+        name: 'total',
+        used: Math.max(0, Number(token && (token.cost_used_usd ?? token.total_cost_usd)) || 0),
+        limit: getTokenEffectiveCostLimit(token),
+        titleKey: 'logs.channelPanel.tokenBatteryTotalRemaining'
+      }
+    ].filter((windowState) => windowState.limit > 0).map((windowState) => {
+      const remaining = Math.max(0, windowState.limit - windowState.used);
+      const ratio = Math.max(0, Math.min(1, remaining / windowState.limit));
+      return { ...windowState, remaining, ratio };
+    });
+
+    if (windows.length === 0) {
+      return {
+        source: 'unlimited',
+        ratio: 1,
+        percent: 100,
+        remainingUsd: Infinity,
+        limitUsd: 0,
+        usedUsd: 0,
+        levelClass: 'logs-channel-panel__token-battery--full',
+        fillClass: 'logs-channel-panel__token-battery-fill--full',
+        title: translate('logs.channelPanel.tokenBatteryUnlimited')
+      };
+    }
+
+    const selected = windows.reduce((tightest, windowState) => (
+      windowState.ratio < tightest.ratio ? windowState : tightest
+    ));
+    const ratio = selected.ratio;
+    const percent = Math.round(ratio * 100);
+    const title = windows.map((windowState) => translate(windowState.titleKey, {
+      remaining: formatQuotaCost(windowState.remaining),
+      limit: formatQuotaCost(windowState.limit),
+      percent: Math.round(windowState.ratio * 100)
+    })).join(' / ');
+
+    let tone = 'critical';
+    if (ratio >= 0.8) tone = 'full';
+    else if (ratio >= 0.6) tone = 'high';
+    else if (ratio >= 0.4) tone = 'medium';
+    else if (ratio >= 0.2) tone = 'low';
+
+    return {
+      source: windows.length === 1 ? selected.name : `multiple-${selected.name}`,
+      ratio,
+      percent,
+      remainingUsd: selected.remaining,
+      limitUsd: selected.limit,
+      usedUsd: selected.used,
+      levelClass: `logs-channel-panel__token-battery--${tone}`,
+      fillClass: `logs-channel-panel__token-battery-fill--${tone}`,
+      title
+    };
+  }
+
+  function buildTokenBatteryHtml(token) {
+    const battery = getTokenBatteryState(token);
+    return `
+      <span class="logs-channel-panel__token-battery-wrap" title="${escapeHTML(battery.title)}" aria-label="${escapeHTML(battery.title)}">
+        <span class="logs-channel-panel__token-battery ${battery.levelClass}" aria-hidden="true">
+          <span class="logs-channel-panel__token-battery-body">
+            <span class="logs-channel-panel__token-battery-fill ${battery.fillClass}" style="width: ${battery.percent}%;"></span>
+          </span>
+          <span class="logs-channel-panel__token-battery-cap"></span>
+        </span>
+        <span class="logs-channel-panel__token-battery-percent ${battery.levelClass}">${battery.percent}%</span>
+      </span>`;
+  }
+
+  function buildTokenLimitBadgesHtml(token) {
+    if (!token) return '';
+    const rawLimit = Math.max(0, Number(token.daily_cost_limit_usd) || 0);
+    const effectiveLimit = getTokenEffectiveDailyCostLimit(token);
+    const badges = [];
+    const base = rawLimit > 0 ? formatQuotaCost(rawLimit) : translate('logs.channelPanel.tokenUnlimited');
+
+    if (isTokenFlagEnabled(token.daily_limit_triple_enabled)) {
+      const title = rawLimit > 0
+        ? translate('logs.channelPanel.tokenDailyLimitTripleTitle', {
+          base,
+          effective: formatQuotaCost(effectiveLimit)
+        })
+        : translate('logs.channelPanel.tokenDailyLimitHint');
+      badges.push(`<span class="logs-channel-panel__token-badge logs-channel-panel__token-badge--daily-triple" title="${escapeHTML(title)}">&times;3 ${escapeHTML(translate('logs.channelPanel.tokenDailyLimitTriple'))}</span>`);
+    } else if (isTokenFlagEnabled(token.daily_limit_double_enabled)) {
+      const title = rawLimit > 0
+        ? translate('logs.channelPanel.tokenDailyLimitDoubleTitle', {
+          base,
+          effective: formatQuotaCost(effectiveLimit)
+        })
+        : translate('logs.channelPanel.tokenDailyLimitHint');
+      badges.push(`<span class="logs-channel-panel__token-badge logs-channel-panel__token-badge--daily-double" title="${escapeHTML(title)}">&times;2 ${escapeHTML(translate('logs.channelPanel.tokenDailyLimitDouble'))}</span>`);
+    }
+
+    const overrideLimit = Math.max(0, Number(token.daily_limit_override_usd) || 0);
+    if (overrideLimit > 0) {
+      const title = translate('logs.channelPanel.tokenDailyLimitOverrideTitle', {
+        base,
+        effective: formatQuotaCost(overrideLimit)
+      });
+      badges.push(`<span class="logs-channel-panel__token-badge logs-channel-panel__token-badge--daily-override" title="${escapeHTML(title)}">${escapeHTML(formatQuotaCost(overrideLimit))} ${escapeHTML(translate('logs.channelPanel.tokenDailyLimitOverride'))}</span>`);
+    }
+
+    return badges.join('');
+  }
+
+  function formatTokenDailyCost(token) {
+    const cost = formatDailyCost(token && token.daily_cost_used_usd);
+    const limit = getTokenEffectiveDailyCostLimit(token);
+    return limit > 0
+      ? translate('logs.channelPanel.tokenDailyCostWithLimit', { cost, limit: formatQuotaCost(limit) })
+      : translate('logs.channelPanel.tokenDailyCost', { cost });
   }
 
   function normalizeGroupColor(value) {
@@ -633,7 +949,7 @@
       </div>`;
   }
 
-  function renderChannelRow(channel, groupKey, cacheMetric = undefined) {
+  function renderChannelRow(channel, groupKey, cacheMetric = undefined, cache50Metric = undefined) {
     const id = normalizeChannelID(channel.id);
     const enabled = channel.enabled === true;
     const pending = state.pendingChannelIDs.has(id);
@@ -648,7 +964,10 @@
     const recentCacheMetric = cacheMetric === undefined
       ? state.recentChannelCacheStats.get(id)
       : cacheMetric;
-    const recentCacheText = formatRecentCacheHitRate(recentCacheMetric);
+    const recentCache50Metric = cache50Metric === undefined
+      ? state.recentChannel50CacheStats.get(id)
+      : cache50Metric;
+    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheMetric, recentCache50Metric);
     const cooldownHTML = coolingDown
       ? `<span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--cooldown"><span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span><span class="logs-channel-panel__cooldown">${escapeHTML(translate('logs.channelPanel.cooldown'))}</span></span>`
       : '';
@@ -659,7 +978,10 @@
           ${ICONS.grip}
         </span>
         <div class="logs-channel-panel__info">
-          <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+          <div class="logs-channel-panel__name-line">
+            <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+            ${recentCacheRatesHTML}
+          </div>
           <div class="logs-channel-panel__meta">
             <span class="logs-channel-panel__type">${escapeHTML(type)}</span>
             <span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--priority">
@@ -672,7 +994,6 @@
             </span>
             ${cooldownHTML}
           </div>
-          ${recentCacheText ? `<div class="logs-channel-panel__cache-rate" title="${escapeHTML(recentCacheText)}">${escapeHTML(recentCacheText)}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-channel" data-channel-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
@@ -703,7 +1024,7 @@
     return `${token.slice(0, 4)}****${token.slice(-4)}`;
   }
 
-  function renderTokenRow(token, groupKey, cacheMetric = undefined) {
+  function renderTokenRow(token, groupKey, cacheMetric = undefined, cache50Metric = undefined) {
     const id = normalizeTokenID(token && token.id);
     const active = isTokenActive(token);
     const pending = state.pendingTokenIDs.has(id);
@@ -712,9 +1033,7 @@
     const failureCount = Number(token && token.failure_count || 0);
     const usage = (Number.isFinite(successCount) ? successCount : 0)
       + (Number.isFinite(failureCount) ? failureCount : 0);
-    const dailyCost = translate('logs.channelPanel.tokenDailyCost', {
-      cost: formatDailyCost(token && token.daily_cost_used_usd)
-    });
+    const dailyCost = formatTokenDailyCost(token);
     const usageText = translate('logs.channelPanel.tokenUsage', { count: usage });
     const lastUsed = formatTokenLastUsed(token && token.last_used_at);
     const lastUsedText = lastUsed
@@ -727,18 +1046,27 @@
     const recentCacheMetric = cacheMetric === undefined
       ? state.recentTokenCacheStats.get(id)
       : cacheMetric;
-    const recentCacheText = formatRecentCacheHitRate(recentCacheMetric);
+    const recentCache50Metric = cache50Metric === undefined
+      ? state.recentToken50CacheStats.get(id)
+      : cache50Metric;
+    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheMetric, recentCache50Metric);
+    const tokenBatteryHTML = buildTokenBatteryHtml(token);
+    const tokenLimitBadgesHTML = buildTokenLimitBadgesHtml(token);
     const tokenMeta = [tokenIDText, usageText, dailyCost, lastUsedText].filter(Boolean);
 
     return `
       <div class="logs-channel-panel__row logs-channel-panel__token-row${active ? '' : ' is-disabled'}" role="listitem" data-token-id="${id}" data-group-id="${escapeHTML(groupKey)}">
         <div class="logs-channel-panel__info">
-          <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+          <div class="logs-channel-panel__name-line">
+            <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+            ${recentCacheRatesHTML}
+            ${tokenBatteryHTML}
+          </div>
+          ${tokenLimitBadgesHTML ? `<div class="logs-channel-panel__token-badges">${tokenLimitBadgesHTML}</div>` : ''}
           <div class="logs-channel-panel__meta" title="${escapeHTML(tokenMeta.join(' / '))}">
             ${tokenMeta.map((item, index) => `${index ? '<span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>' : ''}<span class="logs-channel-panel__meta-item">${escapeHTML(item)}</span>`).join('')}
           </div>
           ${masked ? `<div class="logs-channel-panel__token-mask" title="${escapeHTML(masked)}">${escapeHTML(masked)}</div>` : ''}
-          ${recentCacheText ? `<div class="logs-channel-panel__cache-rate" title="${escapeHTML(recentCacheText)}">${escapeHTML(recentCacheText)}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-token" data-token-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
@@ -835,6 +1163,8 @@
     state.tokenLoadError = null;
     state.recentChannelCacheStats = new Map();
     state.recentTokenCacheStats = new Map();
+    state.recentChannel50CacheStats = new Map();
+    state.recentToken50CacheStats = new Map();
     updateChrome();
     if (!state.loaded || !state.tokenLoaded) renderPanel();
 
@@ -861,12 +1191,16 @@
       const recentTokenCacheRequest = window.fetchDataWithAuth(`/admin/auth-tokens?${recentRangeQuery}`)
         .then((data) => ({ ok: true, data }))
         .catch((error) => ({ ok: false, error }));
-      const [channelResult, groupData, tokenResult, recentChannelCacheResult, recentTokenCacheResult] = await Promise.all([
+      const recentRequestCacheRequest = window.fetchDataWithAuth(`/admin/cache-stats/recent?${buildRecentRequestCacheQuery()}`)
+        .then((data) => ({ ok: true, data }))
+        .catch((error) => ({ ok: false, error }));
+      const [channelResult, groupData, tokenResult, recentChannelCacheResult, recentTokenCacheResult, recentRequestCacheResult] = await Promise.all([
         channelRequest,
         groupRequest,
         tokenRequest,
         recentChannelCacheRequest,
-        recentTokenCacheRequest
+        recentTokenCacheRequest,
+        recentRequestCacheRequest
       ]);
       if (lifecycleID !== state.lifecycleID || refreshSequence !== state.refreshSequence) return;
 
@@ -919,6 +1253,17 @@
           ? recentTokenCacheResult.error
           : new Error('Failed to load recent token cache stats');
         console.warn('Failed to load recent token cache stats:', error);
+      }
+
+      if (recentRequestCacheResult && recentRequestCacheResult.ok) {
+        const recentRequestStats = buildRecentRequestCacheStats(recentRequestCacheResult.data);
+        state.recentChannel50CacheStats = recentRequestStats.channels;
+        state.recentToken50CacheStats = recentRequestStats.tokens;
+      } else {
+        const error = recentRequestCacheResult && recentRequestCacheResult.error
+          ? recentRequestCacheResult.error
+          : new Error('Failed to load recent request cache stats');
+        console.warn('Failed to load recent request cache stats:', error);
       }
 
       if (!options.silent) {
@@ -1436,6 +1781,8 @@
     state.tokenGroups = [];
     state.recentChannelCacheStats = new Map();
     state.recentTokenCacheStats = new Map();
+    state.recentChannel50CacheStats = new Map();
+    state.recentToken50CacheStats = new Map();
     state.pendingChannelIDs.clear();
     state.pendingTokenIDs.clear();
     state.orderSaving = false;
@@ -1485,7 +1832,24 @@
       buildCacheMetric,
       buildChannelCacheStats,
       buildTokenCacheStats,
-      formatRecentCacheHitRate
+      formatRecentCacheHitRate,
+      formatRecentCacheHitRateShort,
+      formatRecentCacheHitRateWindowShort,
+      formatRecent50CacheHitRate,
+      formatRecent50CacheHitRateShort,
+      buildRecentRequestCacheQuery,
+      buildRecentRequestCacheStats,
+      buildChannelRecentRequestCacheStats,
+      buildTokenRecentRequestCacheStats,
+      buildRecentCacheRatesHtml,
+      formatQuotaCost,
+      getTokenEffectiveDailyCostLimit,
+      getTokenEffectiveMonthlyCostLimit,
+      getTokenEffectiveCostLimit,
+      getTokenBatteryState,
+      buildTokenBatteryHtml,
+      buildTokenLimitBadgesHtml,
+      formatTokenDailyCost
     })
   });
 })();

@@ -1033,6 +1033,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/active-requests/:request_id/failover", s.HandleFailoverActiveRequest)
 		admin.GET("/metrics", s.HandleMetrics)
 		admin.GET("/stats", s.HandleStats)
+		admin.GET("/cache-stats/recent", s.HandleRecentCacheStats)
 		admin.GET("/stats/filter-options", s.HandleStatsFilterOptions)
 		admin.GET("/cooldown/stats", s.HandleCooldownStats)
 		admin.GET("/models", s.HandleGetModels)

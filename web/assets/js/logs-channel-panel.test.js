@@ -246,7 +246,43 @@ test('渠道和令牌缓存统计按实体聚合并计算命中率', () => {
   assert.equal(api.buildCacheMetric(0, 0, 0), null);
 });
 
-test('渠道和令牌行展示近半小时缓存命中率', () => {
+test('最近 50 次缓存统计按渠道和令牌聚合', () => {
+  const api = loadTestAPI();
+  const stats = api.buildRecentRequestCacheStats({
+    request_limit: 50,
+    channels: [
+      { id: 7, request_count: 50, input_tokens: 150, cache_read_tokens: 35, cache_creation_tokens: 5 },
+      { id: 8, request_count: 12, input_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }
+    ],
+    tokens: [
+      { id: 3, request_count: 50, input_tokens: 150, cache_read_tokens: 35, cache_creation_tokens: 5 }
+    ]
+  });
+
+  assert.equal(stats.channels.get(7).denominator, 190);
+  assert.equal(stats.channels.get(7).rate, 35 / 190);
+  assert.equal(stats.tokens.get(3).denominator, 190);
+  assert.equal(stats.tokens.get(3).rate, 35 / 190);
+  assert.equal(stats.channels.has(8), false);
+  assert.equal(api.buildChannelRecentRequestCacheStats({ channels: [] }).size, 0);
+  assert.equal(api.buildTokenRecentRequestCacheStats({ tokens: [] }).size, 0);
+
+  const legacy = api.buildRecentRequestCacheStats({ logs: [
+    { channel_id: 7, auth_token_id: 3, input_tokens: 10, cache_read_input_tokens: 5, cache_creation_input_tokens: 0 }
+  ] });
+  assert.equal(legacy.channels.get(7).rate, 1 / 3);
+  assert.equal(legacy.tokens.get(3).rate, 1 / 3);
+});
+
+test('最近 50 次缓存统计请求使用按实体聚合接口', () => {
+  const api = loadTestAPI();
+  const params = new URLSearchParams(api.buildRecentRequestCacheQuery());
+  assert.equal(params.get('limit'), '50');
+  assert.match(source, /\/admin\/cache-stats\/recent\?\$\{buildRecentRequestCacheQuery\(\)\}/);
+  assert.doesNotMatch(source, /\/admin\/logs\?\$\{buildRecentRequestCacheQuery\(\)\}/);
+});
+
+test('渠道和令牌名称同行展示两组缓存命中率', () => {
   const api = loadTestAPI();
   const channelRow = api.renderChannelRow({
     id: 7,
@@ -254,18 +290,92 @@ test('渠道和令牌行展示近半小时缓存命中率', () => {
     channel_type: 'openai',
     priority: 10,
     enabled: true
-  }, '1', api.buildCacheMetric(100, 25, 0));
-  assert.match(channelRow, /logs-channel-panel__cache-rate[^>]*>Last 30m cache hit rate 20\.0%<\/div>/);
+  }, '1', api.buildCacheMetric(100, 25, 0), api.buildCacheMetric(100, 30, 0));
+  assert.match(channelRow, /logs-channel-panel__name-line[\s\S]*logs-channel-panel__name[^>]*>Cache channel<\/div>[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 20\.0%"[^>]*>30m 20\.0%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 23\.1%"[^>]*>50 req 23\.1%<\/span>/);
 
   const tokenRow = api.renderTokenRow({
     id: 3,
     description: 'Cache token',
     is_active: true
-  }, '1', api.buildCacheMetric(100, 0, 0));
-  assert.match(tokenRow, /logs-channel-panel__cache-rate[^>]*>Last 30m cache hit rate 0\.0%<\/div>/);
+  }, '1', api.buildCacheMetric(100, 0, 0), api.buildCacheMetric(100, 50, 0));
+  assert.match(tokenRow, /logs-channel-panel__name-line[\s\S]*logs-channel-panel__name[^>]*>Cache token<\/div>[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 0\.0%"[^>]*>30m 0\.0%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 33\.3%"[^>]*>50 req 33\.3%<\/span>/);
 
   assert.equal(api.formatRecentCacheHitRate(null), '');
+  assert.equal(api.formatRecentCacheHitRateShort(null), '');
+  assert.equal(api.formatRecent50CacheHitRate(null), '');
+  assert.equal(api.formatRecent50CacheHitRateShort(null), '');
   assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
+  assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?gap:\s*3px;/);
+  assert.match(css, /\.logs-channel-panel__cache-rate--recent50\s*\{/);
+  assert.match(css, /\.logs-channel-panel__name-line\s*\{[\s\S]*?display:\s*flex;[\s\S]*?min-width:\s*0;/);
+  assert.match(css, /@media\s*\(max-width:\s*340px\)[\s\S]*?\.logs-channel-panel__name-line[\s\S]*?flex-wrap:\s*wrap;/);
+});
+
+test('令牌快捷行展示有效日限额、倍率标签和实际使用上限', () => {
+  const api = loadTestAPI();
+  const row = api.renderTokenRow({
+    id: 12,
+    description: 'Limited token',
+    is_active: true,
+    daily_cost_used_usd: 2.458,
+    daily_cost_limit_usd: 10,
+    daily_limit_double_enabled: true
+  }, '1');
+
+  assert.match(row, /logs-channel-panel__token-badge--daily-double[^>]*>&times;2 Double<\/span>/);
+  assert.match(row, /Today \$2\.458\/\$20/);
+  assert.match(row, /logs-channel-panel__token-battery-wrap/);
+  assert.match(row, /logs-channel-panel__token-battery-percent[^>]*>88%<\/span>/);
+  assert.equal(api.getTokenEffectiveDailyCostLimit({ daily_cost_limit_usd: 10, daily_limit_double_enabled: true }), 20);
+  assert.equal(api.getTokenEffectiveDailyCostLimit({
+    effective_daily_cost_limit_usd: 18,
+    daily_cost_limit_usd: 10,
+    daily_limit_override_usd: 7,
+    daily_limit_triple_enabled: true
+  }), 18);
+  assert.equal(api.getTokenEffectiveDailyCostLimit({
+    daily_cost_limit_usd: 10,
+    daily_limit_override_usd: 7
+  }), 7);
+});
+
+test('令牌电池按日、月、总额度中最紧的剩余比例展示', () => {
+  const api = loadTestAPI();
+  const battery = api.getTokenBatteryState({
+    daily_cost_used_usd: 1,
+    daily_cost_limit_usd: 10,
+    monthly_cost_used_usd: 18,
+    monthly_cost_limit_usd: 20,
+    cost_used_usd: 20,
+    cost_limit_usd: 100
+  });
+
+  assert.equal(battery.percent, 10);
+  assert.equal(battery.source, 'multiple-monthly');
+  assert.equal(battery.levelClass, 'logs-channel-panel__token-battery--critical');
+  assert.match(battery.title, /Daily remaining \$9\/\$10 \(90%\)/);
+  assert.match(battery.title, /Monthly remaining \$2\/\$20 \(10%\)/);
+  assert.match(battery.title, /Total remaining \$80\/\$100 \(80%\)/);
+});
+
+test('令牌倍率标签优先显示三倍并支持临时限额', () => {
+  const api = loadTestAPI();
+  const triple = api.buildTokenLimitBadgesHtml({
+    daily_cost_limit_usd: 3,
+    daily_limit_double_enabled: true,
+    daily_limit_triple_enabled: true
+  });
+  assert.match(triple, /daily-triple[^>]*>&times;3 Triple<\/span>/);
+  assert.doesNotMatch(triple, /daily-double/);
+
+  const override = api.buildTokenLimitBadgesHtml({
+    daily_cost_limit_usd: 3,
+    daily_limit_override_usd: 7.5
+  });
+  assert.match(override, /daily-override[^>]*>\$7\.5 Temporary<\/span>/);
+  assert.equal(api.formatTokenDailyCost({ daily_cost_used_usd: 2.458 }), 'Today $2.458');
 });
 
 test('排序复用批量优先级接口且限制为同组拖放', () => {
@@ -289,8 +399,14 @@ test('渠道浮窗文案同时提供中英文键值', () => {
   for (const suffix of [
     'openTokens', 'collapseTokens', 'refreshTokens', 'channelTab', 'tokenTab', 'loadingTokens',
     'tokenLoadFailed', 'emptyTokens', 'tokenEnabledSummary', 'tokenUsage',
-    'tokenDailyCost', 'tokenLastUsed', 'tokenID', 'editToken',
-    'tokenToggleEnabled', 'tokenToggleDisabled', 'tokenToggleFailed', 'recentCacheHitRate'
+    'tokenDailyCost', 'tokenDailyCostWithLimit', 'tokenLastUsed', 'tokenID', 'editToken',
+    'tokenToggleEnabled', 'tokenToggleDisabled', 'tokenToggleFailed', 'recentCacheHitRate',
+    'recentCacheHitRateShort', 'recentCacheHitRateWindowShort', 'recent50CacheHitRate',
+    'recent50CacheHitRateShort', 'tokenDailyLimitDouble', 'tokenDailyLimitTriple',
+    'tokenDailyLimitOverride', 'tokenDailyLimitDoubleTitle', 'tokenDailyLimitTripleTitle',
+    'tokenDailyLimitOverrideTitle', 'tokenDailyLimitHint', 'tokenBatteryUnlimited',
+    'tokenBatteryDailyRemaining', 'tokenBatteryMonthlyRemaining', 'tokenBatteryTotalRemaining',
+    'tokenUnlimited'
   ]) {
     const key = `logs.channelPanel.${suffix}`;
     assert.ok(zhLocale.includes(`'${key}'`), `中文缺少 ${key}`);

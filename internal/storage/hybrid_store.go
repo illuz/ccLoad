@@ -727,6 +727,10 @@ func (h *HybridStore) GetStatsLite(ctx context.Context, startTime, endTime time.
 	return h.sqlite.GetStatsLite(ctx, startTime, endTime, filter)
 }
 
+func (h *HybridStore) GetRecentCacheStats(ctx context.Context, requestLimit int) (*model.RecentCacheStats, error) {
+	return h.sqlite.GetRecentCacheStats(ctx, requestLimit)
+}
+
 func (h *HybridStore) GetRPMStats(ctx context.Context, startTime, endTime time.Time, filter *model.LogFilter, isToday bool) (*model.RPMStats, error) {
 	return h.sqlite.GetRPMStats(ctx, startTime, endTime, filter, isToday)
 }

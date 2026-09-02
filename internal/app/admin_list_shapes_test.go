@@ -111,6 +111,37 @@ func TestAdminAPI_GetStats_ResponseShape_Empty(t *testing.T) {
 	}
 }
 
+func TestAdminAPI_GetRecentCacheStats_ResponseShape_Empty(t *testing.T) {
+	server, _, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/admin/cache-stats/recent?limit=50", nil))
+	server.HandleRecentCacheStats(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			RequestLimit int                     `json:"request_limit"`
+			Channels     []model.RecentCacheStat `json:"channels"`
+			Tokens       []model.RecentCacheStat `json:"tokens"`
+		} `json:"data"`
+	}
+	mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatalf("success=false")
+	}
+	if resp.Data.RequestLimit != 50 {
+		t.Fatalf("request_limit=%d, want 50", resp.Data.RequestLimit)
+	}
+	if resp.Data.Channels == nil || resp.Data.Tokens == nil {
+		t.Fatalf("channels/tokens must be empty arrays: %+v", resp.Data)
+	}
+}
+
 func TestAdminAPI_GetMetrics_ResponseShape(t *testing.T) {
 	server, _, cleanup := setupAdminTestServer(t)
 	defer cleanup()

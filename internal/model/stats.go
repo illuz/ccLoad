@@ -95,6 +95,22 @@ type StatsEntry struct {
 	HealthTimeline []HealthPoint `json:"health_timeline,omitempty"` // 固定24个时间点的健康状态
 }
 
+// RecentCacheStat aggregates cache tokens from one entity's latest requests.
+type RecentCacheStat struct {
+	ID                  int64 `json:"id"`
+	RequestCount        int   `json:"request_count"`
+	InputTokens         int64 `json:"input_tokens"`
+	CacheReadTokens     int64 `json:"cache_read_tokens"`
+	CacheCreationTokens int64 `json:"cache_creation_tokens"`
+}
+
+// RecentCacheStats contains per-channel and per-token latest-request aggregates.
+type RecentCacheStats struct {
+	RequestLimit int               `json:"request_limit"`
+	Channels     []RecentCacheStat `json:"channels"`
+	Tokens       []RecentCacheStat `json:"tokens"`
+}
+
 // RPMStats 包含RPM/QPS相关的统计数据
 type RPMStats struct {
 	PeakRPM   float64 `json:"peak_rpm"`   // 峰值RPM（每分钟最大请求数）
