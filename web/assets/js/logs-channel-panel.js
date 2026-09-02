@@ -44,6 +44,11 @@
     'logs.channelPanel.recentCacheHitRateWindowShort': '30m {rate}',
     'logs.channelPanel.recent50CacheHitRate': 'Last 50 requests cache hit rate {rate}',
     'logs.channelPanel.recent50CacheHitRateShort': '50 req {rate}',
+    'logs.channelPanel.requestSuccessRate': 'success {rate}',
+    'logs.channelPanel.cacheHitRateShort': 'hit {rate}',
+    'logs.channelPanel.todayShort': 'Today',
+    'logs.channelPanel.recent30mShort': '30m',
+    'logs.channelPanel.recent50Short': '50 req',
     'logs.channelPanel.tokenDailyCost': 'Today {cost}',
     'logs.channelPanel.tokenDailyCostWithLimit': 'Today {cost}/{limit}',
     'logs.channelPanel.tokenUsage': '{count} calls',
@@ -76,6 +81,8 @@
     'logs.channelPanel.orderSaving': 'Saving channel order...',
     'logs.channelPanel.orderSaved': 'Channel order saved',
     'logs.channelPanel.orderFailed': 'Failed to save channel order',
+    'logs.channelPanel.hideInactive': 'Hide disabled channels and tokens unused today',
+    'logs.channelPanel.showInactive': 'Show all channels and tokens',
     'channels.toggleEnable': 'Enable channel',
     'channels.toggleDisable': 'Disable channel'
   });
@@ -106,6 +113,9 @@
     recentTokenCacheStats: new Map(),
     recentChannel50CacheStats: new Map(),
     recentToken50CacheStats: new Map(),
+    recentChannelTodayStats: new Map(),
+    recentTokenTodayStats: new Map(),
+    hideInactive: false,
     collapsedGroups: new Set(),
     pendingChannelIDs: new Set(),
     pendingTokenIDs: new Set(),
@@ -176,33 +186,43 @@
     };
   }
 
-  function buildCacheMetric(inputTokens, cacheReadTokens, cacheCreationTokens) {
+  function buildCacheMetric(inputTokens, cacheReadTokens, cacheCreationTokens, successCount = 0, failureCount = 0) {
     const input = normalizeCacheTokenCount(inputTokens);
     const cacheRead = normalizeCacheTokenCount(cacheReadTokens);
     const cacheCreation = normalizeCacheTokenCount(cacheCreationTokens);
     const denominator = input + cacheRead + cacheCreation;
-    if (denominator <= 0) return null;
+    const success = Math.max(0, Number(successCount) || 0);
+    const failure = Math.max(0, Number(failureCount) || 0);
+    if (denominator <= 0 && success + failure <= 0) return null;
     return {
       inputTokens: input,
       cacheReadTokens: cacheRead,
       cacheCreationTokens: cacheCreation,
       denominator,
-      rate: cacheRead / denominator
+      rate: denominator > 0 ? cacheRead / denominator : 0,
+      successRate: success + failure > 0 ? success / (success + failure) : null,
+      successCount: success,
+      failureCount: failure,
+      requestCount: success + failure
     };
   }
 
-  function accumulateCacheMetric(rawStats, key, inputTokens, cacheReadTokens, cacheCreationTokens) {
+  function accumulateCacheMetric(rawStats, key, inputTokens, cacheReadTokens, cacheCreationTokens, successCount = 0, failureCount = 0) {
     if (!rawStats.has(key)) {
       rawStats.set(key, {
         inputTokens: 0,
         cacheReadTokens: 0,
-        cacheCreationTokens: 0
+        cacheCreationTokens: 0,
+        successCount: 0,
+        failureCount: 0
       });
     }
     const current = rawStats.get(key);
     current.inputTokens += normalizeCacheTokenCount(inputTokens);
     current.cacheReadTokens += normalizeCacheTokenCount(cacheReadTokens);
     current.cacheCreationTokens += normalizeCacheTokenCount(cacheCreationTokens);
+    current.successCount += Math.max(0, Number(successCount) || 0);
+    current.failureCount += Math.max(0, Number(failureCount) || 0);
   }
 
   function finalizeCacheMetrics(rawStats) {
@@ -211,7 +231,9 @@
       const metric = buildCacheMetric(
         totals.inputTokens,
         totals.cacheReadTokens,
-        totals.cacheCreationTokens
+        totals.cacheCreationTokens,
+        totals.successCount,
+        totals.failureCount
       );
       if (metric) result.set(key, metric);
     }
@@ -231,7 +253,9 @@
         id,
         entry.total_input_tokens,
         entry.total_cache_read_input_tokens,
-        entry.total_cache_creation_input_tokens
+        entry.total_cache_creation_input_tokens,
+        entry.success,
+        entry.error
       );
     }
     return finalizeCacheMetrics(rawStats);
@@ -250,7 +274,9 @@
         id,
         token.prompt_tokens_total,
         token.cache_read_tokens_total,
-        token.cache_creation_tokens_total
+        token.cache_creation_tokens_total,
+        token.success_count,
+        token.failure_count
       );
     }
     return finalizeCacheMetrics(rawStats);
@@ -291,6 +317,20 @@
     });
   }
 
+  function formatRequestSuccessRateShort(metric, windowLabel) {
+    if (!metric || !Number.isFinite(Number(metric.successRate))) return '';
+    return `${windowLabel} ${translate('logs.channelPanel.requestSuccessRate', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.successRate))) * 100).toFixed(1)}%`
+    })}`;
+  }
+
+  function formatCacheHitRateShort(metric, windowLabel) {
+    if (!metric || !Number.isFinite(Number(metric.rate))) return '';
+    return `${windowLabel} ${translate('logs.channelPanel.cacheHitRateShort', {
+      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
+    })}`;
+  }
+
   function buildRecentRequestCacheQuery(limit = RECENT_REQUEST_CACHE_COUNT) {
     const numericLimit = Number(limit);
     const safeLimit = Number.isFinite(numericLimit) && numericLimit > 0
@@ -316,7 +356,9 @@
         id,
         entry.input_tokens ?? entry.inputTokens ?? entry.total_input_tokens ?? entry.prompt_tokens_total,
         entry.cache_read_tokens ?? entry.cacheReadTokens ?? entry.total_cache_read_input_tokens ?? entry.cache_read_tokens_total,
-        entry.cache_creation_tokens ?? entry.cacheCreationTokens ?? entry.total_cache_creation_input_tokens ?? entry.cache_creation_tokens_total
+        entry.cache_creation_tokens ?? entry.cacheCreationTokens ?? entry.total_cache_creation_input_tokens ?? entry.cache_creation_tokens_total,
+        entry.success_count ?? entry.successCount ?? entry.success,
+        entry.failure_count ?? entry.failureCount ?? entry.error
       );
     }
     return finalizeCacheMetrics(rawStats);
@@ -332,9 +374,11 @@
       const cacheReadTokens = entry.cache_read_input_tokens ?? entry.cacheReadInputTokens;
       const cacheCreationTokens = entry.cache_creation_input_tokens ?? entry.cacheCreationInputTokens;
       const channelID = normalizeChannelID(entry.channel_id ?? entry.channelID);
-      if (channelID) accumulateCacheMetric(channelRawStats, channelID, inputTokens, cacheReadTokens, cacheCreationTokens);
+      const successCount = entry.success_count ?? entry.successCount ?? entry.success;
+      const failureCount = entry.failure_count ?? entry.failureCount ?? entry.error;
+      if (channelID) accumulateCacheMetric(channelRawStats, channelID, inputTokens, cacheReadTokens, cacheCreationTokens, successCount, failureCount);
       const tokenID = normalizeTokenID(entry.auth_token_id ?? entry.authTokenID);
-      if (tokenID) accumulateCacheMetric(tokenRawStats, tokenID, inputTokens, cacheReadTokens, cacheCreationTokens);
+      if (tokenID) accumulateCacheMetric(tokenRawStats, tokenID, inputTokens, cacheReadTokens, cacheCreationTokens, successCount, failureCount);
     }
     return {
       channels: finalizeCacheMetrics(channelRawStats),
@@ -371,25 +415,69 @@
 
   function buildCacheRateBadge(shortText, fullText, modifier = '') {
     if (!shortText || !fullText) return '';
-    const modifierClass = modifier ? ` logs-channel-panel__cache-rate--${modifier}` : '';
+    const modifierClass = modifier
+      ? ` ${String(modifier).split(/\s+/).filter(Boolean).map((item) => `logs-channel-panel__cache-rate--${item}`).join(' ')}`
+      : '';
     return `<span class="logs-channel-panel__cache-rate${modifierClass}" title="${escapeHTML(fullText)}" aria-label="${escapeHTML(fullText)}">${escapeHTML(shortText)}</span>`;
   }
 
-  function buildRecentCacheRatesHtml(recentMetric, recent50Metric) {
+  function buildRecentCacheRatesHtml(todayMetric, recentMetric, recent50Metric) {
+    if (recent50Metric === undefined) {
+      recent50Metric = recentMetric;
+      recentMetric = todayMetric;
+      todayMetric = null;
+    }
     const badges = [
       buildCacheRateBadge(
-        formatRecentCacheHitRateWindowShort(recentMetric),
-        formatRecentCacheHitRate(recentMetric)
+        formatCacheHitRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
+        formatRecentCacheHitRate(todayMetric),
+        `cache--${getCacheRateTone(todayMetric)}`
       ),
       buildCacheRateBadge(
-        formatRecent50CacheHitRateShort(recent50Metric),
+        formatCacheHitRateShort(recentMetric, translate('logs.channelPanel.recent30mShort')),
+        formatRecentCacheHitRate(recentMetric),
+        `cache--${getCacheRateTone(recentMetric)}`
+      ),
+      buildCacheRateBadge(
+        formatCacheHitRateShort(recent50Metric, translate('logs.channelPanel.recent50Short')),
         formatRecent50CacheHitRate(recent50Metric),
-        'recent50'
+        `recent50 cache--${getCacheRateTone(recent50Metric)}`
+      ),
+      buildCacheRateBadge(
+        formatRequestSuccessRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
+        formatRequestSuccessRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
+        `success--${getSuccessRateTone(todayMetric)}`
+      ),
+      buildCacheRateBadge(
+        formatRequestSuccessRateShort(recentMetric, translate('logs.channelPanel.recent30mShort')),
+        formatRequestSuccessRateShort(recentMetric, translate('logs.channelPanel.recent30mShort')),
+        `success--${getSuccessRateTone(recentMetric)}`
+      ),
+      buildCacheRateBadge(
+        formatRequestSuccessRateShort(recent50Metric, translate('logs.channelPanel.recent50Short')),
+        formatRequestSuccessRateShort(recent50Metric, translate('logs.channelPanel.recent50Short')),
+        `success--${getSuccessRateTone(recent50Metric)}`
       )
     ].filter(Boolean);
     return badges.length
       ? `<span class="logs-channel-panel__cache-rates">${badges.join('')}</span>`
       : '';
+  }
+
+  function getSuccessRateTone(metric) {
+    const rate = Number(metric && metric.successRate);
+    if (!Number.isFinite(rate)) return '';
+    if (rate > 0.85) return 'good';
+    if (rate >= 0.70) return 'warning';
+    return 'bad';
+  }
+
+  function getCacheRateTone(metric) {
+    const rate = Number(metric && metric.rate);
+    if (!Number.isFinite(rate)) return '';
+    if (rate > 0.85) return 'good';
+    if (rate >= 0.70) return 'warning';
+    return 'bad';
   }
 
   function formatDailyCost(value) {
@@ -820,6 +908,7 @@
     const summary = getElement('logsChannelPanelSummary');
     const heading = getElement('logsChannelPanelHeading');
     const refresh = getElement('logsChannelPanelRefresh');
+    const visibility = getElement('logsChannelPanelVisibility');
     const channelTab = getElement('logsChannelPanelChannelTab');
     const tokenTab = getElement('logsChannelPanelTokenTab');
     const body = getElement('logsChannelPanelBody');
@@ -861,6 +950,15 @@
         || state.pendingTokenIDs.size > 0;
       refresh.title = refreshLabel;
       refresh.setAttribute('aria-label', refreshLabel);
+    }
+    if (visibility) {
+      const visibilityLabel = translate(state.hideInactive
+        ? 'logs.channelPanel.showInactive'
+        : 'logs.channelPanel.hideInactive');
+      visibility.classList.toggle('is-active', state.hideInactive);
+      visibility.setAttribute('aria-pressed', String(state.hideInactive));
+      visibility.title = visibilityLabel;
+      visibility.setAttribute('aria-label', visibilityLabel);
     }
     const collapseButton = state.root.querySelector('[data-channel-panel-action="collapse"]');
     if (collapseButton) {
@@ -949,7 +1047,7 @@
       </div>`;
   }
 
-  function renderChannelRow(channel, groupKey, cacheMetric = undefined, cache50Metric = undefined) {
+  function renderChannelRow(channel, groupKey, cacheMetric = undefined, cache50Metric = undefined, todayMetric = undefined) {
     const id = normalizeChannelID(channel.id);
     const enabled = channel.enabled === true;
     const pending = state.pendingChannelIDs.has(id);
@@ -967,7 +1065,10 @@
     const recentCache50Metric = cache50Metric === undefined
       ? state.recentChannel50CacheStats.get(id)
       : cache50Metric;
-    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheMetric, recentCache50Metric);
+    const recentCacheTodayMetric = todayMetric === undefined
+      ? state.recentChannelTodayStats.get(id)
+      : todayMetric;
+    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheTodayMetric, recentCacheMetric, recentCache50Metric);
     const cooldownHTML = coolingDown
       ? `<span class="logs-channel-panel__meta-item logs-channel-panel__meta-item--cooldown"><span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span><span class="logs-channel-panel__cooldown">${escapeHTML(translate('logs.channelPanel.cooldown'))}</span></span>`
       : '';
@@ -980,7 +1081,6 @@
         <div class="logs-channel-panel__info">
           <div class="logs-channel-panel__name-line">
             <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
-            ${recentCacheRatesHTML}
           </div>
           <div class="logs-channel-panel__meta">
             <span class="logs-channel-panel__type">${escapeHTML(type)}</span>
@@ -994,6 +1094,7 @@
             </span>
             ${cooldownHTML}
           </div>
+          ${recentCacheRatesHTML ? `<div class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-channel" data-channel-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
@@ -1024,49 +1125,41 @@
     return `${token.slice(0, 4)}****${token.slice(-4)}`;
   }
 
-  function renderTokenRow(token, groupKey, cacheMetric = undefined, cache50Metric = undefined) {
+  function renderTokenRow(token, groupKey, cacheMetric = undefined, cache50Metric = undefined, todayMetric = undefined) {
     const id = normalizeTokenID(token && token.id);
     const active = isTokenActive(token);
     const pending = state.pendingTokenIDs.has(id);
     const name = String(token && token.description || `#${id}`);
-    const successCount = Number(token && token.success_count || 0);
-    const failureCount = Number(token && token.failure_count || 0);
-    const usage = (Number.isFinite(successCount) ? successCount : 0)
-      + (Number.isFinite(failureCount) ? failureCount : 0);
     const dailyCost = formatTokenDailyCost(token);
-    const usageText = translate('logs.channelPanel.tokenUsage', { count: usage });
-    const lastUsed = formatTokenLastUsed(token && token.last_used_at);
-    const lastUsedText = lastUsed
-      ? translate('logs.channelPanel.tokenLastUsed', { time: lastUsed })
-      : '';
-    const tokenIDText = translate('logs.channelPanel.tokenID', { id });
     const editLabel = translate('logs.channelPanel.editToken', { name });
     const switchLabel = `${translate(active ? 'common.disable' : 'common.enable')} ${name}`;
-    const masked = maskToken(token && token.plain_token);
     const recentCacheMetric = cacheMetric === undefined
       ? state.recentTokenCacheStats.get(id)
       : cacheMetric;
     const recentCache50Metric = cache50Metric === undefined
       ? state.recentToken50CacheStats.get(id)
       : cache50Metric;
-    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheMetric, recentCache50Metric);
+    const recentCacheTodayMetric = todayMetric === undefined
+      ? state.recentTokenTodayStats.get(id)
+      : todayMetric;
+    const recentCacheRatesHTML = buildRecentCacheRatesHtml(recentCacheTodayMetric, recentCacheMetric, recentCache50Metric);
     const tokenBatteryHTML = buildTokenBatteryHtml(token);
     const tokenLimitBadgesHTML = buildTokenLimitBadgesHtml(token);
-    const tokenMeta = [tokenIDText, usageText, dailyCost, lastUsedText].filter(Boolean);
 
     return `
       <div class="logs-channel-panel__row logs-channel-panel__token-row${active ? '' : ' is-disabled'}" role="listitem" data-token-id="${id}" data-group-id="${escapeHTML(groupKey)}">
         <div class="logs-channel-panel__info">
           <div class="logs-channel-panel__name-line">
             <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
-            ${recentCacheRatesHTML}
             ${tokenBatteryHTML}
           </div>
-          ${tokenLimitBadgesHTML ? `<div class="logs-channel-panel__token-badges">${tokenLimitBadgesHTML}</div>` : ''}
-          <div class="logs-channel-panel__meta" title="${escapeHTML(tokenMeta.join(' / '))}">
-            ${tokenMeta.map((item, index) => `${index ? '<span class="logs-channel-panel__meta-separator" aria-hidden="true">&middot;</span>' : ''}<span class="logs-channel-panel__meta-item">${escapeHTML(item)}</span>`).join('')}
+          <div class="logs-channel-panel__token-secondary">
+            ${tokenLimitBadgesHTML ? `<div class="logs-channel-panel__token-badges">${tokenLimitBadgesHTML}</div>` : ''}
+            <div class="logs-channel-panel__meta" title="${escapeHTML(dailyCost)}">
+              <span class="logs-channel-panel__meta-item">${escapeHTML(dailyCost)}</span>
+            </div>
           </div>
-          ${masked ? `<div class="logs-channel-panel__token-mask" title="${escapeHTML(masked)}">${escapeHTML(masked)}</div>` : ''}
+          ${recentCacheRatesHTML ? `<div class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-token" data-token-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
@@ -1126,14 +1219,20 @@
     if (!body) return;
     const scrollTop = body.scrollTop;
     if (tokenTabActive) {
-      const groups = buildTokenGroups(state.tokens, state.tokenGroups, translate('logs.channelPanel.tokenUngrouped'));
+      const visibleTokens = state.hideInactive
+        ? state.tokens.filter((token) => Number(state.recentTokenTodayStats.get(normalizeTokenID(token && token.id))?.requestCount || 0) > 0)
+        : state.tokens;
+      const groups = buildTokenGroups(visibleTokens, state.tokenGroups, translate('logs.channelPanel.tokenUngrouped'));
       if (groups.length === 0) {
         renderState('logs.channelPanel.emptyTokens');
         return;
       }
       body.innerHTML = groups.map(renderTokenGroup).join('');
     } else {
-      const groups = buildChannelGroups(state.channels, state.groups, translate('logs.channelPanel.ungrouped'));
+      const visibleChannels = state.hideInactive
+        ? state.channels.filter((channel) => channel && channel.enabled === true)
+        : state.channels;
+      const groups = buildChannelGroups(visibleChannels, state.groups, translate('logs.channelPanel.ungrouped'));
       if (groups.length === 0) {
         renderState('logs.channelPanel.empty');
         return;
@@ -1165,6 +1264,8 @@
     state.recentTokenCacheStats = new Map();
     state.recentChannel50CacheStats = new Map();
     state.recentToken50CacheStats = new Map();
+    state.recentChannelTodayStats = new Map();
+    state.recentTokenTodayStats = new Map();
     updateChrome();
     if (!state.loaded || !state.tokenLoaded) renderPanel();
 
@@ -1185,6 +1286,11 @@
         start_time: String(recentRange.startMs),
         end_time: String(recentRange.endMs)
       }).toString();
+      const todayQuery = new URLSearchParams({ range: 'today' }).toString();
+      const recentChannelTodayRequest = window.fetchDataWithAuth(`/admin/stats?${todayQuery}`)
+        .then((data) => ({ ok: true, data })).catch((error) => ({ ok: false, error }));
+      const recentTokenTodayRequest = window.fetchDataWithAuth(`/admin/auth-tokens?${todayQuery}`)
+        .then((data) => ({ ok: true, data })).catch((error) => ({ ok: false, error }));
       const recentChannelCacheRequest = window.fetchDataWithAuth(`/admin/stats?${recentRangeQuery}`)
         .then((data) => ({ ok: true, data }))
         .catch((error) => ({ ok: false, error }));
@@ -1194,13 +1300,15 @@
       const recentRequestCacheRequest = window.fetchDataWithAuth(`/admin/cache-stats/recent?${buildRecentRequestCacheQuery()}`)
         .then((data) => ({ ok: true, data }))
         .catch((error) => ({ ok: false, error }));
-      const [channelResult, groupData, tokenResult, recentChannelCacheResult, recentTokenCacheResult, recentRequestCacheResult] = await Promise.all([
+      const [channelResult, groupData, tokenResult, recentChannelCacheResult, recentTokenCacheResult, recentRequestCacheResult, recentChannelTodayResult, recentTokenTodayResult] = await Promise.all([
         channelRequest,
         groupRequest,
         tokenRequest,
         recentChannelCacheRequest,
         recentTokenCacheRequest,
-        recentRequestCacheRequest
+        recentRequestCacheRequest,
+        recentChannelTodayRequest,
+        recentTokenTodayRequest
       ]);
       if (lifecycleID !== state.lifecycleID || refreshSequence !== state.refreshSequence) return;
 
@@ -1265,6 +1373,8 @@
           : new Error('Failed to load recent request cache stats');
         console.warn('Failed to load recent request cache stats:', error);
       }
+      if (recentChannelTodayResult && recentChannelTodayResult.ok) state.recentChannelTodayStats = buildChannelCacheStats(recentChannelTodayResult.data);
+      if (recentTokenTodayResult && recentTokenTodayResult.ok) state.recentTokenTodayStats = buildTokenCacheStats(recentTokenTodayResult.data);
 
       if (!options.silent) {
         if (state.activeTab === TOKEN_TAB && state.tokenLoadError && state.tokenLoaded) {
@@ -1413,6 +1523,14 @@
     return left.length === right.length && left.every((value, index) => value === right[index]);
   }
 
+  function mergeVisibleChannelOrder(currentIDs = [], visibleOrderedIDs = []) {
+    const visibleIDs = new Set(visibleOrderedIDs);
+    let visibleIndex = 0;
+    return currentIDs.map((id) => (
+      visibleIDs.has(id) ? visibleOrderedIDs[visibleIndex++] : id
+    ));
+  }
+
   async function commitGroupOrder(groupID, orderedIDs, focusChannelID = 0) {
     if (state.orderSaving) return;
     const lifecycleID = state.lifecycleID;
@@ -1420,6 +1538,9 @@
     const currentGroup = buildChannelGroups(state.channels, state.groups, translate('logs.channelPanel.ungrouped'))
       .find((group) => group.key === key);
     const currentIDs = currentGroup ? currentGroup.channels.map((channel) => normalizeChannelID(channel.id)) : [];
+    if (state.hideInactive && orderedIDs.length < currentIDs.length) {
+      orderedIDs = mergeVisibleChannelOrder(currentIDs, orderedIDs);
+    }
     if (arraysEqual(currentIDs, orderedIDs)) {
       renderPanel({ focusChannelID, focusAction: 'drag' });
       return;
@@ -1675,6 +1796,9 @@
       setExpanded(false);
     } else if (action === 'refresh' || action === 'retry') {
       void refreshPanel();
+    } else if (action === 'toggle-visibility') {
+      state.hideInactive = !state.hideInactive;
+      renderPanel();
     } else if (action === 'select-tab') {
       setActiveTab(actionTarget.dataset.panelTab);
     } else if (action === 'toggle-channel') {
@@ -1783,6 +1907,8 @@
     state.recentTokenCacheStats = new Map();
     state.recentChannel50CacheStats = new Map();
     state.recentToken50CacheStats = new Map();
+    state.recentChannelTodayStats = new Map();
+    state.recentTokenTodayStats = new Map();
     state.pendingChannelIDs.clear();
     state.pendingTokenIDs.clear();
     state.orderSaving = false;
@@ -1819,6 +1945,7 @@
     __test: Object.freeze({
       buildChannelGroups,
       buildPriorityUpdatesAfterGroupReorder,
+      mergeVisibleChannelOrder,
       compareChannelsByPriority,
       formatDailyCost,
       normalizeGroupKey,

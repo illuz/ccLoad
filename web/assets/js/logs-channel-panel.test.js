@@ -55,6 +55,17 @@ test('日志快捷浮窗提供渠道和令牌两个 tab，并有独立令牌入�
   assert.match(source, /\/admin\/auth-tokens/);
 });
 
+test('面板眼睛按钮隐藏未开启渠道和今日未使用令牌', () => {
+  assert.match(html, /id="logsChannelPanelVisibility"[\s\S]*data-channel-panel-action="toggle-visibility"/);
+  assert.ok(
+    html.indexOf('id="logsChannelPanelVisibility"') < html.indexOf('id="logsChannelPanelRefresh"'),
+    '眼睛按钮应位于刷新按钮左侧'
+  );
+  assert.match(source, /state\.channels\.filter\(\(channel\) => channel && channel\.enabled === true\)/);
+  assert.match(source, /recentTokenTodayStats\.get[\s\S]*?requestCount/);
+  assert.match(css, /\.logs-channel-panel__icon-btn\.is-active\s*\{/);
+});
+
 test('浮窗使用固定右下角工具布局并适配窄屏', () => {
   assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:[\s\S]*?bottom:/);
   assert.match(css, /\.logs-channel-panel__surface\s*\{[\s\S]*?width:\s*min\(380px,[\s\S]*?max-height:/);
@@ -117,8 +128,8 @@ test('令牌快捷控制按分组展示启用统计并提供编辑/启停操作'
   }, '9');
   assert.match(row, /data-channel-panel-action="edit-token"/);
   assert.match(row, /data-channel-panel-action="toggle-token"[^>]*aria-checked="true"/);
-  assert.match(row, /sk-1\*\*\*\*7890/);
-  assert.doesNotMatch(row, /sk-1234567890[^<]/);
+  assert.doesNotMatch(row, /sk-1\*\*\*\*7890/);
+  assert.doesNotMatch(row, /ID 4|5 calls|Last used|sk-1234567890/);
 });
 
 test('同组重排保留其他分组的相对位置并生成全局递减优先级', () => {
@@ -138,6 +149,24 @@ test('同组重排保留其他分组的相对位置并生成全局递减优先�
     { id: 4, priority: 10 }
   ]);
   assert.deepEqual(updates.filter((item) => [2, 4].includes(item.id)).map((item) => item.id), [2, 4]);
+});
+
+test('隐藏渠道时拖拽只重排可见槽位并保留完整渠道顺序', () => {
+  const api = loadTestAPI();
+  assert.deepEqual(
+    plain(api.mergeVisibleChannelOrder([1, 2, 3, 4, 5], [5, 3, 1])),
+    [5, 2, 3, 4, 1]
+  );
+  const channels = [
+    { id: 1, group_id: 1, priority: 50 },
+    { id: 2, group_id: 1, priority: 40 },
+    { id: 3, group_id: 1, priority: 30 },
+    { id: 4, group_id: 1, priority: 20 },
+    { id: 5, group_id: 1, priority: 10 }
+  ];
+  const merged = api.mergeVisibleChannelOrder([1, 2, 3, 4, 5], [5, 3, 1]);
+  const updates = plain(api.buildPriorityUpdatesAfterGroupReorder(channels, 1, merged));
+  assert.deepEqual(updates.map((item) => item.id), [5, 2, 3, 4, 1]);
 });
 
 test('排序请求拒绝缺失、重复或跨组的渠道 ID', () => {
@@ -282,7 +311,7 @@ test('最近 50 次缓存统计请求使用按实体聚合接口', () => {
   assert.doesNotMatch(source, /\/admin\/logs\?\$\{buildRecentRequestCacheQuery\(\)\}/);
 });
 
-test('渠道和令牌名称同行展示两组缓存命中率', () => {
+test('渠道和令牌第三行展示当日、近半小时和近 50 次缓存与成功率', () => {
   const api = loadTestAPI();
   const channelRow = api.renderChannelRow({
     id: 7,
@@ -290,17 +319,21 @@ test('渠道和令牌名称同行展示两组缓存命中率', () => {
     channel_type: 'openai',
     priority: 10,
     enabled: true
-  }, '1', api.buildCacheMetric(100, 25, 0), api.buildCacheMetric(100, 30, 0));
-  assert.match(channelRow, /logs-channel-panel__name-line[\s\S]*logs-channel-panel__name[^>]*>Cache channel<\/div>[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 20\.0%"[^>]*>30m 20\.0%<\/span>/);
-  assert.match(channelRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 23\.1%"[^>]*>50 req 23\.1%<\/span>/);
+  }, '1', api.buildCacheMetric(100, 25, 0, 8, 2), api.buildCacheMetric(100, 30, 0, 9, 1), api.buildCacheMetric(100, 90, 0, 10, 0));
+  assert.match(channelRow, /title="Last 30m cache hit rate 47\.4%"[^>]*>Today hit 47\.4%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 20\.0%"[^>]*>30m hit 20\.0%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 23\.1%"[^>]*>50 req hit 23\.1%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--success--warning[^>]*>30m success 80\.0%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--success--good[^>]*>50 req success 90\.0%<\/span>/);
 
   const tokenRow = api.renderTokenRow({
     id: 3,
     description: 'Cache token',
     is_active: true
-  }, '1', api.buildCacheMetric(100, 0, 0), api.buildCacheMetric(100, 50, 0));
-  assert.match(tokenRow, /logs-channel-panel__name-line[\s\S]*logs-channel-panel__name[^>]*>Cache token<\/div>[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 0\.0%"[^>]*>30m 0\.0%<\/span>/);
-  assert.match(tokenRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 33\.3%"[^>]*>50 req 33\.3%<\/span>/);
+  }, '1', api.buildCacheMetric(100, 0, 0, 6, 4), api.buildCacheMetric(100, 50, 0, 7, 3), api.buildCacheMetric(100, 90, 0, 10, 0));
+  assert.match(tokenRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 0\.0%"[^>]*>30m hit 0\.0%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 33\.3%"[^>]*>50 req hit 33\.3%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rate--success--bad[^>]*>30m success 60\.0%<\/span>/);
 
   assert.equal(api.formatRecentCacheHitRate(null), '');
   assert.equal(api.formatRecentCacheHitRateShort(null), '');
@@ -308,7 +341,9 @@ test('渠道和令牌名称同行展示两组缓存命中率', () => {
   assert.equal(api.formatRecent50CacheHitRateShort(null), '');
   assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
   assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?gap:\s*3px;/);
-  assert.match(css, /\.logs-channel-panel__cache-rate--recent50\s*\{/);
+  assert.match(css, /\.logs-channel-panel__cache-rate--recent50,/);
+  assert.match(css, /\.logs-channel-panel__cache-rate--cache--good,[\s\S]*?\.logs-channel-panel__cache-rate--success--good/);
+  assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(css, /\.logs-channel-panel__name-line\s*\{[\s\S]*?display:\s*flex;[\s\S]*?min-width:\s*0;/);
   assert.match(css, /@media\s*\(max-width:\s*340px\)[\s\S]*?\.logs-channel-panel__name-line[\s\S]*?flex-wrap:\s*wrap;/);
 });

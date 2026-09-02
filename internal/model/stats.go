@@ -99,6 +99,8 @@ type StatsEntry struct {
 type RecentCacheStat struct {
 	ID                  int64 `json:"id"`
 	RequestCount        int   `json:"request_count"`
+	SuccessCount        int   `json:"success_count"`
+	FailureCount        int   `json:"failure_count"`
 	InputTokens         int64 `json:"input_tokens"`
 	CacheReadTokens     int64 `json:"cache_read_tokens"`
 	CacheCreationTokens int64 `json:"cache_creation_tokens"`

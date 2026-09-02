@@ -48,10 +48,10 @@ func TestGetRecentCacheStatsUsesIndependentWindowsPerEntity(t *testing.T) {
 
 	channels := recentCacheStatsByID(stats.Channels)
 	tokens := recentCacheStatsByID(stats.Tokens)
-	assertRecentCacheStat(t, channels[channelA], 50, 5_000, 1_250, 250)
-	assertRecentCacheStat(t, channels[channelB], 50, 10_000, 4_000, 1_000)
-	assertRecentCacheStat(t, tokens[tokenA.ID], 50, 5_000, 1_250, 250)
-	assertRecentCacheStat(t, tokens[tokenB.ID], 50, 10_000, 4_000, 1_000)
+	assertRecentCacheStat(t, channels[channelA], 50, 50, 0, 5_000, 1_250, 250)
+	assertRecentCacheStat(t, channels[channelB], 50, 50, 0, 10_000, 4_000, 1_000)
+	assertRecentCacheStat(t, tokens[tokenA.ID], 50, 50, 0, 5_000, 1_250, 250)
+	assertRecentCacheStat(t, tokens[tokenB.ID], 50, 50, 0, 10_000, 4_000, 1_000)
 }
 
 func recentCacheTestLog(at time.Time, channelID, tokenID int64, input, cacheRead, cacheCreation int) *model.LogEntry {
@@ -78,9 +78,9 @@ func recentCacheStatsByID(stats []model.RecentCacheStat) map[int64]model.RecentC
 	return result
 }
 
-func assertRecentCacheStat(t *testing.T, stat model.RecentCacheStat, requestCount int, input, cacheRead, cacheCreation int64) {
+func assertRecentCacheStat(t *testing.T, stat model.RecentCacheStat, requestCount, successCount, failureCount int, input, cacheRead, cacheCreation int64) {
 	t.Helper()
-	if stat.RequestCount != requestCount || stat.InputTokens != input || stat.CacheReadTokens != cacheRead || stat.CacheCreationTokens != cacheCreation {
-		t.Fatalf("stat = %+v, want count=%d input=%d read=%d creation=%d", stat, requestCount, input, cacheRead, cacheCreation)
+	if stat.RequestCount != requestCount || stat.SuccessCount != successCount || stat.FailureCount != failureCount || stat.InputTokens != input || stat.CacheReadTokens != cacheRead || stat.CacheCreationTokens != cacheCreation {
+		t.Fatalf("stat = %+v, want count=%d success=%d failure=%d input=%d read=%d creation=%d", stat, requestCount, successCount, failureCount, input, cacheRead, cacheCreation)
 	}
 }

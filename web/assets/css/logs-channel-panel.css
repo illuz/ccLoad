@@ -206,6 +206,11 @@
   background: var(--surface-hover);
 }
 
+.logs-channel-panel__icon-btn.is-active {
+  color: var(--primary-700);
+  background: var(--primary-100);
+}
+
 .logs-channel-panel__icon-btn > svg {
   width: 17px;
   height: 17px;
@@ -358,10 +363,24 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
+  flex-wrap: wrap;
   gap: 3px;
   min-width: 0;
   max-width: 100%;
   overflow: visible;
+}
+
+.logs-channel-panel__cache-rates-line {
+  min-width: 0;
+  margin-top: 3px;
+}
+
+.logs-channel-panel__token-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
 }
 
 .logs-channel-panel__token-row .logs-channel-panel__meta {
@@ -411,10 +430,26 @@
   white-space: nowrap;
 }
 
-.logs-channel-panel__cache-rate--recent50 {
-  color: var(--primary-700);
-  background: var(--primary-50);
-  border-color: var(--primary-200);
+.logs-channel-panel__cache-rate--cache--good,
+.logs-channel-panel__cache-rate--recent50,
+.logs-channel-panel__cache-rate--success--good {
+  color: var(--success-700);
+  background: var(--success-50);
+  border-color: var(--success-200);
+}
+
+.logs-channel-panel__cache-rate--cache--warning,
+.logs-channel-panel__cache-rate--success--warning {
+  color: var(--warning-700);
+  background: var(--warning-50);
+  border-color: var(--warning-200);
+}
+
+.logs-channel-panel__cache-rate--cache--bad,
+.logs-channel-panel__cache-rate--success--bad {
+  color: var(--error-700);
+  background: var(--error-50);
+  border-color: var(--error-200);
 }
 
 .logs-channel-panel__token-badges {
@@ -444,21 +479,21 @@
 }
 
 .logs-channel-panel__token-badge--daily-double {
-  color: var(--warning-800);
-  background: var(--warning-50);
-  border-color: var(--warning-200);
+  color: var(--warning-700);
+  background: transparent;
+  border-color: var(--warning-300);
 }
 
 .logs-channel-panel__token-badge--daily-triple {
-  color: var(--success-800);
-  background: var(--success-50);
-  border-color: var(--success-200);
+  color: var(--success-700);
+  background: transparent;
+  border-color: var(--success-300);
 }
 
 .logs-channel-panel__token-badge--daily-override {
-  color: var(--primary-800);
-  background: var(--primary-50);
-  border-color: var(--primary-200);
+  color: var(--primary-700);
+  background: transparent;
+  border-color: var(--primary-300);
 }
 
 .logs-channel-panel__token-battery-wrap {

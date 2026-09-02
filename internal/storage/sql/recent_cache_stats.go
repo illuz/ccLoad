@@ -51,6 +51,8 @@ func (s *SQLStore) getRecentCacheStatsByEntity(ctx context.Context, entityTable,
 	query := fmt.Sprintf(`
 		SELECT entity_scope.entity_id,
 			COUNT(log_entry.id) AS request_count,
+			SUM(CASE WHEN log_entry.status_code >= 200 AND log_entry.status_code < 300 THEN 1 ELSE 0 END) AS success_count,
+			SUM(CASE WHEN (log_entry.status_code < 200 OR log_entry.status_code >= 300) AND log_entry.status_code != 499 THEN 1 ELSE 0 END) AS failure_count,
 			COALESCE(SUM(log_entry.input_tokens), 0) AS input_tokens,
 			COALESCE(SUM(log_entry.cache_read_input_tokens), 0) AS cache_read_tokens,
 			COALESCE(SUM(log_entry.cache_creation_input_tokens), 0) AS cache_creation_tokens
@@ -90,6 +92,8 @@ func (s *SQLStore) getRecentCacheStatsByEntity(ctx context.Context, entityTable,
 		if err := rows.Scan(
 			&stat.ID,
 			&stat.RequestCount,
+			&stat.SuccessCount,
+			&stat.FailureCount,
 			&stat.InputTokens,
 			&stat.CacheReadTokens,
 			&stat.CacheCreationTokens,
