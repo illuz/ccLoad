@@ -197,6 +197,24 @@ test('渠道行提供快速编辑图标并复用日志页渠道编辑器', () =>
   assert.match(css, /\.logs-channel-panel__row-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
+test('渠道名称后显示配置倍率', () => {
+  const api = loadTestAPI();
+  assert.equal(api.formatChannelMultiplier(1.5), 'x1.5');
+  assert.equal(api.formatChannelMultiplier(1), 'x1');
+  assert.equal(api.formatChannelMultiplier(0), 'x0');
+  assert.equal(api.formatChannelMultiplier(undefined), 'x1');
+
+  const row = api.renderChannelRow({
+    id: 8,
+    name: 'Multiplier channel',
+    channel_type: 'openai',
+    cost_multiplier: 1.5,
+    enabled: true
+  }, '1');
+  assert.match(row, /logs-channel-panel__name[^>]*>Multiplier channel<\/div>\s*<span class="logs-channel-panel__channel-multiplier"[^>]*>x1\.5<\/span>/);
+  assert.match(css, /\.logs-channel-panel__channel-multiplier\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/);
+});
+
 test('渠道行在优先级旁展示格式化的当日使用费用', () => {
   const api = loadTestAPI();
   assert.equal(api.formatDailyCost(0), '$0');

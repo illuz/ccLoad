@@ -490,6 +490,12 @@
     return cost === 0 ? '$0' : `$${cost.toFixed(3)}`;
   }
 
+  function formatChannelMultiplier(value) {
+    const multiplier = Number(value);
+    if (!Number.isFinite(multiplier) || multiplier < 0) return 'x1';
+    return `x${Number(multiplier.toFixed(2)).toString()}`;
+  }
+
   // Quota values stay compact while the current usage keeps the page's
   // three-decimal cost precision.
   function formatQuotaCost(value) {
@@ -1055,6 +1061,7 @@
     const name = String(channel.name || `#${id}`);
     const type = String(channel.channel_type || '--');
     const priority = normalizePriority(channel.priority);
+    const multiplier = formatChannelMultiplier(channel.cost_multiplier);
     const dailyCost = translate('logs.channelPanel.dailyCost', { cost: formatDailyCost(channel.daily_cost_used) });
     const dragLabel = translate('logs.channelPanel.dragHandle', { name });
     const editLabel = translate('logs.channelPanel.editChannel', { name });
@@ -1081,6 +1088,7 @@
         <div class="logs-channel-panel__info">
           <div class="logs-channel-panel__name-line">
             <div class="logs-channel-panel__name" title="${escapeHTML(name)}">${escapeHTML(name)}</div>
+            <span class="logs-channel-panel__channel-multiplier" title="${escapeHTML(multiplier)}">${escapeHTML(multiplier)}</span>
           </div>
           <div class="logs-channel-panel__meta">
             <span class="logs-channel-panel__type">${escapeHTML(type)}</span>
@@ -1948,6 +1956,7 @@
       mergeVisibleChannelOrder,
       compareChannelsByPriority,
       formatDailyCost,
+      formatChannelMultiplier,
       normalizeGroupKey,
       renderChannelRow,
       normalizeTokenID,
