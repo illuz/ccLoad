@@ -975,6 +975,8 @@ window.I18N_LOCALES['zh-CN'] = {
   'logs.channelPanel.recent50CacheHitRateShort': '50次 {rate}',
   'logs.channelPanel.requestSuccessRate': '成功率 {rate}',
   'logs.channelPanel.cacheHitRateShort': '命中 {rate}',
+  'logs.channelPanel.cacheRateLabel': '命中率：',
+  'logs.channelPanel.successRateLabel': '成功率：',
   'logs.channelPanel.todayShort': '当日',
   'logs.channelPanel.recent30mShort': '30分',
   'logs.channelPanel.recent50Short': '50次',

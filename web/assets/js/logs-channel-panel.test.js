@@ -44,10 +44,10 @@ test('日志页接入默认折叠的渠道快捷浮窗', () => {
 test('日志快捷浮窗提供渠道和令牌两个 tab，并有独立令牌入口', () => {
   assert.match(html, /id="logsTokenPanelTrigger"[\s\S]*data-channel-panel-action="open-token"/);
   assert.ok(
-    html.indexOf('id="logsTokenPanelTrigger"') < html.indexOf('id="logsChannelPanelTrigger"'),
-    '令牌入口应位于渠道入口上方'
+    html.indexOf('id="logsChannelPanelTrigger"') < html.indexOf('id="logsTokenPanelTrigger"'),
+    '渠道入口应位于左侧，令牌入口应位于右侧'
   );
-  assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?flex-direction:\s*column;/);
+  assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?flex-direction:\s*row;/);
   assert.match(html, /id="logsChannelPanelChannelTab"[\s\S]*role="tab"/);
   assert.match(html, /id="logsChannelPanelTokenTab"[\s\S]*data-panel-tab="tokens"/);
   assert.match(html, /data-channel-panel-action="select-tab"/);
@@ -68,7 +68,7 @@ test('面板眼睛按钮隐藏未开启渠道和今日未使用令牌', () => {
 
 test('浮窗使用固定右下角工具布局并适配窄屏', () => {
   assert.match(css, /\.logs-channel-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:[\s\S]*?bottom:/);
-  assert.match(css, /\.logs-channel-panel__surface\s*\{[\s\S]*?width:\s*min\(380px,[\s\S]*?max-height:/);
+  assert.match(css, /\.logs-channel-panel__surface\s*\{[\s\S]*?width:\s*min\(440px,[\s\S]*?max-height:/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)[\s\S]*?width:\s*calc\(100vw\s*-\s*24px\)/);
   assert.match(css, /\.logs-channel-panel__name\s*\{[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(css, /\.logs-channel-panel__drag\s*\{[\s\S]*?touch-action:\s*none;/);
@@ -338,30 +338,37 @@ test('渠道和令牌第三行展示当日、近半小时和近 50 次缓存与�
     priority: 10,
     enabled: true
   }, '1', api.buildCacheMetric(100, 25, 0, 8, 2), api.buildCacheMetric(100, 30, 0, 9, 1), api.buildCacheMetric(100, 90, 0, 10, 0));
-  assert.match(channelRow, /title="Last 30m cache hit rate 47\.4%"[^>]*>Today hit 47\.4%<\/span>/);
-  assert.match(channelRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 20\.0%"[^>]*>30m hit 20\.0%<\/span>/);
-  assert.match(channelRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 23\.1%"[^>]*>50 req hit 23\.1%<\/span>/);
-  assert.match(channelRow, /logs-channel-panel__cache-rate--success--warning[^>]*>30m success 80\.0%<\/span>/);
-  assert.match(channelRow, /logs-channel-panel__cache-rate--success--good[^>]*>50 req success 90\.0%<\/span>/);
+  assert.match(channelRow, /title="Last 30m cache hit rate 47\.4%"[^>]*>Today 47\.4%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 20\.0%"[^>]*>30m 20\.0%<\/span>/);
+  assert.match(channelRow, /<div class="logs-channel-panel__meta">[\s\S]*?<span class="logs-channel-panel__cache-rates-line">/);
+  assert.match(channelRow, /logs-channel-panel__rate-label">Hit rate:<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__rate-label">Success rate:<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 23\.1%"[^>]*>50 req 23\.1%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--success--warning[^>]*>30m 80\.0%<\/span>/);
+  assert.match(channelRow, /logs-channel-panel__cache-rate--success--good[^>]*>50 req 90\.0%<\/span>/);
 
   const tokenRow = api.renderTokenRow({
     id: 3,
     description: 'Cache token',
     is_active: true
   }, '1', api.buildCacheMetric(100, 0, 0, 6, 4), api.buildCacheMetric(100, 50, 0, 7, 3), api.buildCacheMetric(100, 90, 0, 10, 0));
-  assert.match(tokenRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 0\.0%"[^>]*>30m hit 0\.0%<\/span>/);
-  assert.match(tokenRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 33\.3%"[^>]*>50 req hit 33\.3%<\/span>/);
-  assert.match(tokenRow, /logs-channel-panel__cache-rate--success--bad[^>]*>30m success 60\.0%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rates-line[\s\S]*logs-channel-panel__cache-rate[^>]*title="Last 30m cache hit rate 0\.0%"[^>]*>30m 0\.0%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rate--recent50[^>]*title="Last 50 requests cache hit rate 33\.3%"[^>]*>50 req 33\.3%<\/span>/);
+  assert.match(tokenRow, /logs-channel-panel__cache-rate--success--bad[^>]*>30m 60\.0%<\/span>/);
+  assert.match(tokenRow, /<div class="logs-channel-panel__meta"[^>]*>[\s\S]*?<span class="logs-channel-panel__cache-rates-line">/);
 
   assert.equal(api.formatRecentCacheHitRate(null), '');
   assert.equal(api.formatRecentCacheHitRateShort(null), '');
   assert.equal(api.formatRecent50CacheHitRate(null), '');
   assert.equal(api.formatRecent50CacheHitRateShort(null), '');
   assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
-  assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?gap:\s*3px;/);
+  assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?flex-direction:\s*column;/);
+  assert.match(css, /\.logs-channel-panel__cache-rates-row\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*8px;/);
   assert.match(css, /\.logs-channel-panel__cache-rate--recent50,/);
   assert.match(css, /\.logs-channel-panel__cache-rate--cache--good,[\s\S]*?\.logs-channel-panel__cache-rate--success--good/);
-  assert.match(css, /\.logs-channel-panel__cache-rates\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(css, /\.logs-channel-panel__cache-rates-row\s*\{[\s\S]*?display:\s*flex;[\s\S]*?width:\s*100%;/);
+  assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?padding:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;/);
+  assert.match(css, /\.logs-channel-panel__cache-rate\s*\{[\s\S]*?font-size:\s*inherit;[\s\S]*?line-height:\s*inherit;/);
   assert.match(css, /\.logs-channel-panel__name-line\s*\{[\s\S]*?display:\s*flex;[\s\S]*?min-width:\s*0;/);
   assert.match(css, /@media\s*\(max-width:\s*340px\)[\s\S]*?\.logs-channel-panel__name-line[\s\S]*?flex-wrap:\s*wrap;/);
 });

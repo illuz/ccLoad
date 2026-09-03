@@ -46,6 +46,8 @@
     'logs.channelPanel.recent50CacheHitRateShort': '50 req {rate}',
     'logs.channelPanel.requestSuccessRate': 'success {rate}',
     'logs.channelPanel.cacheHitRateShort': 'hit {rate}',
+    'logs.channelPanel.cacheRateLabel': 'Hit rate:',
+    'logs.channelPanel.successRateLabel': 'Success rate:',
     'logs.channelPanel.todayShort': 'Today',
     'logs.channelPanel.recent30mShort': '30m',
     'logs.channelPanel.recent50Short': '50 req',
@@ -319,16 +321,12 @@
 
   function formatRequestSuccessRateShort(metric, windowLabel) {
     if (!metric || !Number.isFinite(Number(metric.successRate))) return '';
-    return `${windowLabel} ${translate('logs.channelPanel.requestSuccessRate', {
-      rate: `${(Math.max(0, Math.min(1, Number(metric.successRate))) * 100).toFixed(1)}%`
-    })}`;
+    return `${windowLabel} ${(Math.max(0, Math.min(1, Number(metric.successRate))) * 100).toFixed(1)}%`;
   }
 
   function formatCacheHitRateShort(metric, windowLabel) {
     if (!metric || !Number.isFinite(Number(metric.rate))) return '';
-    return `${windowLabel} ${translate('logs.channelPanel.cacheHitRateShort', {
-      rate: `${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`
-    })}`;
+    return `${windowLabel} ${(Math.max(0, Math.min(1, Number(metric.rate))) * 100).toFixed(1)}%`;
   }
 
   function buildRecentRequestCacheQuery(limit = RECENT_REQUEST_CACHE_COUNT) {
@@ -427,7 +425,7 @@
       recentMetric = todayMetric;
       todayMetric = null;
     }
-    const badges = [
+    const cacheBadges = [
       buildCacheRateBadge(
         formatCacheHitRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
         formatRecentCacheHitRate(todayMetric),
@@ -443,6 +441,8 @@
         formatRecent50CacheHitRate(recent50Metric),
         `recent50 cache--${getCacheRateTone(recent50Metric)}`
       ),
+    ].filter(Boolean);
+    const successBadges = [
       buildCacheRateBadge(
         formatRequestSuccessRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
         formatRequestSuccessRateShort(todayMetric, translate('logs.channelPanel.todayShort')),
@@ -459,8 +459,8 @@
         `success--${getSuccessRateTone(recent50Metric)}`
       )
     ].filter(Boolean);
-    return badges.length
-      ? `<span class="logs-channel-panel__cache-rates">${badges.join('')}</span>`
+    return cacheBadges.length || successBadges.length
+      ? `<span class="logs-channel-panel__cache-rates"><span class="logs-channel-panel__cache-rates-row"><span class="logs-channel-panel__rate-label">${escapeHTML(translate('logs.channelPanel.cacheRateLabel'))}</span>${cacheBadges.join('')}</span><span class="logs-channel-panel__cache-rates-row"><span class="logs-channel-panel__rate-label">${escapeHTML(translate('logs.channelPanel.successRateLabel'))}</span>${successBadges.join('')}</span></span>`
       : '';
   }
 
@@ -1101,8 +1101,8 @@
               <span class="logs-channel-panel__daily-cost" title="${escapeHTML(dailyCost)}">${escapeHTML(dailyCost)}</span>
             </span>
             ${cooldownHTML}
+            ${recentCacheRatesHTML ? `<span class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</span>` : ''}
           </div>
-          ${recentCacheRatesHTML ? `<div class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-channel" data-channel-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>
@@ -1165,9 +1165,9 @@
             ${tokenLimitBadgesHTML ? `<div class="logs-channel-panel__token-badges">${tokenLimitBadgesHTML}</div>` : ''}
             <div class="logs-channel-panel__meta" title="${escapeHTML(dailyCost)}">
               <span class="logs-channel-panel__meta-item">${escapeHTML(dailyCost)}</span>
+              ${recentCacheRatesHTML ? `<span class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</span>` : ''}
             </div>
           </div>
-          ${recentCacheRatesHTML ? `<div class="logs-channel-panel__cache-rates-line">${recentCacheRatesHTML}</div>` : ''}
         </div>
         <div class="logs-channel-panel__row-actions">
           <button type="button" class="logs-channel-panel__edit" data-channel-panel-action="edit-token" data-token-id="${id}" title="${escapeHTML(editLabel)}" aria-label="${escapeHTML(editLabel)}">${ICONS.edit}</button>

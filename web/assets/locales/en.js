@@ -975,6 +975,8 @@ window.I18N_LOCALES['en'] = {
   'logs.channelPanel.recent50CacheHitRateShort': '50 req {rate}',
   'logs.channelPanel.requestSuccessRate': 'success {rate}',
   'logs.channelPanel.cacheHitRateShort': 'hit {rate}',
+  'logs.channelPanel.cacheRateLabel': 'Hit rate:',
+  'logs.channelPanel.successRateLabel': 'Success rate:',
   'logs.channelPanel.todayShort': 'Today',
   'logs.channelPanel.recent30mShort': '30m',
   'logs.channelPanel.recent50Short': '50 req',

@@ -138,25 +138,6 @@
   <aside id="logsChannelPanel" class="logs-channel-panel" data-state="collapsed" aria-label="渠道快捷控制">
     <button
       type="button"
-      id="logsTokenPanelTrigger"
-      class="logs-channel-panel__trigger logs-channel-panel__trigger--token"
-      data-channel-panel-action="open-token"
-      aria-controls="logsChannelPanelSurface"
-      aria-expanded="false"
-      data-i18n-title="logs.channelPanel.openTokens"
-      data-i18n-aria-label="logs.channelPanel.openTokens"
-      title="打开令牌快速控制"
-      aria-label="打开令牌快速控制"
-    >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="8.5" cy="12" r="4.5"></circle>
-        <path d="M12.8 12H21V14.6H19.2V16.4H17.4V14.6H15.6V13H12.8"></path>
-      </svg>
-      <span id="logsTokenPanelBadge" class="logs-channel-panel__badge" hidden></span>
-    </button>
-
-    <button
-      type="button"
       id="logsChannelPanelTrigger"
       class="logs-channel-panel__trigger"
       data-channel-panel-action="expand"
@@ -179,6 +160,25 @@
         <line x1="16" x2="16" y1="18" y2="22"></line>
       </svg>
       <span id="logsChannelPanelBadge" class="logs-channel-panel__badge" hidden></span>
+    </button>
+
+    <button
+      type="button"
+      id="logsTokenPanelTrigger"
+      class="logs-channel-panel__trigger logs-channel-panel__trigger--token"
+      data-channel-panel-action="open-token"
+      aria-controls="logsChannelPanelSurface"
+      aria-expanded="false"
+      data-i18n-title="logs.channelPanel.openTokens"
+      data-i18n-aria-label="logs.channelPanel.openTokens"
+      title="打开令牌快速控制"
+      aria-label="打开令牌快速控制"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8.5" cy="12" r="4.5"></circle>
+        <path d="M12.8 12H21V14.6H19.2V16.4H17.4V14.6H15.6V13H12.8"></path>
+      </svg>
+      <span id="logsTokenPanelBadge" class="logs-channel-panel__badge" hidden></span>
     </button>
 
     <section id="logsChannelPanelSurface" class="logs-channel-panel__surface" hidden>
