@@ -316,6 +316,28 @@ func extractBearerToken(authHeader string) (string, bool) {
 	return parts[1], true
 }
 
+// splitBillingGroupVariant parses the optional customer-facing token variant
+// suffix (for example: sk-test~gpt01). The base token remains the credential
+// used for authentication; the suffix only selects a billing group.
+func splitBillingGroupVariant(value string) (base, slug string, ok bool) {
+	value = strings.TrimSpace(value)
+	idx := strings.LastIndexByte(value, '~')
+	if idx <= 0 || idx == len(value)-1 {
+		return value, "", false
+	}
+	slug = strings.ToLower(strings.TrimSpace(value[idx+1:]))
+	if slug == "" {
+		return value, "", false
+	}
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return value, "", false
+	}
+	return value[:idx], slug, true
+}
+
 // RequireTokenAuth Token 认证中间件（管理界面使用）
 func (s *AuthService) RequireTokenAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -401,12 +423,30 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		// 双路径验证：先尝试直接匹配（客户端发送的是hash值），再尝试SHA256匹配（客户端发送的是明文）
 		s.authTokensMux.RLock()
 		var tokenHash string
+		var billingGroupSlug string
 		expiresAt, exists := s.authTokens[token]
 		if exists {
 			tokenHash = token
 		} else {
 			tokenHash = model.HashToken(token)
 			expiresAt, exists = s.authTokens[tokenHash]
+		}
+		// If the full value is not a token, try the standards-safe variant
+		// form base~group. Existing tokens containing '~' still work because
+		// the direct lookup above always wins.
+		if !exists {
+			if base, slug, ok := splitBillingGroupVariant(token); ok {
+				candidateHash := base
+				candidateExpiry, candidateExists := s.authTokens[candidateHash]
+				if !candidateExists {
+					candidateHash = model.HashToken(base)
+					candidateExpiry, candidateExists = s.authTokens[candidateHash]
+				}
+				if candidateExists {
+					tokenHash, expiresAt, exists, billingGroupSlug = candidateHash, candidateExpiry, true, slug
+					token = base
+				}
+			}
 		}
 		tokenID, hasTokenID := s.authTokenIDs[tokenHash]
 		s.authTokensMux.RUnlock()
@@ -419,6 +459,9 @@ func (s *AuthService) RequireAPIAuth() gin.HandlerFunc {
 		// 已识别的令牌即使随后因过期或并发限制被拒绝，也应能在请求日志中关联到令牌。
 		c.Set("token_hash", tokenHash)
 		c.Set("token_key", token)
+		if billingGroupSlug != "" {
+			c.Set("billing_group_slug", billingGroupSlug)
+		}
 		if hasTokenID {
 			c.Set("token_id", tokenID)
 		}

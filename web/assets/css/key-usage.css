@@ -242,3 +242,32 @@ body {
   }
 
 }
+
+.public-usage-billing-summary {
+  margin-bottom: 12px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.public-usage-group-hint { margin: -4px 0 12px; color: var(--neutral-600, #6b7280); font-size: 12px; }
+.public-usage-groups {
+  display: grid;
+  gap: 8px;
+}
+.public-usage-group-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 8px;
+}
+.public-usage-group-item span { color: var(--neutral-600, #6b7280); font-size: 12px; }
+.public-usage-group-item button { font-size: 12px; }
+.public-usage-transactions { margin-top: 12px; color: var(--neutral-600, #6b7280); font-size: 12px; }
+.public-usage-transactions h3 { margin: 18px 0 8px; color: var(--neutral-900, #111827); font-size: 14px; }
+.public-usage-transaction-row { padding: 7px 0; border-bottom: 1px solid var(--surface-border, #e5e7eb); }
+@media (max-width: 600px) {
+  .public-usage-group-item { grid-template-columns: 1fr auto; }
+  .public-usage-group-item span { grid-column: 1 / -1; }
+}

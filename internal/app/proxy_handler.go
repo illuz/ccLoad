@@ -418,6 +418,12 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 	tokenID, _ := c.Get("token_id")
 	tokenIDInt64, _ := tokenID.(int64)
 
+	requestBillingGroup, billingErr := s.resolveRequestBillingGroup(c.Request.Context(), c, tokenHashStr)
+	if billingErr != nil {
+		s.rejectBillingGroup(c, billingErr, startTime, originalModel, isStreaming, thinkingEffort)
+		return
+	}
+
 	if !s.enforceTokenLimits(c, clientProtocol, tokenHashStr, originalModel, startTime, isStreaming, thinkingEffort) {
 		return
 	}
@@ -454,6 +460,9 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		s.recordProxyRejection(c, startTime, originalModel, http.StatusInternalServerError, "route selection failed", isStreaming, thinkingEffort)
 		return
+	}
+	if requestBillingGroup != nil {
+		cands = filterBillingGroupChannels(cands, requestBillingGroup)
 	}
 
 	if len(cands) == 0 {
@@ -512,6 +521,10 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 		activeReqID:       activeID,
 		startTime:         startTime,
 		thinkingEffort:    thinkingEffort,
+		billingGroupID:    billingGroupIDFromContext(c),
+		billingGroupSlug:  c.GetString("billing_group_slug"),
+		billingMultiplier: billingMultiplierFromContext(c),
+		balanceEnabled:    balanceEnabledFromContext(c),
 		timing:            timing,
 	}
 	reqCtx.observer = &ForwardObserver{
@@ -589,6 +602,22 @@ func (s *Server) enforceTokenLimits(
 			})
 			s.recordProxyRejection(c, startTime, originalModel, http.StatusForbidden, message, isStreaming, thinkingEffort)
 			return false
+		}
+	}
+
+	// 新余额模式以令牌钱包为唯一额度来源，旧的总量/日/月限额全部跳过。
+	// 余额检查发生在请求开始时；并发中的请求允许在结算时形成轻微负数，
+	// 但余额小于等于 0 后不再接受新的请求。
+	if tokenHash != "" && s.store != nil {
+		if token, err := s.store.GetAuthTokenByValue(c.Request.Context(), tokenHash); err == nil && token.BalanceEnabled {
+			c.Set("balance_enabled", true)
+			if token.BalanceMicroUSD <= 0 {
+				message := fmt.Sprintf("Balance exhausted: $%.6f remaining", util.MicroUSDToUSD(token.BalanceMicroUSD))
+				writeTokenQuotaError(c, clientProtocol, message, "balance_exhausted")
+				s.recordProxyRejection(c, startTime, originalModel, http.StatusTooManyRequests, message, isStreaming, thinkingEffort)
+				return false
+			}
+			return true
 		}
 	}
 

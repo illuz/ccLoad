@@ -117,6 +117,20 @@ type Store interface {
 	FillAuthTokenRPMStats(ctx context.Context, stats map[int64]*model.AuthTokenRangeStats, startTime, endTime time.Time, isToday bool) error
 	GetCostByChannelAndToken(ctx context.Context, startTime, endTime time.Time) ([]model.CostByChannelTokenRow, error)
 
+	// === Customer Billing ===
+	CreateBillingGroup(ctx context.Context, group *model.BillingGroup) error
+	GetBillingGroup(ctx context.Context, id int64) (*model.BillingGroup, error)
+	GetBillingGroupBySlug(ctx context.Context, slug string) (*model.BillingGroup, error)
+	ListBillingGroups(ctx context.Context) ([]*model.BillingGroup, error)
+	UpdateBillingGroup(ctx context.Context, group *model.BillingGroup) error
+	DeleteBillingGroup(ctx context.Context, id int64) error
+	GetBillingGroupChannels(ctx context.Context, groupID int64) ([]int64, error)
+	SetBillingGroupChannels(ctx context.Context, groupID int64, channelIDs []int64) error
+	AdjustAuthTokenBalance(ctx context.Context, tokenID, deltaMicroUSD int64, txType, note string) (*model.BalanceTransaction, error)
+	ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error)
+	ListAuthTokenBalanceTransactions(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error)
+	GetAuthTokenBillingGroupUsage(ctx context.Context, tokenID int64, since, until time.Time) ([]model.BillingGroupUsage, error)
+
 	// === System Settings ===
 	GetSetting(ctx context.Context, key string) (*model.SystemSetting, error)
 	ListAllSettings(ctx context.Context) ([]*model.SystemSetting, error)

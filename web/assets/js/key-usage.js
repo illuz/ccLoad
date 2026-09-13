@@ -9,6 +9,9 @@
   const chartElement = document.getElementById('usageChart');
   const modelTokenChartElement = document.getElementById('modelTokenChart');
   const modelCostChartElement = document.getElementById('modelCostChart');
+  const billingSummary = document.getElementById('billingSummary');
+  const billingGroups = document.getElementById('billingGroups');
+  const balanceTransactions = document.getElementById('balanceTransactions');
 
   const MODEL_COLORS = [
     '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -99,6 +102,57 @@
       fragment.appendChild(item);
     });
     todayMetrics.replaceChildren(fragment);
+  }
+
+  function renderBilling(data) {
+    if (!billingSummary || !billingGroups) return;
+    const balanceEnabled = Boolean(data.balance_enabled);
+    billingSummary.textContent = balanceEnabled
+      ? `当前余额：${currency(data.balance_usd)}（余额模式已启用）`
+      : '当前令牌使用传统限额模式';
+    const groups = Array.isArray(data.billing_groups) ? data.billing_groups : [];
+    billingGroups.replaceChildren();
+    groups.forEach((group) => {
+      const item = document.createElement('div');
+      item.className = 'public-usage-group-item';
+      const title = document.createElement('strong');
+      title.textContent = `${group.name || group.slug} × ${Number(group.multiplier || 0).toFixed(4)}`;
+      const detail = document.createElement('span');
+      detail.textContent = `可用渠道 ${group.available_channel_count || 0}/${group.channel_count || 0} · 成功率 ${number((Number(group.success_rate) || 0) * 100, 1)}% · 已消费 ${currency(group.charged_usd)} · 请求 ${number(group.request_count)}`;
+      const button = document.createElement('button');
+      button.type = 'button';
+      const isDefault = Number(data.default_billing_group_id) === Number(group.id);
+      button.textContent = isDefault ? '默认分组' : (group.enabled ? '设为默认' : '已停用');
+      button.disabled = isDefault || !group.enabled;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await fetch(`/public/key-usage/default-group?key=${encodeURIComponent(key)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: group.id })
+          });
+          await load();
+        } finally { button.disabled = false; }
+      });
+      item.append(title, detail, button);
+      billingGroups.appendChild(item);
+    });
+    if (balanceTransactions) {
+      const txs = Array.isArray(data.balance_transactions) ? data.balance_transactions : [];
+      balanceTransactions.replaceChildren();
+      if (txs.length) {
+        const title = document.createElement('h3');
+        title.textContent = '余额流水';
+        balanceTransactions.appendChild(title);
+        txs.forEach((tx) => {
+          const row = document.createElement('div');
+          row.className = 'public-usage-transaction-row';
+          const group = tx.billing_group_slug ? ` · ${tx.billing_group_slug}` : '';
+          row.textContent = `${new Date(tx.created_at).toLocaleString('zh-CN')} · ${tx.type}${group} · ${currency(tx.delta_usd)} · 余额 ${currency(tx.balance_after_usd)}${tx.note ? ` · ${tx.note}` : ''}`;
+          balanceTransactions.appendChild(row);
+        });
+      }
+    }
   }
 
   function chartColors() {
@@ -326,6 +380,7 @@
     latestTrend = Array.isArray(data.trend) ? data.trend : [];
     latestModelUsage = Array.isArray(data.model_usage) ? data.model_usage : [];
     renderMetrics(data);
+    renderBilling(data);
     renderModelCharts(latestModelUsage);
     renderChart(latestTrend);
     updatedAt.textContent = `更新于 ${new Intl.DateTimeFormat('zh-CN', {

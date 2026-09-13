@@ -4,6 +4,7 @@
     let isToday = true;      // 是否为本日（本日才显示最近一分钟）
     let tokenSearch = '';
     let authTokenGroups = [];
+    let billingGroups = [];
     let tokenViewMode = localStorage.getItem('tokens.viewMode') || 'group';
     let collapsedTokenGroups = new Set(JSON.parse(localStorage.getItem('tokens.collapsedGroups') || '[]'));
     let selectedTokenIds = new Set();
@@ -112,6 +113,7 @@
 
       // 加载令牌列表(默认显示本日统计)
       loadTokens();
+      loadBillingGroups();
 
       // 预加载渠道数据（用于模型选择）
       loadChannelsData();
@@ -145,6 +147,12 @@
           'show-create-modal': () => showCreateModal(),
           'generate-create-token': () => generateCreateTokenValue(),
           'show-token-group-manager': () => showTokenGroupManager(),
+          'show-billing-group-manager': () => showBillingGroupManager(),
+          'close-billing-group-manager': () => closeBillingGroupManager(),
+          'reset-billing-group-form': () => resetBillingGroupForm(),
+          'save-billing-group': () => saveBillingGroup(),
+          'edit-billing-group': (actionTarget) => editBillingGroup(Number(actionTarget.dataset.groupId)),
+          'delete-billing-group': (actionTarget) => deleteBillingGroup(Number(actionTarget.dataset.groupId)),
           'create-token-group-draft': () => createTokenGroupDraft(),
           'filter-tokens': () => applyTokenSearch(),
           'show-token-group-channel-select': () => showTokenGroupChannelSelect(),
@@ -910,6 +918,128 @@
       }
     }
 
+    function refreshBillingGroupOptions(selectID, selectedID = 0) {
+      const select = document.getElementById(selectID);
+      if (!select) return;
+      const current = String(Number(selectedID) || 0);
+      select.innerHTML = [
+        `<option value="0"${current === '0' ? ' selected' : ''}>未设置</option>`,
+        ...billingGroups.map((group) => `<option value="${Number(group.id)}"${String(Number(group.id)) === current ? ' selected' : ''}>${escapeHtml(group.name)} × ${Number(group.multiplier).toFixed(4)}${group.enabled ? '' : '（已停用）'}</option>`)
+      ].join('');
+      select.value = current;
+    }
+
+    async function loadBillingGroups() {
+      try {
+        const data = await fetchDataWithAuth(`${API_BASE}/billing-groups`);
+        billingGroups = (data && data.groups) || [];
+        refreshBillingGroupOptions('tokenDefaultBillingGroup');
+        refreshBillingGroupOptions('editDefaultBillingGroup');
+      } catch (error) {
+        console.error('Failed to load billing groups:', error);
+      }
+      return billingGroups;
+    }
+
+    function resetBillingGroupForm() {
+      document.getElementById('billingGroupID').value = '0';
+      document.getElementById('billingGroupName').value = '';
+      document.getElementById('billingGroupSlug').value = '';
+      document.getElementById('billingGroupDescription').value = '';
+      document.getElementById('billingGroupMultiplier').value = '1';
+      document.getElementById('billingGroupEnabled').checked = true;
+      document.querySelectorAll('[data-billing-group-channel]').forEach((input) => { input.checked = false; });
+    }
+
+    function renderBillingGroupChannelOptions(selectedIDs = []) {
+      const container = document.getElementById('billingGroupChannelOptions');
+      if (!container) return;
+      const selected = new Set((selectedIDs || []).map(Number));
+      container.innerHTML = allChannels.map((channel) => `
+        <label class="token-model-checkbox-item">
+          <input type="checkbox" class="control-checkbox" data-billing-group-channel value="${Number(channel.id)}"${selected.has(Number(channel.id)) ? ' checked' : ''}>
+          <span>${escapeHtml(channel.name || `#${channel.id}`)}</span>
+        </label>
+      `).join('') || '<span class="token-limit-hint">暂无渠道</span>';
+    }
+
+    function renderBillingGroupList() {
+      const container = document.getElementById('billingGroupList');
+      if (!container) return;
+      container.innerHTML = billingGroups.map((group) => `
+        <div class="token-group-list-item">
+          <div><strong>${escapeHtml(group.name)}</strong> <code>${escapeHtml(group.slug)}</code> · × ${Number(group.multiplier).toFixed(4)} · 渠道 ${(group.channel_ids || []).length}</div>
+          <div>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="edit-billing-group" data-group-id="${Number(group.id)}">编辑</button>
+            <button type="button" class="btn btn-danger btn-sm" data-action="delete-billing-group" data-group-id="${Number(group.id)}">删除</button>
+          </div>
+        </div>
+      `).join('') || '<div class="token-limit-hint">暂无计费分组</div>';
+    }
+
+    async function showBillingGroupManager() {
+      await Promise.all([loadBillingGroups(), allChannels.length ? Promise.resolve(allChannels) : loadChannelsData()]);
+      renderBillingGroupChannelOptions();
+      renderBillingGroupList();
+      resetBillingGroupForm();
+      document.getElementById('billingGroupModal').style.display = 'block';
+      pushModal(closeBillingGroupManager);
+    }
+
+    function closeBillingGroupManager() {
+      document.getElementById('billingGroupModal').style.display = 'none';
+      popModal();
+    }
+
+    function editBillingGroup(id) {
+      const group = billingGroups.find((item) => Number(item.id) === Number(id));
+      if (!group) return;
+      document.getElementById('billingGroupID').value = String(group.id);
+      document.getElementById('billingGroupName').value = group.name || '';
+      document.getElementById('billingGroupSlug').value = group.slug || '';
+      document.getElementById('billingGroupDescription').value = group.description || '';
+      document.getElementById('billingGroupMultiplier').value = String(group.multiplier ?? 1);
+      document.getElementById('billingGroupEnabled').checked = !!group.enabled;
+      renderBillingGroupChannelOptions(group.channel_ids || []);
+    }
+
+    async function saveBillingGroup() {
+      const id = Number(document.getElementById('billingGroupID').value) || 0;
+      const name = document.getElementById('billingGroupName').value.trim();
+      const slug = document.getElementById('billingGroupSlug').value.trim();
+      const multiplier = Number(document.getElementById('billingGroupMultiplier').value);
+      if (!name || !slug || !Number.isFinite(multiplier) || multiplier < 0) {
+        window.showNotification('请填写有效的名称、标识和倍率', 'error');
+        return;
+      }
+      const channelIDs = Array.from(document.querySelectorAll('[data-billing-group-channel]:checked')).map((input) => Number(input.value));
+      try {
+        await fetchDataWithAuth(`${API_BASE}/billing-groups${id ? `/${id}` : ''}`, {
+          method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, slug, description: document.getElementById('billingGroupDescription').value.trim(), multiplier, enabled: document.getElementById('billingGroupEnabled').checked, channel_ids: channelIDs })
+        });
+        await loadBillingGroups();
+        renderBillingGroupList();
+        renderBillingGroupChannelOptions();
+        resetBillingGroupForm();
+        window.showNotification('计费分组已保存', 'success');
+      } catch (error) {
+        window.showNotification(`保存失败：${error.message}`, 'error');
+      }
+    }
+
+    async function deleteBillingGroup(id) {
+      if (!confirm('确定删除这个计费分组？')) return;
+      try {
+        await fetchDataWithAuth(`${API_BASE}/billing-groups/${id}`, { method: 'DELETE' });
+        await loadBillingGroups();
+        renderBillingGroupList();
+        resetBillingGroupForm();
+      } catch (error) {
+        window.showNotification(`删除失败：${error.message}`, 'error');
+      }
+    }
+
     function generateRandomHex(byteLength = 24) {
       const size = Number(byteLength) > 0 ? Number(byteLength) : 24;
       const cryptoProvider = window.crypto || globalThis.crypto;
@@ -1541,6 +1671,7 @@
 
     async function showCreateModal() {
       await ensureAuthTokenGroupsLoaded();
+	  if (billingGroups.length === 0) await loadBillingGroups();
       document.getElementById('tokenDescription').value = '';
       generateCreateTokenValue();
       refreshCreateGroupOptions(0);
@@ -1549,6 +1680,9 @@
       document.getElementById('tokenDailyCostLimitUSD').value = 0;
       document.getElementById('tokenMonthlyCostLimitUSD').value = 0;
       document.getElementById('tokenMaxConcurrency').value = 0;
+      document.getElementById('tokenBalanceEnabled').checked = false;
+      document.getElementById('tokenBalanceUSD').value = 0;
+      refreshBillingGroupOptions('tokenDefaultBillingGroup', 0);
       const codexGuardInput = document.getElementById('tokenCodexGuardEnabled');
       if (codexGuardInput) codexGuardInput.checked = false;
       document.getElementById('tokenActive').checked = true;
@@ -1589,6 +1723,9 @@
       const costLimitUSD = parseFloat(document.getElementById('tokenCostLimitUSD').value) || 0;
       const dailyCostLimitUSD = parseFloat(document.getElementById('tokenDailyCostLimitUSD').value) || 0;
       const monthlyCostLimitUSD = parseFloat(document.getElementById('tokenMonthlyCostLimitUSD').value) || 0;
+      const balanceEnabled = !!document.getElementById('tokenBalanceEnabled')?.checked;
+      const balanceUSD = parseFloat(document.getElementById('tokenBalanceUSD')?.value) || 0;
+      const defaultBillingGroupID = Number(document.getElementById('tokenDefaultBillingGroup')?.value) || 0;
       const maxConcurrencyResult = parseMaxConcurrencyInput(document.getElementById('tokenMaxConcurrency').value);
       if (costLimitUSD < 0) {
         window.showNotification(t('tokens.msg.costLimitNegative'), 'error');
@@ -1600,6 +1737,10 @@
       }
       if (monthlyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.monthlyCostLimitNegative'), 'error');
+        return;
+      }
+      if (balanceUSD < 0) {
+        window.showNotification('余额不能小于 0', 'error');
         return;
       }
       if (maxConcurrencyResult.error) {
@@ -1623,6 +1764,9 @@
             daily_cost_limit_usd: dailyCostLimitUSD,
             monthly_cost_limit_usd: monthlyCostLimitUSD,
             max_concurrency: maxConcurrency,
+            balance_enabled: balanceEnabled,
+            balance_usd: balanceUSD,
+            default_billing_group_id: defaultBillingGroupID,
             group_id: groupID,
             inherit_quota: groupID > 0,
             inherit_channels: groupID > 0,
@@ -1645,6 +1789,9 @@
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
           monthly_cost_limit_usd: monthlyCostLimitUSD,
+          balance_enabled: balanceEnabled,
+          balance_usd: balanceUSD,
+          default_billing_group_id: defaultBillingGroupID,
           daily_limit_double_enabled: !!data.daily_limit_double_enabled,
           daily_limit_triple_enabled: !!data.daily_limit_triple_enabled,
           daily_limit_override_usd: Number(data.daily_limit_override_usd) || 0,
@@ -1732,6 +1879,7 @@
       const token = allTokens.find(t => t.id === id);
       if (!token) return;
       await ensureAuthTokenGroupsLoaded();
+      if (billingGroups.length === 0) await loadBillingGroups();
       document.getElementById('editTokenId').value = id;
       document.getElementById('editTokenValue').value = token.plain_token || '';
       document.getElementById('editTokenDescription').value = token.description;
@@ -1740,6 +1888,9 @@
       if (editCodexGuardInput) {
         editCodexGuardInput.checked = !!token.codex_guard_enabled;
       }
+      document.getElementById('editBalanceEnabled').checked = !!token.balance_enabled;
+      document.getElementById('editBalanceUSD').value = Number(token.balance_usd) || 0;
+      refreshBillingGroupOptions('editDefaultBillingGroup', token.default_billing_group_id || 0);
       refreshEditGroupOptions(token.group_id || 0);
       if (!token.expires_at) {
         document.getElementById('editTokenExpiry').value = 'never';
@@ -2031,6 +2182,9 @@
       const description = document.getElementById('editTokenDescription').value.trim();
       const isActive = document.getElementById('editTokenActive').checked;
       const codexGuardEnabled = !!document.getElementById('editCodexGuardEnabled')?.checked;
+      const balanceEnabled = !!document.getElementById('editBalanceEnabled')?.checked;
+      const balanceUSD = parseFloat(document.getElementById('editBalanceUSD')?.value) || 0;
+      const defaultBillingGroupID = Number(document.getElementById('editDefaultBillingGroup')?.value) || 0;
       const expiryType = document.getElementById('editTokenExpiry').value;
       if (!editInheritQuota || !editInheritChannels || !editInheritModels) {
         captureRawEditValues();
@@ -2058,6 +2212,10 @@
       }
       if (monthlyCostLimitUSD < 0) {
         window.showNotification(t('tokens.msg.monthlyCostLimitNegative'), 'error');
+        return;
+      }
+      if (balanceUSD < 0) {
+        window.showNotification('余额不能小于 0', 'error');
         return;
       }
       if (dailyLimitOverrideUSD < 0) {
@@ -2094,6 +2252,9 @@
             description,
             is_active: isActive,
             codex_guard_enabled: codexGuardEnabled,
+            balance_enabled: balanceEnabled,
+            balance_usd: balanceUSD,
+            default_billing_group_id: defaultBillingGroupID,
             expires_at: expiresAt,
             group_id: groupID,
             inherit_quota: groupID > 0 && editInheritQuota,

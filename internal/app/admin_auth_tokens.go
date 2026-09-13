@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ccLoad/internal/model"
+	"ccLoad/internal/util"
 
 	"github.com/gin-gonic/gin"
 )
@@ -352,6 +353,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		InheritQuota           *bool    `json:"inherit_quota"`
 		InheritChannels        *bool    `json:"inherit_channels"`
 		InheritModels          *bool    `json:"inherit_models"`
+		BalanceEnabled         *bool    `json:"balance_enabled"`
+		BalanceUSD             *float64 `json:"balance_usd"`
+		DefaultBillingGroupID  *int64   `json:"default_billing_group_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -381,6 +385,14 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	}
 	if req.GroupID != nil && *req.GroupID < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
+		return
+	}
+	if req.BalanceUSD != nil && *req.BalanceUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "balance_usd must be >= 0")
+		return
+	}
+	if req.DefaultBillingGroupID != nil && *req.DefaultBillingGroupID < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "default_billing_group_id must be >= 0")
 		return
 	}
 	channelRestrictionMode, err := model.NormalizeChannelRestrictionMode(req.ChannelRestrictionMode)
@@ -460,6 +472,16 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 	if req.MaxConcurrency != nil {
 		authToken.MaxConcurrency = *req.MaxConcurrency
 	}
+	if req.BalanceEnabled != nil {
+		authToken.BalanceEnabled = *req.BalanceEnabled
+	}
+	initialBalanceMicroUSD := int64(0)
+	if req.BalanceUSD != nil {
+		initialBalanceMicroUSD = util.USDToMicroUSD(*req.BalanceUSD)
+	}
+	if req.DefaultBillingGroupID != nil {
+		authToken.DefaultBillingGroupID = *req.DefaultBillingGroupID
+	}
 	if err := authToken.ValidateUsageLimits(); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
@@ -474,6 +496,12 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 			return
 		}
 	}
+	if authToken.DefaultBillingGroupID > 0 {
+		if _, err := s.store.GetBillingGroup(ctx, authToken.DefaultBillingGroupID); err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, "billing group not found")
+			return
+		}
+	}
 
 	if err := s.store.CreateAuthToken(ctx, authToken); err != nil {
 		if isDuplicateAuthTokenError(err) {
@@ -483,6 +511,13 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		log.Print("[ERROR] 创建令牌失败: " + err.Error())
 		RespondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	if initialBalanceMicroUSD > 0 {
+		if _, err := s.store.AdjustAuthTokenBalance(ctx, authToken.ID, initialBalanceMicroUSD, model.BalanceTransactionManualCredit, "初始余额"); err != nil {
+			RespondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		authToken.BalanceMicroUSD = initialBalanceMicroUSD
 	}
 
 	// 触发热更新（立即生效）
@@ -516,6 +551,9 @@ func (s *Server) HandleCreateAuthToken(c *gin.Context) {
 		"inherit_quota":              authToken.InheritQuota,
 		"inherit_channels":           authToken.InheritChannels,
 		"inherit_models":             authToken.InheritModels,
+		"balance_enabled":            authToken.BalanceEnabled,
+		"balance_usd":                authToken.BalanceUSD(),
+		"default_billing_group_id":   authToken.DefaultBillingGroupID,
 	})
 }
 
@@ -549,6 +587,9 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		InheritQuota           *bool             `json:"inherit_quota"`
 		InheritChannels        *bool             `json:"inherit_channels"`
 		InheritModels          *bool             `json:"inherit_models"`
+		BalanceEnabled         *bool             `json:"balance_enabled"`
+		BalanceUSD             *float64          `json:"balance_usd"`
+		DefaultBillingGroupID  *int64            `json:"default_billing_group_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -578,6 +619,14 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	}
 	if req.GroupID != nil && *req.GroupID < 0 {
 		RespondErrorMsg(c, http.StatusBadRequest, "group_id must be >= 0")
+		return
+	}
+	if req.BalanceUSD != nil && *req.BalanceUSD < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "balance_usd must be >= 0")
+		return
+	}
+	if req.DefaultBillingGroupID != nil && *req.DefaultBillingGroupID < 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "default_billing_group_id must be >= 0")
 		return
 	}
 	var channelRestrictionMode string
@@ -662,6 +711,16 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	if req.MaxConcurrency != nil {
 		token.MaxConcurrency = *req.MaxConcurrency
 	}
+	if req.BalanceEnabled != nil {
+		token.BalanceEnabled = *req.BalanceEnabled
+	}
+	balanceDeltaMicroUSD := int64(0)
+	if req.BalanceUSD != nil {
+		balanceDeltaMicroUSD = util.USDToMicroUSD(*req.BalanceUSD) - token.BalanceMicroUSD
+	}
+	if req.DefaultBillingGroupID != nil {
+		token.DefaultBillingGroupID = *req.DefaultBillingGroupID
+	}
 	if err := token.ValidateUsageLimits(); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
@@ -669,6 +728,12 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 	if token.GroupID > 0 {
 		if _, err := s.store.GetAuthTokenGroup(ctx, token.GroupID); err != nil {
 			RespondErrorMsg(c, http.StatusBadRequest, "auth token group not found")
+			return
+		}
+	}
+	if token.DefaultBillingGroupID > 0 {
+		if _, err := s.store.GetBillingGroup(ctx, token.DefaultBillingGroupID); err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, "billing group not found")
 			return
 		}
 	}
@@ -681,6 +746,13 @@ func (s *Server) HandleUpdateAuthToken(c *gin.Context) {
 		log.Print("[ERROR] 更新令牌失败: " + err.Error())
 		RespondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	if balanceDeltaMicroUSD != 0 {
+		if _, err := s.store.AdjustAuthTokenBalance(ctx, token.ID, balanceDeltaMicroUSD, model.BalanceTransactionManualAdjust, "管理员修改余额"); err != nil {
+			RespondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		token.BalanceMicroUSD += balanceDeltaMicroUSD
 	}
 
 	// 触发热更新

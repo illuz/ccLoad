@@ -472,6 +472,22 @@ func ensureAuthTokensGroupFields(ctx context.Context, db *sql.DB, dialect Dialec
 	})
 }
 
+// ensureAuthTokensBalanceFields 确保令牌余额字段存在。
+func ensureAuthTokensBalanceFields(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "auth_tokens", []mysqlColumnDef{
+			{name: "balance_enabled", definition: "TINYINT NOT NULL DEFAULT 0"},
+			{name: "balance_microusd", definition: "BIGINT NOT NULL DEFAULT 0"},
+			{name: "default_billing_group_id", definition: "BIGINT NOT NULL DEFAULT 0"},
+		})
+	}
+	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
+		{name: "balance_enabled", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "balance_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "default_billing_group_id", definition: "INTEGER NOT NULL DEFAULT 0"},
+	})
+}
+
 func ensureAuthTokensDailyLimitDouble(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "auth_tokens", "daily_limit_double_day_key",
 		"INT NOT NULL DEFAULT 0",

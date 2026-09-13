@@ -960,6 +960,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	r.POST("/api/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
 	r.GET("/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
 	r.POST("/usage", s.authService.RequireAPIAuth(), s.HandleAuthTokenUsage)
+	r.POST("/api/usage/default-group", s.authService.RequireAPIAuth(), s.HandleSetAuthTokenDefaultBillingGroup)
 
 	// 公开访问的API
 	// - /public/summary: 需要后台登录态，避免未登录页面先看到运营数据
@@ -970,6 +971,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		public.GET("/channel-types", s.HandleGetChannelTypes)
 		public.GET("/version", s.HandlePublicVersion)
 		public.GET("/key-usage", s.HandlePublicKeyUsage)
+		public.POST("/key-usage/default-group", s.HandlePublicKeyUsageDefaultGroup)
 	}
 
 	// 事件日志（公开访问，兼容性占位接口）
@@ -1048,6 +1050,12 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.POST("/auth-token-groups", s.HandleCreateAuthTokenGroup)
 		admin.PUT("/auth-token-groups/:id", s.HandleUpdateAuthTokenGroup)
 		admin.DELETE("/auth-token-groups/:id", s.HandleDeleteAuthTokenGroup)
+		admin.GET("/billing-groups", s.HandleListBillingGroups)
+		admin.POST("/billing-groups", s.HandleCreateBillingGroup)
+		admin.PUT("/billing-groups/:id", s.HandleUpdateBillingGroup)
+		admin.DELETE("/billing-groups/:id", s.HandleDeleteBillingGroup)
+		admin.POST("/auth-tokens/:id/balance", s.HandleAdjustAuthTokenBalance)
+		admin.GET("/auth-tokens/:id/balance-transactions", s.HandleListAuthTokenBalanceTransactions)
 
 		// 系统配置管理
 		admin.GET("/settings", s.AdminListSettings)

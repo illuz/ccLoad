@@ -56,6 +56,8 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		schema.DefineSchemaMigrationsTable, // 迁移版本表必须最先创建
 		schema.DefineChannelGroupsTable,
 		schema.DefineChannelsTable,
+		schema.DefineBillingGroupsTable,
+		schema.DefineBillingGroupChannelsTable,
 		schema.DefineAPIKeysTable,
 		schema.DefineChannelModelsTable,
 		schema.DefineChannelModelCooldownsTable,
@@ -63,6 +65,7 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		schema.DefineChannelURLStatesTable,
 		schema.DefineAuthTokenGroupsTable,
 		schema.DefineAuthTokensTable,
+		schema.DefineAuthTokenBalanceTransactionsTable,
 		schema.DefineSystemSettingsTable,
 		schema.DefineAdminSessionsTable,
 		schema.DefineLogsTable,
@@ -191,6 +194,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 
 		// 增量迁移：确保auth_tokens表有缓存token字段（2025-12新增）
 		if tb.Name() == "auth_tokens" {
+			if err := ensureAuthTokensBalanceFields(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_tokens balance fields: %w", err)
+			}
 			if err := ensureAuthTokensCacheFields(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate auth_tokens cache fields: %w", err)
 			}

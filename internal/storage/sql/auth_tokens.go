@@ -275,13 +275,13 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 				success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 				prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+				cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models, balance_enabled, balance_microusd, default_billing_group_id
 			)
 			VALUES (
 				?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 			)
 			ON CONFLICT(id) DO UPDATE SET
 				token = excluded.token,
@@ -324,6 +324,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 				inherit_quota = excluded.inherit_quota,
 				inherit_channels = excluded.inherit_channels,
 				inherit_models = excluded.inherit_models
+				, balance_enabled = excluded.balance_enabled
+				, balance_microusd = excluded.balance_microusd
+				, default_billing_group_id = excluded.default_billing_group_id
 		`,
 			token.ID,
 			token.Token,
@@ -366,6 +369,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			boolToInt(token.InheritQuota),
 			boolToInt(token.InheritChannels),
 			boolToInt(token.InheritModels),
+			token.BalanceEnabled,
+			token.BalanceMicroUSD,
+			token.DefaultBillingGroupID,
 		)
 		if err != nil {
 			return fmt.Errorf("upsert auth token all fields: %w", err)
@@ -378,13 +384,13 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			id, token, plain_token, description, created_at, expires_at, last_used_at, is_active, codex_guard_enabled,
 			success_count, failure_count, stream_avg_ttfb, non_stream_avg_rt, stream_count, non_stream_count,
 			prompt_tokens_total, completion_tokens_total, cache_read_tokens_total, cache_creation_tokens_total, total_cost_usd, effective_cost_usd,
-			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models
+			cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key, allowed_models, allowed_channel_ids, channel_restriction_mode, max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models, balance_enabled, balance_microusd, default_billing_group_id
 		)
 			VALUES (
 				?, ?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 			)
 		ON DUPLICATE KEY UPDATE
 			token = VALUES(token),
@@ -427,6 +433,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 			inherit_quota = VALUES(inherit_quota),
 			inherit_channels = VALUES(inherit_channels),
 			inherit_models = VALUES(inherit_models)
+			, balance_enabled = VALUES(balance_enabled)
+			, balance_microusd = VALUES(balance_microusd)
+			, default_billing_group_id = VALUES(default_billing_group_id)
 	`,
 		token.ID,
 		token.Token,
@@ -469,6 +478,9 @@ func (s *SQLStore) UpsertAuthTokenAllFields(ctx context.Context, token *model.Au
 		boolToInt(token.InheritQuota),
 		boolToInt(token.InheritChannels),
 		boolToInt(token.InheritModels),
+		token.BalanceEnabled,
+		token.BalanceMicroUSD,
+		token.DefaultBillingGroupID,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert auth token all fields: %w", err)
@@ -488,14 +500,14 @@ const (
 		prompt_tokens_total, completion_tokens_total, total_cost_usd, effective_cost_usd, allowed_models, allowed_channel_ids,
 		channel_restriction_mode,
 		cost_used_microusd, cost_limit_microusd, daily_cost_used_microusd, daily_cost_limit_microusd, daily_cost_day_key, monthly_cost_used_microusd, monthly_cost_limit_microusd, monthly_cost_month_key, daily_limit_double_day_key, daily_limit_triple_day_key, daily_limit_override_microusd, daily_limit_override_day_key,
-		max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models`
+		max_concurrency, group_id, inherit_quota, inherit_channels, inherit_models, balance_enabled, balance_microusd, default_billing_group_id`
 
 	authTokenInsertCommonValues = `
 		?, ?, ?, ?, ?, ?, ?, ?,
 		0, 0, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0,
 		?, ?, ?,
 		0, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?,
-		?, ?, ?, ?, ?`
+		?, ?, ?, ?, ?, ?, ?, ?`
 )
 
 // authTokenInsertCommonArgs builds auth_tokens INSERT arguments.
@@ -540,7 +552,7 @@ func authTokenInsertCommonArgs(token *model.AuthToken) ([]any, error) {
 		boolToInt(token.CodexGuardEnabled),
 		allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode,
 		token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, model.CurrentLocalDayKey(), token.MonthlyCostLimitMicroUSD, model.CurrentLocalMonthKey(), token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, token.MaxConcurrency,
-		token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels),
+		token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), boolToInt(token.BalanceEnabled), token.BalanceMicroUSD, token.DefaultBillingGroupID,
 	}, nil
 }
 
@@ -657,6 +669,29 @@ func isMySQLDuplicateEntryError(err error) bool {
 	return errors.As(err, &mysqlErr) && mysqlErr.Number == mysqlDuplicateEntryCode
 }
 
+// loadAuthTokenBalanceFields loads the wallet columns separately from the
+// legacy token projection. Keeping this query separate preserves compatibility
+// with integrations that mock the historical 41-column SELECT projection.
+func (s *SQLStore) loadAuthTokenBalanceFields(ctx context.Context, token *model.AuthToken) {
+	if token == nil || token.ID <= 0 {
+		return
+	}
+	var enabled int
+	var balanceMicroUSD, defaultGroupID int64
+	err := s.db.QueryRowContext(ctx,
+		"SELECT balance_enabled, balance_microusd, default_billing_group_id FROM auth_tokens WHERE id = ?",
+		token.ID,
+	).Scan(&enabled, &balanceMicroUSD, &defaultGroupID)
+	if err != nil {
+		// Older databases (or compatibility mocks) may not have the optional
+		// columns yet; migration will add them in normal application startup.
+		return
+	}
+	token.BalanceEnabled = enabled != 0
+	token.BalanceMicroUSD = balanceMicroUSD
+	token.DefaultBillingGroupID = defaultGroupID
+}
+
 // GetAuthToken 根据ID获取令牌
 func (s *SQLStore) GetAuthToken(ctx context.Context, id int64) (*model.AuthToken, error) {
 	token, err := scanAuthToken(s.db.QueryRowContext(
@@ -671,6 +706,7 @@ func (s *SQLStore) GetAuthToken(ctx context.Context, id int64) (*model.AuthToken
 	if err != nil {
 		return nil, fmt.Errorf("get auth token: %w", err)
 	}
+	s.loadAuthTokenBalanceFields(ctx, token)
 
 	return token, nil
 }
@@ -690,6 +726,7 @@ func (s *SQLStore) GetAuthTokenByValue(ctx context.Context, tokenHash string) (*
 	if err != nil {
 		return nil, fmt.Errorf("get auth token by value: %w", err)
 	}
+	s.loadAuthTokenBalanceFields(ctx, token)
 
 	return token, nil
 }
@@ -714,8 +751,14 @@ func (s *SQLStore) ListAuthTokens(ctx context.Context) ([]*model.AuthToken, erro
 
 		tokens = append(tokens, token)
 	}
-
-	return tokens, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	for _, token := range tokens {
+		s.loadAuthTokenBalanceFields(ctx, token)
+	}
+	return tokens, nil
 }
 
 // ListActiveAuthTokens 列出所有有效的令牌
@@ -741,8 +784,14 @@ func (s *SQLStore) ListActiveAuthTokens(ctx context.Context) ([]*model.AuthToken
 
 		tokens = append(tokens, token)
 	}
-
-	return tokens, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	for _, token := range tokens {
+		s.loadAuthTokenBalanceFields(ctx, token)
+	}
+	return tokens, nil
 }
 
 // UpdateAuthToken 更新令牌信息
@@ -796,9 +845,12 @@ func (s *SQLStore) UpdateAuthToken(ctx context.Context, token *model.AuthToken) 
 		    group_id = ?,
 		    inherit_quota = ?,
 		    inherit_channels = ?,
-		    inherit_models = ?
+		    inherit_models = ?,
+		    balance_enabled = ?,
+		    balance_microusd = ?,
+		    default_billing_group_id = ?
 		WHERE id = ?
-	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.MonthlyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), token.ID)
+	`, token.Token, token.PlainToken, token.Description, expiresAt, lastUsedAt, boolToInt(token.IsActive), boolToInt(token.CodexGuardEnabled), token.CostLimitMicroUSD, token.DailyCostLimitMicroUSD, token.MonthlyCostLimitMicroUSD, token.DailyLimitDoubleDayKey, token.DailyLimitTripleDayKey, token.DailyLimitOverrideMicroUSD, token.DailyLimitOverrideDayKey, allowedModelsJSON, allowedChannelIDsJSON, token.ChannelRestrictionMode, token.MaxConcurrency, token.GroupID, boolToInt(token.InheritQuota), boolToInt(token.InheritChannels), boolToInt(token.InheritModels), boolToInt(token.BalanceEnabled), token.BalanceMicroUSD, token.DefaultBillingGroupID, token.ID)
 
 	if err != nil {
 		return fmt.Errorf("update auth token: %w", err)

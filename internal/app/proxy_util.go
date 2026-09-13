@@ -165,6 +165,10 @@ type proxyRequestContext struct {
 	tokenHash               string               // Token哈希值（用于统计）
 	tokenKey                string               // 客户端传入的原始 Token Key（用于 Debug 文件目录）
 	tokenID                 int64                // Token ID（用于日志记录，0表示未使用token）
+	billingGroupID          int64                // 客户计费分组 ID（0 表示未选择）
+	billingGroupSlug        string               // 客户计费分组标识
+	billingMultiplier       float64              // 客户计费倍率
+	balanceEnabled          bool                 // 是否启用客户余额模式
 	codexGuardEnabled       bool                 // 当前访问令牌是否启用 Codex reasoning guard
 	codexGuardRetries       int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
 	codexGuardTraceID       string               // 本次客户端请求的 Codex Guard 重试追踪 ID

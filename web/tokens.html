@@ -57,6 +57,7 @@
                   <button id="tokenListViewBtn" type="button" class="btn btn-secondary btn-sm" data-action="set-token-view-list" data-i18n="tokens.listView">列表视图</button>
                 </span>
                 <button type="button" class="btn btn-secondary btn-sm" data-action="show-token-group-manager" data-i18n="tokens.groupManager">分组管理</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="show-billing-group-manager">计费分组</button>
               </div>
             </div>
           </div>
@@ -117,6 +118,30 @@
     </main>
   </div>
 
+  <!-- 计费分组管理对话框 -->
+  <div id="billingGroupModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">计费分组管理</h2>
+        <button type="button" class="close-btn" data-action="close-billing-group-manager" aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="billingGroupID" value="0">
+        <div class="form-group"><label class="form-label" for="billingGroupName">名称</label><input id="billingGroupName" class="form-input" type="text"></div>
+        <div class="form-group"><label class="form-label" for="billingGroupSlug">标识</label><input id="billingGroupSlug" class="form-input" type="text" placeholder="例如 gpt0.1"></div>
+        <div class="form-group"><label class="form-label" for="billingGroupMultiplier">计费倍率</label><input id="billingGroupMultiplier" class="form-input" type="number" min="0" step="0.0001" value="1"></div>
+        <div class="form-group"><label class="form-label" for="billingGroupDescription">说明</label><input id="billingGroupDescription" class="form-input" type="text"></div>
+        <div class="form-group"><label class="token-active-label"><input id="billingGroupEnabled" class="control-checkbox" type="checkbox" checked><span>启用分组</span></label></div>
+        <div class="form-group"><label class="form-label">分组渠道</label><div id="billingGroupChannelOptions" class="token-model-checkbox-list"></div></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-action="reset-billing-group-form">新建</button>
+          <button type="button" class="btn btn-primary" data-action="save-billing-group">保存计费分组</button>
+        </div>
+        <div id="billingGroupList" class="token-table"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 创建令牌对话框 -->
   <div id="createModal" class="modal">
     <div class="modal-content modal-content--sm">
@@ -158,6 +183,22 @@
         <div id="customExpiryContainer" class="form-group token-custom-expiry">
           <label class="form-label" data-i18n="tokens.customExpiryLabel">自定义过期时间</label>
           <input type="datetime-local" id="customExpiry" class="form-input">
+        </div>
+
+        <div class="form-group">
+          <label class="token-active-label">
+            <input type="checkbox" id="tokenBalanceEnabled" class="control-checkbox">
+            <span>启用令牌余额</span>
+          </label>
+          <div class="token-limit-hint token-limit-hint--inline">启用后，总量/每日/每月费用限额不再生效。</div>
+        </div>
+        <div class="form-group form-row-inline">
+          <label class="form-label form-row-inline__label" for="tokenBalanceUSD">初始余额</label>
+          <input type="number" id="tokenBalanceUSD" class="form-input field-grow" min="0" step="0.000001" value="0">
+        </div>
+        <div class="form-group form-row-inline">
+          <label class="form-label form-row-inline__label" for="tokenDefaultBillingGroup">默认计费分组</label>
+          <select id="tokenDefaultBillingGroup" class="form-input field-grow"><option value="0">未设置</option></select>
         </div>
 
         <div class="form-group form-row-inline">
@@ -315,6 +356,22 @@
                 <input type="checkbox" id="editInheritQuota" class="control-checkbox" data-change-action="toggle-inherit-quota">
                 <span data-i18n="tokens.inheritFromGroup">继承分组</span>
               </label>
+            </div>
+
+            <div class="form-group token-edit-active-row">
+              <label class="token-edit-active-label">
+                <input type="checkbox" id="editBalanceEnabled" class="control-checkbox">
+                <span>启用令牌余额</span>
+              </label>
+              <div class="token-limit-hint token-limit-hint--inline">启用后旧费用限额不再生效；修改余额会自动写入流水。</div>
+            </div>
+            <div class="form-group form-row-inline">
+              <label class="form-label form-row-inline__label" for="editBalanceUSD">当前余额</label>
+              <input type="number" id="editBalanceUSD" class="form-input field-grow" min="0" step="0.000001">
+            </div>
+            <div class="form-group form-row-inline">
+              <label class="form-label form-row-inline__label" for="editDefaultBillingGroup">默认计费分组</label>
+              <select id="editDefaultBillingGroup" class="form-input field-grow"><option value="0">未设置</option></select>
             </div>
 
             <div class="form-group form-row-inline token-edit-field token-edit-field--cost">

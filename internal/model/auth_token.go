@@ -89,6 +89,20 @@ type AuthToken struct {
 	EffectiveAllowedChannelIDs        []int64  `json:"-"`                    // 有效渠道限制
 	EffectiveChannelRestrictionMode   string   `json:"-"`                    // 有效渠道限制模式
 	EffectiveMaxConcurrency           int      `json:"-"`                    // 有效并发上限
+
+	// 客户余额与计费分组（2026-09新增）
+	BalanceEnabled          bool   `json:"balance_enabled"`          // 启用后旧费用限额不再生效
+	BalanceMicroUSD         int64  `json:"-"`                        // 当前余额（微美元）
+	DefaultBillingGroupID   int64  `json:"default_billing_group_id"` // 默认计费分组
+	DefaultBillingGroupSlug string `json:"default_billing_group_slug,omitempty"`
+}
+
+// BalanceUSD returns the wallet balance in display units.
+func (t *AuthToken) BalanceUSD() float64 {
+	if t == nil {
+		return 0
+	}
+	return util.MicroUSDToUSD(t.BalanceMicroUSD)
 }
 
 // AuthTokenGroup 表示 API 访问令牌分组。
@@ -770,6 +784,10 @@ type authTokenJSON struct {
 	EffectiveAllowedChannelIDs      []int64   `json:"effective_allowed_channel_ids,omitempty"`
 	EffectiveChannelRestrictionMode string    `json:"effective_channel_restriction_mode"`
 	EffectiveMaxConcurrency         int       `json:"effective_max_concurrency"`
+	BalanceEnabled                  bool      `json:"balance_enabled"`
+	BalanceUSD                      float64   `json:"balance_usd"`
+	DefaultBillingGroupID           int64     `json:"default_billing_group_id"`
+	DefaultBillingGroupSlug         string    `json:"default_billing_group_slug,omitempty"`
 }
 
 // MarshalJSON 自定义JSON序列化，将MicroUSD转换为USD浮点数
@@ -836,6 +854,10 @@ func (t AuthToken) MarshalJSON() ([]byte, error) {
 		EffectiveAllowedChannelIDs:      effectiveInt64Slice(t.EffectiveSet, t.EffectiveAllowedChannelIDs, t.AllowedChannelIDs),
 		EffectiveChannelRestrictionMode: effectiveChannelRestrictionMode,
 		EffectiveMaxConcurrency:         effectiveInt(t.EffectiveSet, t.EffectiveMaxConcurrency, t.MaxConcurrency),
+		BalanceEnabled:                  t.BalanceEnabled,
+		BalanceUSD:                      util.MicroUSDToUSD(t.BalanceMicroUSD),
+		DefaultBillingGroupID:           t.DefaultBillingGroupID,
+		DefaultBillingGroupSlug:         t.DefaultBillingGroupSlug,
 	})
 }
 

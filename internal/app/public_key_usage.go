@@ -41,12 +41,18 @@ type PublicKeyModelUsage struct {
 
 // PublicKeyUsageResponse intentionally omits token metadata and channel data.
 type PublicKeyUsageResponse struct {
-	TodayStart int64                      `json:"today_start"`
-	Today      PublicKeyTodayUsage        `json:"today"`
-	CostQuota  PublicKeyCostQuota         `json:"cost_quota"`
-	ModelUsage []PublicKeyModelUsage      `json:"model_usage"`
-	Trend      []PublicKeyUsageTrendPoint `json:"trend"`
-	UpdatedAt  int64                      `json:"updated_at"`
+	TodayStart            int64                       `json:"today_start"`
+	Today                 PublicKeyTodayUsage         `json:"today"`
+	CostQuota             PublicKeyCostQuota          `json:"cost_quota"`
+	ModelUsage            []PublicKeyModelUsage       `json:"model_usage"`
+	Trend                 []PublicKeyUsageTrendPoint  `json:"trend"`
+	UpdatedAt             int64                       `json:"updated_at"`
+	BalanceEnabled        bool                        `json:"balance_enabled"`
+	BalanceUSD            float64                     `json:"balance_usd"`
+	DefaultBillingGroupID int64                       `json:"default_billing_group_id,omitempty"`
+	BillingGroups         []customerBillingGroup      `json:"billing_groups,omitempty"`
+	BillingGroupUsage     []model.BillingGroupUsage   `json:"billing_group_usage,omitempty"`
+	BalanceTransactions   []*model.BalanceTransaction `json:"balance_transactions,omitempty"`
 }
 
 // HandlePublicKeyUsage returns today's live totals, model breakdown, and half-hour trend.
@@ -81,14 +87,31 @@ func (s *Server) HandlePublicKeyUsage(c *gin.Context) {
 
 	today, trend := buildPublicKeyTodayUsage(points)
 	costQuota := s.buildPublicKeyCostQuota(ctx, token)
+	groups, _ := s.store.ListBillingGroups(ctx)
+	for _, group := range groups {
+		billingGroupAvailability(s, ctx, group)
+	}
+	var groupUsage []model.BillingGroupUsage
+	var transactions []*model.BalanceTransaction
+	if token.BalanceEnabled {
+		groupUsage, _ = s.store.GetAuthTokenBillingGroupUsage(ctx, token.ID, time.UnixMilli(0), now)
+		transactions, _ = s.store.ListAuthTokenBalanceTransactions(ctx, token.ID, 500, 0)
+	}
+	applyBillingGroupUsage(groups, groupUsage)
 
 	RespondJSON(c, http.StatusOK, PublicKeyUsageResponse{
-		TodayStart: todayStart.UnixMilli(),
-		Today:      today,
-		CostQuota:  costQuota,
-		ModelUsage: buildPublicKeyModelUsage(modelRows),
-		Trend:      trend,
-		UpdatedAt:  now.UnixMilli(),
+		TodayStart:            todayStart.UnixMilli(),
+		Today:                 today,
+		CostQuota:             costQuota,
+		ModelUsage:            buildPublicKeyModelUsage(modelRows),
+		Trend:                 trend,
+		UpdatedAt:             now.UnixMilli(),
+		BalanceEnabled:        token.BalanceEnabled,
+		BalanceUSD:            token.BalanceUSD(),
+		DefaultBillingGroupID: token.DefaultBillingGroupID,
+		BillingGroups:         customerBillingGroups(groups),
+		BillingGroupUsage:     groupUsage,
+		BalanceTransactions:   transactions,
 	})
 }
 
@@ -107,6 +130,37 @@ func (s *Server) HandlePublicKeyUsagePage(c *gin.Context) {
 	serveHTMLWithVersionFrom(c, embedFS, "key-usage.html")
 }
 
+// HandlePublicKeyUsageDefaultGroup changes the default group from the
+// customer-facing usage page. Possession of the key URL is the capability,
+// matching the existing public usage endpoint semantics.
+func (s *Server) HandlePublicKeyUsageDefaultGroup(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	token, ok := s.findPublicUsageToken(ctx, c.Query("key"))
+	if !ok {
+		respondPublicUsageNotFound(c)
+		return
+	}
+	var req struct {
+		GroupID int64 `json:"group_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.GroupID <= 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+	group, err := s.store.GetBillingGroup(ctx, req.GroupID)
+	if err != nil || group == nil || !group.Enabled {
+		RespondErrorMsg(c, http.StatusBadRequest, "billing group is unavailable")
+		return
+	}
+	token.DefaultBillingGroupID = req.GroupID
+	if err := s.store.UpdateAuthToken(ctx, token); err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	RespondJSON(c, http.StatusOK, gin.H{"default_billing_group_id": req.GroupID, "default_billing_group_slug": group.Slug})
+}
+
 func (s *Server) findPublicUsageToken(ctx context.Context, key string) (*model.AuthToken, bool) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -114,6 +168,11 @@ func (s *Server) findPublicUsageToken(ctx context.Context, key string) (*model.A
 	}
 
 	token, err := s.store.GetAuthTokenByValue(ctx, model.HashToken(key))
+	if err != nil {
+		if base, _, ok := splitBillingGroupVariant(key); ok {
+			token, err = s.store.GetAuthTokenByValue(ctx, model.HashToken(base))
+		}
+	}
 	if err != nil || token == nil {
 		return nil, false
 	}
@@ -192,6 +251,9 @@ func buildPublicKeyModelUsage(rows []model.ModelUsageStat) []PublicKeyModelUsage
 
 func (s *Server) buildPublicKeyCostQuota(ctx context.Context, token *model.AuthToken) PublicKeyCostQuota {
 	if token == nil {
+		return PublicKeyCostQuota{}
+	}
+	if token.BalanceEnabled {
 		return PublicKeyCostQuota{}
 	}
 	token.NormalizeDailyCostForToday()

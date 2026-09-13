@@ -207,7 +207,7 @@ func (s *Server) updateTokenStatsForProxy(
 	res *fwResult,
 	actualModel string,
 ) {
-	s.updateTokenStatsAsync(reqCtx.tokenHash, cfg, reqCtx.originalModel, cfg.CostMultiplier, isSuccess, duration, reqCtx.isStreaming, res, actualModel)
+	s.updateTokenStatsAsyncWithBilling(reqCtx.tokenHash, cfg, reqCtx.originalModel, cfg.CostMultiplier, isSuccess, duration, reqCtx.isStreaming, res, actualModel, reqCtx.billingGroupID, reqCtx.billingGroupSlug, reqCtx.billingMultiplier, reqCtx.requestID, reqCtx.balanceEnabled)
 }
 
 // handleNetworkError 处理网络错误
@@ -298,6 +298,11 @@ type tokenStatsUpdate struct {
 	cacheCreationTokens int64
 	costUSD             float64 // 标准成本
 	costMultiplier      float64 // 渠道倍率（0=免费，<0 视为 1）
+	billingGroupID      int64
+	billingGroupSlug    string
+	billingMultiplier   float64
+	requestID           string
+	balanceEnabled      bool
 }
 
 func (s *Server) tokenStatsWorker() {
@@ -342,7 +347,7 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 	effectiveCostUSD := upd.costUSD * multiplier
 
 	// 内存缓存是费用限额的实时权威来源。DB 落盘失败不能让限额 fail-open。
-	if upd.isBillable && upd.costUSD > 0 && s.authService != nil {
+	if upd.isBillable && upd.costUSD > 0 && s.authService != nil && !upd.balanceEnabled {
 		s.authService.AddCostToCache(upd.tokenHash, util.USDToMicroUSD(effectiveCostUSD))
 		if s.alertService != nil {
 			s.alertService.CheckTokenUsage(upd.tokenHash)
@@ -356,6 +361,16 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 		}
 		log.Printf("[ERROR] 更新令牌统计失败 hash=%s: %v", upd.tokenHash, err)
 		return
+	}
+	if upd.isBillable && upd.costUSD > 0 && upd.billingGroupID > 0 && upd.billingMultiplier > 0 {
+		standardMicro := util.USDToMicroUSD(upd.costUSD)
+		chargeMicro := util.USDToMicroUSD(upd.costUSD * upd.billingMultiplier)
+		if chargeMicro > 0 {
+			totalTokens := upd.promptTokens + upd.completionTokens + upd.cacheReadTokens + upd.cacheCreationTokens
+			if _, err := s.store.ChargeAuthTokenBalance(updateCtx, upd.tokenHash, upd.billingGroupID, upd.billingGroupSlug, upd.billingMultiplier, upd.requestID, standardMicro, chargeMicro, totalTokens); err != nil && !strings.Contains(err.Error(), "token not found") {
+				log.Printf("[ERROR] 更新令牌余额失败 hash=%s: %v", upd.tokenHash, err)
+			}
+		}
 	}
 }
 
@@ -371,6 +386,10 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 //   - res: 转发结果（成功或已产生上游消耗的失败/Guard attempt 用于提取 token 与费用）
 //   - actualModel: 实际模型名称（用于计费）
 func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requestModel string, costMultiplier float64, isSuccess bool, duration float64, isStreaming bool, res *fwResult, actualModel string) {
+	s.updateTokenStatsAsyncWithBilling(tokenHash, cfg, requestModel, costMultiplier, isSuccess, duration, isStreaming, res, actualModel, 0, "", 0, "", false)
+}
+
+func (s *Server) updateTokenStatsAsyncWithBilling(tokenHash string, cfg *model.Config, requestModel string, costMultiplier float64, isSuccess bool, duration float64, isStreaming bool, res *fwResult, actualModel string, billingGroupID int64, billingGroupSlug string, billingMultiplier float64, requestID string, balanceEnabled bool) {
 	if tokenHash == "" || s.tokenStatsCh == nil {
 		return
 	}
@@ -415,6 +434,11 @@ func (s *Server) updateTokenStatsAsync(tokenHash string, cfg *model.Config, requ
 		cacheCreationTokens: cacheCreationTokens,
 		costUSD:             costUSD,
 		costMultiplier:      costMultiplier,
+		billingGroupID:      billingGroupID,
+		billingGroupSlug:    billingGroupSlug,
+		billingMultiplier:   billingMultiplier,
+		requestID:           requestID,
+		balanceEnabled:      balanceEnabled,
 	}
 
 	// ✅ shutdown期间仍需保证在途请求的计费/用量落库：

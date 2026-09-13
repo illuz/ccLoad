@@ -165,9 +165,61 @@ func DefineAuthTokensTable() *TableBuilder {
 		Column("inherit_quota TINYINT NOT NULL DEFAULT 0").
 		Column("inherit_channels TINYINT NOT NULL DEFAULT 0").
 		Column("inherit_models TINYINT NOT NULL DEFAULT 0").
+		Column("balance_enabled TINYINT NOT NULL DEFAULT 0").
+		Column("balance_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("default_billing_group_id BIGINT NOT NULL DEFAULT 0").
 		Index("idx_auth_tokens_active", "is_active").
 		Index("idx_auth_tokens_expires", "expires_at").
 		Index("idx_auth_tokens_group_id", "group_id")
+}
+
+// DefineBillingGroupsTable 定义面向客户的计费与路由分组。
+func DefineBillingGroupsTable() *TableBuilder {
+	return NewTable("billing_groups").
+		Column("id INT PRIMARY KEY AUTO_INCREMENT").
+		Column("name VARCHAR(191) NOT NULL").
+		Column("slug VARCHAR(64) NOT NULL UNIQUE").
+		Column("description VARCHAR(512) NOT NULL DEFAULT ''").
+		Column("multiplier DOUBLE NOT NULL DEFAULT 1").
+		Column("enabled TINYINT NOT NULL DEFAULT 1").
+		Column("created_at BIGINT NOT NULL").
+		Column("updated_at BIGINT NOT NULL").
+		Index("idx_billing_groups_enabled", "enabled").
+		Index("idx_billing_groups_slug", "slug")
+}
+
+// DefineBillingGroupChannelsTable 定义计费分组与渠道的多对多关系。
+func DefineBillingGroupChannelsTable() *TableBuilder {
+	return NewTable("billing_group_channels").
+		Column("billing_group_id INT NOT NULL").
+		Column("channel_id INT NOT NULL").
+		Column("PRIMARY KEY (billing_group_id, channel_id)").
+		Column("FOREIGN KEY (billing_group_id) REFERENCES billing_groups(id) ON DELETE CASCADE").
+		Column("FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE").
+		Index("idx_billing_group_channels_channel", "channel_id")
+}
+
+// DefineAuthTokenBalanceTransactionsTable 定义令牌余额流水。
+func DefineAuthTokenBalanceTransactionsTable() *TableBuilder {
+	return NewTable("auth_token_balance_transactions").
+		Column("id INT PRIMARY KEY AUTO_INCREMENT").
+		Column("auth_token_id INT NOT NULL").
+		Column("billing_group_id BIGINT NOT NULL DEFAULT 0").
+		Column("billing_group_slug VARCHAR(64) NOT NULL DEFAULT ''").
+		Column("type VARCHAR(32) NOT NULL").
+		Column("delta_microusd BIGINT NOT NULL").
+		Column("balance_before_microusd BIGINT NOT NULL").
+		Column("balance_after_microusd BIGINT NOT NULL").
+		Column("standard_cost_microusd BIGINT NOT NULL DEFAULT 0").
+		Column("total_tokens BIGINT NOT NULL DEFAULT 0").
+		Column("multiplier DOUBLE NOT NULL DEFAULT 1").
+		Column("request_id VARCHAR(128) NOT NULL DEFAULT ''").
+		Column("note VARCHAR(512) NOT NULL DEFAULT ''").
+		Column("created_at BIGINT NOT NULL").
+		Column("FOREIGN KEY (auth_token_id) REFERENCES auth_tokens(id) ON DELETE CASCADE").
+		Index("idx_balance_tx_token_time", "auth_token_id, created_at").
+		Index("idx_balance_tx_group_time", "billing_group_id, created_at").
+		Index("idx_balance_tx_request", "request_id")
 }
 
 // DefineAuthTokenGroupsTable 定义auth_token_groups表结构

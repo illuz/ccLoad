@@ -899,6 +899,90 @@ func (h *HybridStore) GetCostByChannelAndToken(ctx context.Context, startTime, e
 	return h.sqlite.GetCostByChannelAndToken(ctx, startTime, endTime)
 }
 
+// === Customer Billing ===
+
+func (h *HybridStore) CreateBillingGroup(ctx context.Context, group *model.BillingGroup) error {
+	if err := h.mysql.CreateBillingGroup(ctx, group); err != nil {
+		return err
+	}
+	h.syncToSQLite("CreateBillingGroup", func() error { return h.sqlite.CreateBillingGroup(ctx, group) })
+	return nil
+}
+
+func (h *HybridStore) GetBillingGroup(ctx context.Context, id int64) (*model.BillingGroup, error) {
+	return h.sqlite.GetBillingGroup(ctx, id)
+}
+
+func (h *HybridStore) GetBillingGroupBySlug(ctx context.Context, slug string) (*model.BillingGroup, error) {
+	return h.sqlite.GetBillingGroupBySlug(ctx, slug)
+}
+
+func (h *HybridStore) ListBillingGroups(ctx context.Context) ([]*model.BillingGroup, error) {
+	return h.sqlite.ListBillingGroups(ctx)
+}
+
+func (h *HybridStore) UpdateBillingGroup(ctx context.Context, group *model.BillingGroup) error {
+	if err := h.mysql.UpdateBillingGroup(ctx, group); err != nil {
+		return err
+	}
+	h.syncToSQLite("UpdateBillingGroup", func() error { return h.sqlite.UpdateBillingGroup(ctx, group) })
+	return nil
+}
+
+func (h *HybridStore) DeleteBillingGroup(ctx context.Context, id int64) error {
+	if err := h.mysql.DeleteBillingGroup(ctx, id); err != nil {
+		return err
+	}
+	h.syncToSQLite("DeleteBillingGroup", func() error { return h.sqlite.DeleteBillingGroup(ctx, id) })
+	return nil
+}
+
+func (h *HybridStore) GetBillingGroupChannels(ctx context.Context, groupID int64) ([]int64, error) {
+	return h.sqlite.GetBillingGroupChannels(ctx, groupID)
+}
+
+func (h *HybridStore) SetBillingGroupChannels(ctx context.Context, groupID int64, channelIDs []int64) error {
+	if err := h.mysql.SetBillingGroupChannels(ctx, groupID, channelIDs); err != nil {
+		return err
+	}
+	h.syncToSQLite("SetBillingGroupChannels", func() error { return h.sqlite.SetBillingGroupChannels(ctx, groupID, channelIDs) })
+	return nil
+}
+
+func (h *HybridStore) AdjustAuthTokenBalance(ctx context.Context, tokenID, deltaMicroUSD int64, txType, note string) (*model.BalanceTransaction, error) {
+	entry, err := h.mysql.AdjustAuthTokenBalance(ctx, tokenID, deltaMicroUSD, txType, note)
+	if err != nil {
+		return nil, err
+	}
+	h.syncToSQLite("AdjustAuthTokenBalance", func() error {
+		_, err := h.sqlite.AdjustAuthTokenBalance(ctx, tokenID, deltaMicroUSD, txType, note)
+		return err
+	})
+	return entry, nil
+}
+
+func (h *HybridStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error) {
+	entry, err := h.mysql.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
+	if err != nil {
+		return nil, err
+	}
+	if entry != nil {
+		h.syncToSQLite("ChargeAuthTokenBalance", func() error {
+			_, err := h.sqlite.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
+			return err
+		})
+	}
+	return entry, nil
+}
+
+func (h *HybridStore) ListAuthTokenBalanceTransactions(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error) {
+	return h.sqlite.ListAuthTokenBalanceTransactions(ctx, tokenID, limit, offset)
+}
+
+func (h *HybridStore) GetAuthTokenBillingGroupUsage(ctx context.Context, tokenID int64, since, until time.Time) ([]model.BillingGroupUsage, error) {
+	return h.sqlite.GetAuthTokenBillingGroupUsage(ctx, tokenID, since, until)
+}
+
 // === System Settings ===
 
 func (h *HybridStore) GetSetting(ctx context.Context, key string) (*model.SystemSetting, error) {
