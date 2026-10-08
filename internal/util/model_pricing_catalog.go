@@ -157,6 +157,14 @@ var basePricing = map[string]ModelPricing{
 	"claude-haiku":  {InputPrice: 1.00, OutputPrice: 5.00},
 
 	// ========== OpenAI GPT-5系列 ==========
+	"gpt-6.1-sol": {
+		InputPrice: 2.00, OutputPrice: 10.00, CacheReadPrice: 0.10, HasCacheReadPrice: true,
+		TokenPricingTiers: []TokenPricingTier{
+			{MaxInputTokens: 272_000, InputPrice: 2.00, OutputPrice: 10.00, CacheReadPrice: 0.10, HasCacheReadPrice: true},
+			{InputPrice: 4.00, OutputPrice: 15.00, CacheReadPrice: 0.20, HasCacheReadPrice: true},
+		},
+		CacheReadCountsTowardTier: true,
+	},
 	"gpt-6-astra": {
 		InputPrice: 10.00, OutputPrice: 50.00,
 		CacheReadPrice: 1.00, HasCacheReadPrice: true,
