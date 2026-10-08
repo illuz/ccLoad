@@ -12,22 +12,25 @@ import (
 // BillingGroup 是面向客户的计费与路由分组。
 // 每个请求只能使用一个计费分组；分组倍率只影响客户扣费，不改变渠道内部成本统计。
 type BillingGroup struct {
-	ID                    int64     `json:"id"`
-	Name                  string    `json:"name"`
-	Slug                  string    `json:"slug"`
-	Description           string    `json:"description"`
-	Multiplier            float64   `json:"multiplier"`
-	Enabled               bool      `json:"enabled"`
-	ChannelIDs            []int64   `json:"channel_ids,omitempty"`
-	ChannelCount          int       `json:"channel_count"`
-	AvailableChannelCount int       `json:"available_channel_count"`
-	SuccessRate           float64   `json:"success_rate"`
-	HealthSampleCount     int64     `json:"health_sample_count"`
-	RequestCount          int64     `json:"request_count"`
-	TotalTokens           int64     `json:"total_tokens"`
-	ChargedUSD            float64   `json:"charged_usd"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ID          int64   `json:"id"`
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Description string  `json:"description"`
+	Multiplier  float64 `json:"multiplier"`
+	Enabled     bool    `json:"enabled"`
+	ChannelIDs  []int64 `json:"channel_ids,omitempty"`
+	// ChannelKeys optionally narrows each channel to specific key indexes.
+	// A nil map keeps the legacy behavior of allowing every key in ChannelIDs.
+	ChannelKeys           map[int64][]int `json:"channel_keys,omitempty"`
+	ChannelCount          int             `json:"channel_count"`
+	AvailableChannelCount int             `json:"available_channel_count"`
+	SuccessRate           float64         `json:"success_rate"`
+	HealthSampleCount     int64           `json:"health_sample_count"`
+	RequestCount          int64           `json:"request_count"`
+	TotalTokens           int64           `json:"total_tokens"`
+	ChargedUSD            float64         `json:"charged_usd"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
 }
 
 // BillingGroupUsage 汇总令牌在某个计费分组下的消费情况。
@@ -72,6 +75,7 @@ type BalanceTransaction struct {
 	AuthTokenID           int64     `json:"auth_token_id"`
 	BillingGroupID        int64     `json:"billing_group_id,omitempty"`
 	BillingGroupSlug      string    `json:"billing_group_slug,omitempty"`
+	Model                 string    `json:"model,omitempty"`
 	Type                  string    `json:"type"`
 	DeltaMicroUSD         int64     `json:"-"`
 	BalanceBeforeMicroUSD int64     `json:"-"`
@@ -98,6 +102,7 @@ func (t BalanceTransaction) MarshalJSON() ([]byte, error) {
 		AuthTokenID      int64     `json:"auth_token_id"`
 		BillingGroupID   int64     `json:"billing_group_id,omitempty"`
 		BillingGroupSlug string    `json:"billing_group_slug,omitempty"`
+		Model            string    `json:"model,omitempty"`
 		Type             string    `json:"type"`
 		DeltaUSD         float64   `json:"delta_usd"`
 		BalanceBeforeUSD float64   `json:"balance_before_usd"`
@@ -111,7 +116,7 @@ func (t BalanceTransaction) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(view{
 		ID: t.ID, AuthTokenID: t.AuthTokenID, BillingGroupID: t.BillingGroupID,
-		BillingGroupSlug: t.BillingGroupSlug, Type: t.Type,
+		BillingGroupSlug: t.BillingGroupSlug, Model: t.Model, Type: t.Type,
 		DeltaUSD:         util.MicroUSDToUSD(t.DeltaMicroUSD),
 		BalanceBeforeUSD: util.MicroUSDToUSD(t.BalanceBeforeMicroUSD),
 		BalanceAfterUSD:  util.MicroUSDToUSD(t.BalanceAfterMicroUSD),
@@ -119,4 +124,14 @@ func (t BalanceTransaction) MarshalJSON() ([]byte, error) {
 		TotalTokens: t.TotalTokens,
 		RequestID:   t.RequestID, Note: t.Note, CreatedAt: t.CreatedAt,
 	})
+}
+
+// BalanceUsageBucket is an actual wallet deduction aggregate. ChargedMicroUSD
+// uses the amount deducted from the token balance, after the billing-group multiplier.
+type BalanceUsageBucket struct {
+	Timestamp       time.Time
+	Model           string
+	RequestCount    int
+	TotalTokens     int64
+	ChargedMicroUSD int64
 }

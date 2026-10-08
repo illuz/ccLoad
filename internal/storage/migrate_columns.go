@@ -11,15 +11,27 @@ import (
 // sqliteMigratableTables 允许增量迁移的SQLite表名白名单
 // 安全设计：防止SQL注入，新增表时需在此处注册
 var sqliteMigratableTables = map[string]bool{
-	"logs":                        true,
-	"auth_tokens":                 true,
-	"auth_token_groups":           true,
-	"channel_groups":              true,
-	"channel_models":              true,
-	"channel_protocol_transforms": true,
-	"api_keys":                    true,
-	"channels":                    true,
-	"schema_migrations":           true,
+	"logs":                            true,
+	"auth_tokens":                     true,
+	"auth_token_groups":               true,
+	"channel_groups":                  true,
+	"channel_models":                  true,
+	"channel_protocol_transforms":     true,
+	"api_keys":                        true,
+	"channels":                        true,
+	"schema_migrations":               true,
+	"billing_groups":                  true,
+	"auth_token_balance_transactions": true,
+}
+
+func ensureBillingGroupsColumns(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "billing_groups", "channel_keys",
+		"VARCHAR(4000) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''")
+}
+
+func ensureAuthTokenBalanceTransactionColumns(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "auth_token_balance_transactions", "model",
+		"VARCHAR(191) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''")
 }
 
 type sqliteColumnDef struct {
@@ -750,6 +762,11 @@ func ensureAPIKeysNote(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return ensureColumn(ctx, db, dialect, "api_keys", "note",
 		"VARCHAR(512) NOT NULL DEFAULT ''",
 		"TEXT NOT NULL DEFAULT ''")
+}
+
+func ensureAPIKeysAlias(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	return ensureColumn(ctx, db, dialect, "api_keys", "alias",
+		"VARCHAR(191) NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''")
 }
 
 // ensureAuthTokensEffectiveCost 确保auth_tokens表有effective_cost_usd字段（2026-07新增）

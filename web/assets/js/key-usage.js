@@ -12,6 +12,8 @@
   const billingSummary = document.getElementById('billingSummary');
   const billingGroups = document.getElementById('billingGroups');
   const balanceTransactions = document.getElementById('balanceTransactions');
+  const billingGroupFilter = document.getElementById('billingGroupFilter');
+  const billingGroupSelect = document.getElementById('billingGroupSelect');
 
   const MODEL_COLORS = [
     '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -25,6 +27,8 @@
   let modelCostChart = null;
   let latestTrend = [];
   let latestModelUsage = [];
+  let selectedBillingGroupID = new URLSearchParams(window.location.search).get('billing_group_id') || '';
+  let reloadPending = false;
 
   if (!key) {
     window.location.replace('/key-usage');
@@ -46,12 +50,49 @@
     }).format(Number(value) || 0);
   }
 
-  function costMetric(today, quota) {
+  function getBaseUsageKey(value) {
+    const raw = String(value || '').trim();
+    const separator = raw.indexOf('~');
+    return separator > 0 ? raw.slice(0, separator) : raw;
+  }
+
+  async function copyUsageKey(value, button) {
+    const text = String(value || '').trim();
+    if (!text) return;
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = text;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        input.remove();
+      }
+      if (button) {
+        const original = button.textContent;
+        button.textContent = '已复制';
+        button.dataset.copied = 'true';
+        window.setTimeout(() => {
+          button.textContent = original;
+          delete button.dataset.copied;
+        }, 1200);
+      }
+    } catch (error) {
+      console.warn('Failed to copy billing group key', error);
+    }
+  }
+
+  function costMetric(today, quota, balanceEnabled) {
     const limit = Number(quota.limit_usd);
     const percentage = Number(quota.usage_percentage);
     if (Number.isFinite(limit) && limit > 0 && Number.isFinite(percentage)) {
       return {
-        label: '实际费用',
+        label: balanceEnabled ? '真实费用' : '实际费用',
         value: currency(today.effective_cost),
         detail: `费用上限 ${currency(limit)} · 已使用 ${number(percentage, 1)}%`,
         progress: Math.max(0, Math.min(100, percentage)),
@@ -59,7 +100,7 @@
       };
     }
     return {
-      label: '实际费用',
+      label: balanceEnabled ? '真实费用' : '实际费用',
       value: currency(today.effective_cost),
       cost: true
     };
@@ -69,7 +110,7 @@
     const today = data.today || {};
     const quota = data.cost_quota || {};
     const metrics = [
-      costMetric(today, quota),
+      costMetric(today, quota, Boolean(data.balance_enabled)),
       { label: '请求次数', value: number(today.request_count) },
       { label: '总 Token', value: number(today.total_tokens) }
     ];
@@ -104,6 +145,38 @@
     todayMetrics.replaceChildren(fragment);
   }
 
+  function renderBillingGroupFilter(data) {
+    if (!billingGroupFilter || !billingGroupSelect) return;
+    const balanceEnabled = Boolean(data.balance_enabled);
+    billingGroupFilter.hidden = !balanceEnabled;
+    if (!balanceEnabled) {
+      selectedBillingGroupID = '';
+      return;
+    }
+
+    const groups = Array.isArray(data.billing_groups) ? data.billing_groups : [];
+    const fragment = document.createDocumentFragment();
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = '全部';
+    fragment.appendChild(allOption);
+    groups.forEach((group) => {
+      const option = document.createElement('option');
+      option.value = String(group.id);
+      option.textContent = group.name || group.slug || `分组 ${group.id}`;
+      fragment.appendChild(option);
+    });
+    billingGroupSelect.replaceChildren(fragment);
+
+    const responseSelection = Number(data.selected_billing_group_id) > 0
+      ? String(data.selected_billing_group_id)
+      : '';
+    const nextSelection = responseSelection || selectedBillingGroupID;
+    const exists = Array.from(billingGroupSelect.options).some((option) => option.value === nextSelection);
+    selectedBillingGroupID = exists ? nextSelection : '';
+    billingGroupSelect.value = selectedBillingGroupID;
+  }
+
   function renderBilling(data) {
     if (!billingSummary || !billingGroups) return;
     const balanceEnabled = Boolean(data.balance_enabled);
@@ -112,13 +185,33 @@
       : '当前令牌使用传统限额模式';
     const groups = Array.isArray(data.billing_groups) ? data.billing_groups : [];
     billingGroups.replaceChildren();
+    const baseKey = getBaseUsageKey(key);
     groups.forEach((group) => {
       const item = document.createElement('div');
       item.className = 'public-usage-group-item';
+      const heading = document.createElement('div');
+      heading.className = 'public-usage-group-heading';
       const title = document.createElement('strong');
       title.textContent = `${group.name || group.slug} × ${Number(group.multiplier || 0).toFixed(4)}`;
+      heading.appendChild(title);
+      if (group.slug) {
+        const slug = document.createElement('button');
+        slug.type = 'button';
+        slug.className = 'public-usage-group-slug';
+        slug.textContent = group.slug;
+        slug.title = '复制此分组 Key';
+        slug.setAttribute('aria-label', `复制分组 ${group.slug} 的 Key`);
+        slug.addEventListener('click', () => copyUsageKey(`${baseKey}~${group.slug}`, slug));
+        heading.appendChild(slug);
+      }
+      if (group.description) {
+        const description = document.createElement('span');
+        description.className = 'public-usage-group-description';
+        description.textContent = group.description;
+        heading.appendChild(description);
+      }
       const detail = document.createElement('span');
-      detail.textContent = `可用渠道 ${group.available_channel_count || 0}/${group.channel_count || 0} · 成功率 ${number((Number(group.success_rate) || 0) * 100, 1)}% · 已消费 ${currency(group.charged_usd)} · 请求 ${number(group.request_count)}`;
+      detail.textContent = `已消费 ${currency(group.charged_usd)} · 请求 ${number(group.request_count)}`;
       const button = document.createElement('button');
       button.type = 'button';
       const isDefault = Number(data.default_billing_group_id) === Number(group.id);
@@ -134,21 +227,29 @@
           await load();
         } finally { button.disabled = false; }
       });
-      item.append(title, detail, button);
+      item.append(heading, detail, button);
       billingGroups.appendChild(item);
     });
     if (balanceTransactions) {
-      const txs = Array.isArray(data.balance_transactions) ? data.balance_transactions : [];
+      const txs = (Array.isArray(data.balance_transactions) ? data.balance_transactions : [])
+        .filter((tx) => tx.type !== 'consumption');
       balanceTransactions.replaceChildren();
       if (txs.length) {
         const title = document.createElement('h3');
-        title.textContent = '余额流水';
+        title.textContent = '充值变动';
         balanceTransactions.appendChild(title);
         txs.forEach((tx) => {
           const row = document.createElement('div');
           row.className = 'public-usage-transaction-row';
           const group = tx.billing_group_slug ? ` · ${tx.billing_group_slug}` : '';
-          row.textContent = `${new Date(tx.created_at).toLocaleString('zh-CN')} · ${tx.type}${group} · ${currency(tx.delta_usd)} · 余额 ${currency(tx.balance_after_usd)}${tx.note ? ` · ${tx.note}` : ''}`;
+          const typeLabels = {
+            manual_credit: '充值',
+            refund: '退款',
+            manual_debit: '余额扣减',
+            manual_adjust: '余额调整'
+          };
+          const typeLabel = typeLabels[tx.type] || '余额变动';
+          row.textContent = `${new Date(tx.created_at).toLocaleString('zh-CN')} · ${typeLabel}${group} · ${currency(tx.delta_usd)} · 余额 ${currency(tx.balance_after_usd)}${tx.note ? ` · ${tx.note}` : ''}`;
           balanceTransactions.appendChild(row);
         });
       }
@@ -381,6 +482,7 @@
     latestModelUsage = Array.isArray(data.model_usage) ? data.model_usage : [];
     renderMetrics(data);
     renderBilling(data);
+    renderBillingGroupFilter(data);
     renderModelCharts(latestModelUsage);
     renderChart(latestTrend);
     updatedAt.textContent = `更新于 ${new Intl.DateTimeFormat('zh-CN', {
@@ -391,11 +493,17 @@
   }
 
   async function load() {
-    if (loading) return;
+    if (loading) {
+      reloadPending = true;
+      return;
+    }
     loading = true;
     refreshButton.disabled = true;
+    if (billingGroupSelect) billingGroupSelect.disabled = true;
+    const requestedGroupID = selectedBillingGroupID;
     try {
       const query = new URLSearchParams({ key });
+      if (requestedGroupID) query.set('billing_group_id', requestedGroupID);
       const response = await fetch(`/public/key-usage?${query.toString()}`, {
         headers: { Accept: 'application/json' },
         cache: 'no-store'
@@ -413,10 +521,19 @@
     } finally {
       loading = false;
       refreshButton.disabled = false;
+      if (billingGroupSelect) billingGroupSelect.disabled = false;
+      if (reloadPending || requestedGroupID !== selectedBillingGroupID) {
+        reloadPending = false;
+        load();
+      }
     }
   }
 
   refreshButton.addEventListener('click', load);
+  billingGroupSelect?.addEventListener('change', () => {
+    selectedBillingGroupID = billingGroupSelect.value;
+    load();
+  });
   window.addEventListener('resize', () => {
     usageChart?.resize();
     modelTokenChart?.resize();

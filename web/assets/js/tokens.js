@@ -29,6 +29,8 @@
     let editAllowedModels = [];              // 编辑模态框中当前的模型限制列表
     let selectedAllowedModelIndices = new Set(); // 已选中的模型索引（批量删除用）
     let allChannels = [];                    // 渠道数据缓存
+    let billingChannelKeyIndexes = new Map(); // 计费分组弹窗中的渠道 Key 索引
+    let billingChannelKeys = new Map(); // 渠道 Key 的展示元数据（别名、备注）
     let availableModelsCache = [];           // 可用模型缓存
     let channelTypeDisplayNameMap = new Map(); // 渠道类型显示名缓存
     let channelTypeDisplayNamesPromise = null; // 渠道类型显示名加载中的 Promise
@@ -129,6 +131,8 @@
       window.i18n.onLocaleChange(() => {
         renderAllowedChannelsTable();
         renderTokens();
+        refreshBillingGroupOptions('tokenDefaultBillingGroup', document.getElementById('tokenDefaultBillingGroup')?.value);
+        refreshBillingGroupOptions('editDefaultBillingGroup', document.getElementById('editDefaultBillingGroup')?.value);
       });
 
       // 自动刷新（system_settings.auto_refresh_interval_seconds，0=禁用）
@@ -923,8 +927,8 @@
       if (!select) return;
       const current = String(Number(selectedID) || 0);
       select.innerHTML = [
-        `<option value="0"${current === '0' ? ' selected' : ''}>未设置</option>`,
-        ...billingGroups.map((group) => `<option value="${Number(group.id)}"${String(Number(group.id)) === current ? ' selected' : ''}>${escapeHtml(group.name)} × ${Number(group.multiplier).toFixed(4)}${group.enabled ? '' : '（已停用）'}</option>`)
+        `<option value="0"${current === '0' ? ' selected' : ''}>${escapeHtml(t('tokens.billingGroupUnset'))}</option>`,
+        ...billingGroups.map((group) => `<option value="${Number(group.id)}"${String(Number(group.id)) === current ? ' selected' : ''}>${escapeHtml(group.name)} × ${Number(group.multiplier).toFixed(4)}${group.enabled ? '' : escapeHtml(t('tokens.billingGroupDisabled'))}</option>`)
       ].join('');
       select.value = current;
     }
@@ -948,19 +952,74 @@
       document.getElementById('billingGroupDescription').value = '';
       document.getElementById('billingGroupMultiplier').value = '1';
       document.getElementById('billingGroupEnabled').checked = true;
-      document.querySelectorAll('[data-billing-group-channel]').forEach((input) => { input.checked = false; });
+      document.querySelectorAll('[data-billing-group-channel-key]').forEach((input) => { input.checked = false; });
     }
 
-    function renderBillingGroupChannelOptions(selectedIDs = []) {
+    async function loadBillingChannelKeyIndexes() {
+      const entries = await Promise.all(allChannels.map(async (channel) => {
+        const channelID = Number(channel?.id) || 0;
+        if (!channelID) return [0, []];
+        try {
+          const data = await fetchDataWithAuth(`${API_BASE}/channels/${channelID}/keys`);
+          const keys = Array.isArray(data) ? data : (data && data.keys) || [];
+          const normalizedKeys = keys.map((item) => ({
+            key_index: Number(item?.key_index),
+            alias: String(item?.alias || '').trim(),
+            note: String(item?.note || '').trim()
+          })).filter((item) => Number.isInteger(item.key_index) && item.key_index >= 0);
+          return [channelID, normalizedKeys];
+        } catch (error) {
+          const fallback = (channel.key_cooldowns || []).map((item) => ({
+            key_index: Number(item?.key_index),
+            alias: String(item?.alias || '').trim(),
+            note: String(item?.note || '').trim()
+          })).filter((item) => Number.isInteger(item.key_index) && item.key_index >= 0);
+          return [channelID, fallback];
+        }
+      }));
+      billingChannelKeys = new Map(entries.filter(([id]) => id > 0));
+      billingChannelKeyIndexes = new Map(entries.filter(([id]) => id > 0).map(([id, keys]) => [
+        id,
+        keys.map((item) => item.key_index)
+      ]));
+      return billingChannelKeyIndexes;
+    }
+
+    function normalizeBillingGroupSelectedKeys(selectedKeys, selectedIDs = []) {
+      if (selectedKeys && typeof selectedKeys === 'object') {
+        const result = new Map();
+        Object.entries(selectedKeys).forEach(([rawID, indexes]) => {
+          const id = Number(rawID);
+          if (!id || !Array.isArray(indexes)) return;
+          result.set(id, new Set(indexes.map(Number).filter((index) => Number.isInteger(index) && index >= 0)));
+        });
+        return result;
+      }
+      const result = new Map();
+      (selectedIDs || []).map(Number).filter(Boolean).forEach((id) => {
+        result.set(id, new Set(billingChannelKeyIndexes.get(id) || []));
+      });
+      return result;
+    }
+
+    function renderBillingGroupChannelOptions(selectedKeys = null, selectedIDs = []) {
       const container = document.getElementById('billingGroupChannelOptions');
       if (!container) return;
-      const selected = new Set((selectedIDs || []).map(Number));
-      container.innerHTML = allChannels.map((channel) => `
-        <label class="token-model-checkbox-item">
-          <input type="checkbox" class="control-checkbox" data-billing-group-channel value="${Number(channel.id)}"${selected.has(Number(channel.id)) ? ' checked' : ''}>
-          <span>${escapeHtml(channel.name || `#${channel.id}`)}</span>
-        </label>
-      `).join('') || '<span class="token-limit-hint">暂无渠道</span>';
+      const selected = normalizeBillingGroupSelectedKeys(selectedKeys, selectedIDs);
+      container.innerHTML = allChannels.map((channel) => {
+        const channelID = Number(channel.id) || 0;
+        const keys = billingChannelKeys.get(channelID)
+          || (billingChannelKeyIndexes.get(channelID) || []).map((keyIndex) => ({ key_index: keyIndex, alias: '', note: '' }));
+        const selectedIndexes = selected.get(channelID) || new Set();
+        return `<section class="billing-channel-section">
+          <div class="billing-channel-section__header"><strong>${escapeHtml(channel.name || `#${channelID}`)}</strong><span>#${channelID}</span></div>
+          <div class="billing-channel-section__keys">${keys.length ? keys.map((key) => {
+            const keyName = key.alias ? `${key.alias}（Key ${key.key_index + 1}）` : `Key ${key.key_index + 1}`;
+            return `
+            <label class="billing-channel-key-option" title="${escapeHtml(key.note || keyName)}"><input type="checkbox" class="control-checkbox" data-billing-group-channel-key data-channel-id="${channelID}" data-key-index="${key.key_index}"${selectedIndexes.has(key.key_index) ? ' checked' : ''}><span>${escapeHtml(keyName)}</span></label>`;
+          }).join('') : '<span class="token-limit-hint">暂无 Key</span>'}</div>
+        </section>`;
+      }).join('') || '<span class="token-limit-hint">暂无渠道</span>';
     }
 
     function renderBillingGroupList() {
@@ -968,7 +1027,7 @@
       if (!container) return;
       container.innerHTML = billingGroups.map((group) => `
         <div class="token-group-list-item">
-          <div><strong>${escapeHtml(group.name)}</strong> <code>${escapeHtml(group.slug)}</code> · × ${Number(group.multiplier).toFixed(4)} · 渠道 ${(group.channel_ids || []).length}</div>
+          <div><strong>${escapeHtml(group.name)}</strong> <code>${escapeHtml(group.slug)}</code> · × ${Number(group.multiplier).toFixed(4)} · 渠道 ${(group.channel_ids || []).length} · Key ${Object.values(group.channel_keys || {}).reduce((total, indexes) => total + (Array.isArray(indexes) ? indexes.length : 0), 0)}</div>
           <div>
             <button type="button" class="btn btn-secondary btn-sm" data-action="edit-billing-group" data-group-id="${Number(group.id)}">编辑</button>
             <button type="button" class="btn btn-danger btn-sm" data-action="delete-billing-group" data-group-id="${Number(group.id)}">删除</button>
@@ -979,6 +1038,7 @@
 
     async function showBillingGroupManager() {
       await Promise.all([loadBillingGroups(), allChannels.length ? Promise.resolve(allChannels) : loadChannelsData()]);
+      await loadBillingChannelKeyIndexes();
       renderBillingGroupChannelOptions();
       renderBillingGroupList();
       resetBillingGroupForm();
@@ -1000,7 +1060,7 @@
       document.getElementById('billingGroupDescription').value = group.description || '';
       document.getElementById('billingGroupMultiplier').value = String(group.multiplier ?? 1);
       document.getElementById('billingGroupEnabled').checked = !!group.enabled;
-      renderBillingGroupChannelOptions(group.channel_ids || []);
+      renderBillingGroupChannelOptions(group.channel_keys, group.channel_ids || []);
     }
 
     async function saveBillingGroup() {
@@ -1012,11 +1072,18 @@
         window.showNotification('请填写有效的名称、标识和倍率', 'error');
         return;
       }
-      const channelIDs = Array.from(document.querySelectorAll('[data-billing-group-channel]:checked')).map((input) => Number(input.value));
+      const channelKeys = {};
+      document.querySelectorAll('[data-billing-group-channel-key]:checked').forEach((input) => {
+        const channelID = Number(input.dataset.channelId);
+        const keyIndex = Number(input.dataset.keyIndex);
+        if (!channelID || !Number.isInteger(keyIndex) || keyIndex < 0) return;
+        (channelKeys[channelID] ||= []).push(keyIndex);
+      });
+      const channelIDs = Object.keys(channelKeys).map(Number);
       try {
         await fetchDataWithAuth(`${API_BASE}/billing-groups${id ? `/${id}` : ''}`, {
           method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, slug, description: document.getElementById('billingGroupDescription').value.trim(), multiplier, enabled: document.getElementById('billingGroupEnabled').checked, channel_ids: channelIDs })
+          body: JSON.stringify({ name, slug, description: document.getElementById('billingGroupDescription').value.trim(), multiplier, enabled: document.getElementById('billingGroupEnabled').checked, channel_ids: channelIDs, channel_keys: channelKeys })
         });
         await loadBillingGroups();
         renderBillingGroupList();

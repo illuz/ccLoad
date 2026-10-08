@@ -991,7 +991,11 @@ async function saveChannel(event) {
     name: document.getElementById('channelName').value.trim(),
     url: validURLs.join('\n'),
     api_key: validKeys.join(','),
-    api_keys: validKeyRows.map(row => ({ api_key: row.api_key, note: row.note || '' })),
+    api_keys: validKeyRows.map(row => ({
+      api_key: row.api_key,
+      ...(row.alias ? { alias: row.alias } : {}),
+      note: row.note || ''
+    })),
     channel_type: channelType,
     protocol_transform_mode: getSelectedProtocolTransformMode(),
     protocol_transforms: getSelectedProtocolTransforms(channelType),

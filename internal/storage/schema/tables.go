@@ -57,6 +57,7 @@ func DefineAPIKeysTable() *TableBuilder {
 		Column("channel_id INT NOT NULL").
 		Column("key_index INT NOT NULL").
 		Column("api_key VARCHAR(255) NOT NULL").
+		Column("alias VARCHAR(191) NOT NULL DEFAULT ''").
 		Column("note VARCHAR(512) NOT NULL DEFAULT ''").
 		Column("key_strategy VARCHAR(32) NOT NULL DEFAULT 'sequential'").
 		Column("cooldown_until BIGINT NOT NULL DEFAULT 0").
@@ -182,6 +183,7 @@ func DefineBillingGroupsTable() *TableBuilder {
 		Column("description VARCHAR(512) NOT NULL DEFAULT ''").
 		Column("multiplier DOUBLE NOT NULL DEFAULT 1").
 		Column("enabled TINYINT NOT NULL DEFAULT 1").
+		Column("channel_keys VARCHAR(4000) NOT NULL DEFAULT ''").
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Index("idx_billing_groups_enabled", "enabled").
@@ -206,6 +208,7 @@ func DefineAuthTokenBalanceTransactionsTable() *TableBuilder {
 		Column("auth_token_id INT NOT NULL").
 		Column("billing_group_id BIGINT NOT NULL DEFAULT 0").
 		Column("billing_group_slug VARCHAR(64) NOT NULL DEFAULT ''").
+		Column("model VARCHAR(191) NOT NULL DEFAULT ''").
 		Column("type VARCHAR(32) NOT NULL").
 		Column("delta_microusd BIGINT NOT NULL").
 		Column("balance_before_microusd BIGINT NOT NULL").

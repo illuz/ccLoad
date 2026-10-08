@@ -6,6 +6,10 @@
     'tpl-token-expiry-options'
   ];
   const TOKEN_EDITOR_REQUIRED_CONTROL_IDS = [
+    'editBalanceEnabled',
+    'editBalanceUSD',
+    'editDefaultBillingGroup',
+    'editMonthlyCostLimitUSD',
     'editDailyLimitDoubleEnabled',
     'editDailyLimitTripleEnabled',
     'editDailyLimitOverrideUSD'
@@ -20,6 +24,7 @@
 
   let editorTokens = [];
   let editorGroups = [];
+  let billingGroups = [];
   let allChannels = [];
   let availableModelsCache = [];
   let editAllowedModels = [];
@@ -34,6 +39,7 @@
   let currentVisibleChannels = [];
   let editRawCostLimitUSD = 0;
   let editRawDailyCostLimitUSD = 0;
+  let editRawMonthlyCostLimitUSD = 0;
   let editRawMaxConcurrency = 0;
   let editInheritQuota = false;
   let editInheritChannels = false;
@@ -466,6 +472,34 @@
     select.value = current;
   }
 
+  function refreshBillingGroupOptions(selectedID = 0) {
+    const select = document.getElementById('editDefaultBillingGroup');
+    if (!select) return;
+    const current = String(Number(selectedID) || 0);
+    select.innerHTML = [
+      `<option value="0"${current === '0' ? ' selected' : ''}>${html(i18nText('tokens.billingGroupUnset', '未设置'))}</option>`,
+      ...billingGroups.map((group) => {
+        const id = String(Number(group.id) || 0);
+        const selected = id === current ? ' selected' : '';
+        const disabled = group.enabled ? '' : ` ${html(i18nText('tokens.billingGroupDisabled', '（已停用）'))}`;
+        return `<option value="${html(id)}"${selected}>${html(group.name || group.slug || `#${id}`)} × ${Number(group.multiplier || 0).toFixed(4)}${disabled}</option>`;
+      })
+    ].join('');
+    select.value = current;
+  }
+
+  async function loadBillingGroups() {
+    try {
+      const data = await fetchDataWithAuth('/admin/billing-groups');
+      billingGroups = Array.isArray(data?.groups) ? data.groups : [];
+    } catch (error) {
+      console.error('Failed to load billing groups for log token editor:', error);
+      billingGroups = [];
+    }
+    refreshBillingGroupOptions();
+    return billingGroups;
+  }
+
   function normalizeChannelID(value) {
     const id = Number(value);
     return Number.isFinite(id) && id > 0 ? Math.trunc(id) : 0;
@@ -521,6 +555,7 @@
       await Promise.all([
         loadEditorTokens(),
         ensureAuthTokenGroupsLoaded(),
+        loadBillingGroups(),
         loadChannelsData()
       ]);
 
@@ -549,6 +584,11 @@
     if (editCodexGuardInput) {
       editCodexGuardInput.checked = !!token.codex_guard_enabled;
     }
+    const editBalanceEnabledInput = document.getElementById('editBalanceEnabled');
+    if (editBalanceEnabledInput) editBalanceEnabledInput.checked = !!token.balance_enabled;
+    const editBalanceInput = document.getElementById('editBalanceUSD');
+    if (editBalanceInput) editBalanceInput.value = String(Number(token.balance_usd) || 0);
+    refreshBillingGroupOptions(token.default_billing_group_id || 0);
     refreshEditGroupOptions(token.group_id || 0);
 
     const expiresAt = tokenExpiresAtMs(token.expires_at);
@@ -564,9 +604,12 @@
 
     editRawCostLimitUSD = Number(token.cost_limit_usd) || 0;
     editRawDailyCostLimitUSD = Number(token.daily_cost_limit_usd) || 0;
+    editRawMonthlyCostLimitUSD = Number(token.monthly_cost_limit_usd) || 0;
     editRawMaxConcurrency = Number(token.max_concurrency) || 0;
     document.getElementById('editCostLimitUSD').value = String(editRawCostLimitUSD);
     document.getElementById('editDailyCostLimitUSD').value = String(editRawDailyCostLimitUSD);
+    const editMonthlyCostLimitInput = document.getElementById('editMonthlyCostLimitUSD');
+    if (editMonthlyCostLimitInput) editMonthlyCostLimitInput.value = String(editRawMonthlyCostLimitUSD);
     document.getElementById('editMaxConcurrency').value = String(editRawMaxConcurrency);
     const editDailyLimitDoubleInput = document.getElementById('editDailyLimitDoubleEnabled');
     if (editDailyLimitDoubleInput) {
@@ -625,6 +668,11 @@
     if (editDailyLimitTripleInput) editDailyLimitTripleInput.checked = false;
     const editDailyLimitOverrideInput = document.getElementById('editDailyLimitOverrideUSD');
     if (editDailyLimitOverrideInput) editDailyLimitOverrideInput.value = '0';
+    const editBalanceEnabledInput = document.getElementById('editBalanceEnabled');
+    if (editBalanceEnabledInput) editBalanceEnabledInput.checked = false;
+    const editBalanceInput = document.getElementById('editBalanceUSD');
+    if (editBalanceInput) editBalanceInput.value = '0';
+    refreshBillingGroupOptions(0);
 
     editAllowedModels = [];
     editRawAllowedModels = [];
@@ -649,6 +697,7 @@
     if (!editInheritQuota) {
       editRawCostLimitUSD = parseFloat(document.getElementById('editCostLimitUSD')?.value) || 0;
       editRawDailyCostLimitUSD = parseFloat(document.getElementById('editDailyCostLimitUSD')?.value) || 0;
+      editRawMonthlyCostLimitUSD = parseFloat(document.getElementById('editMonthlyCostLimitUSD')?.value) || 0;
       const maxResult = parseMaxConcurrencyInput(document.getElementById('editMaxConcurrency')?.value);
       if (!maxResult.error) editRawMaxConcurrency = maxResult.value;
     }
@@ -729,18 +778,22 @@
 
     const costLimitInput = document.getElementById('editCostLimitUSD');
     const dailyCostLimitInput = document.getElementById('editDailyCostLimitUSD');
+    const monthlyCostLimitInput = document.getElementById('editMonthlyCostLimitUSD');
     const maxConcurrencyInput = document.getElementById('editMaxConcurrency');
     if (editInheritQuota && group) {
       if (costLimitInput) costLimitInput.value = group.cost_limit_usd || 0;
       if (dailyCostLimitInput) dailyCostLimitInput.value = group.daily_cost_limit_usd || 0;
+      if (monthlyCostLimitInput) monthlyCostLimitInput.value = group.monthly_cost_limit_usd || 0;
       if (maxConcurrencyInput) maxConcurrencyInput.value = group.max_concurrency || 0;
     } else {
       if (costLimitInput) costLimitInput.value = editRawCostLimitUSD || 0;
       if (dailyCostLimitInput) dailyCostLimitInput.value = editRawDailyCostLimitUSD || 0;
+      if (monthlyCostLimitInput) monthlyCostLimitInput.value = editRawMonthlyCostLimitUSD || 0;
       if (maxConcurrencyInput) maxConcurrencyInput.value = editRawMaxConcurrency || 0;
     }
     if (costLimitInput) costLimitInput.disabled = editInheritQuota && hasGroup;
     if (dailyCostLimitInput) dailyCostLimitInput.disabled = editInheritQuota && hasGroup;
+    if (monthlyCostLimitInput) monthlyCostLimitInput.disabled = editInheritQuota && hasGroup;
     if (maxConcurrencyInput) maxConcurrencyInput.disabled = editInheritQuota && hasGroup;
 
     editAllowedChannelIDs = (editInheritChannels && group)
@@ -1252,6 +1305,10 @@
     const groupID = Number(document.getElementById('editTokenGroup')?.value) || 0;
     const costLimitUSD = editInheritQuota ? editRawCostLimitUSD : (parseFloat(document.getElementById('editCostLimitUSD').value) || 0);
     const dailyCostLimitUSD = editInheritQuota ? editRawDailyCostLimitUSD : (parseFloat(document.getElementById('editDailyCostLimitUSD').value) || 0);
+    const monthlyCostLimitUSD = editInheritQuota ? editRawMonthlyCostLimitUSD : (parseFloat(document.getElementById('editMonthlyCostLimitUSD')?.value) || 0);
+    const balanceEnabled = !!document.getElementById('editBalanceEnabled')?.checked;
+    const balanceUSD = parseFloat(document.getElementById('editBalanceUSD')?.value) || 0;
+    const defaultBillingGroupID = Number(document.getElementById('editDefaultBillingGroup')?.value) || 0;
     const dailyLimitDoubleEnabled = !!document.getElementById('editDailyLimitDoubleEnabled')?.checked;
     const dailyLimitTripleEnabled = !!document.getElementById('editDailyLimitTripleEnabled')?.checked;
     const dailyLimitOverrideUSD = parseFloat(document.getElementById('editDailyLimitOverrideUSD')?.value) || 0;
@@ -1267,6 +1324,14 @@
     }
     if (dailyCostLimitUSD < 0) {
       if (window.showNotification) window.showNotification(tr('tokens.msg.dailyCostLimitNegative'), 'error');
+      return;
+    }
+    if (monthlyCostLimitUSD < 0) {
+      if (window.showNotification) window.showNotification(tr('tokens.msg.monthlyCostLimitNegative'), 'error');
+      return;
+    }
+    if (balanceUSD < 0) {
+      if (window.showNotification) window.showNotification(i18nText('tokens.msg.balanceNegative', '余额不能小于 0'), 'error');
       return;
     }
     if (dailyLimitOverrideUSD < 0) {
@@ -1306,6 +1371,9 @@
           description,
           is_active: isActive,
           codex_guard_enabled: codexGuardEnabled,
+          balance_enabled: balanceEnabled,
+          balance_usd: balanceUSD,
+          default_billing_group_id: defaultBillingGroupID,
           expires_at: expiresAt,
           group_id: groupID,
           inherit_quota: groupID > 0 && editInheritQuota,
@@ -1315,6 +1383,7 @@
           allowed_models: editInheritModels ? editRawAllowedModels : editAllowedModels,
           cost_limit_usd: costLimitUSD,
           daily_cost_limit_usd: dailyCostLimitUSD,
+          monthly_cost_limit_usd: monthlyCostLimitUSD,
           daily_limit_double_enabled: dailyLimitDoubleEnabled,
           daily_limit_triple_enabled: dailyLimitTripleEnabled,
           daily_limit_override_usd: dailyLimitOverrideUSD,

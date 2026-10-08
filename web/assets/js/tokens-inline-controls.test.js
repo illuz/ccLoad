@@ -66,6 +66,28 @@ test('tokens 页费用和并发上限常驻说明 0 表示无限制', () => {
   assert.match(html, /id="editCostLimitUSD"[\s\S]*?class="token-limit-hint token-limit-hint--inline"[\s\S]*?id="editMaxConcurrency"[\s\S]*?class="token-limit-hint token-limit-hint--inline"/);
 });
 
+test('tokens 页余额模式字段支持国际化并为长标签预留布局', () => {
+  for (const key of [
+    'tokens.balanceEnabled',
+    'tokens.balanceEnabledHint',
+    'tokens.balanceEditHint',
+    'tokens.balanceInitialLabel',
+    'tokens.balanceCurrentLabel',
+    'tokens.defaultBillingGroupLabel',
+    'tokens.billingGroupUnset'
+  ]) {
+    assert.match(html, new RegExp(`data-i18n="${key.replace('.', '\\.')}"`));
+  }
+  assert.match(html, /token-balance-field/);
+  assert.match(html, /token-billing-group-field/);
+  assert.match(html, /token-edit-field--balance/);
+  assert.match(html, /token-edit-field--billing-group/);
+  assert.match(css, /#editModal \.token-edit-field--billing-group\s*\{[\s\S]*?flex-direction:\s*column;/);
+  assert.match(css, /#editModal \.token-edit-field--monthly-cost \.form-label\s*\{[\s\S]*?white-space:\s*normal;/);
+  assert.match(css, /#editModal \.token-edit-section--quota \.token-limit-input-line\s*\{[\s\S]*?grid-template-columns:\s*14px minmax\(0,\s*1fr\);/);
+  assert.match(css, /#editModal \.token-edit-section--quota \.token-limit-input-line \.token-limit-hint\s*\{[\s\S]*?grid-column:\s*2;/);
+});
+
 test('tokens 页费用和并发上限输入框使用一致前缀槽位保持对齐', () => {
   assert.equal((html.match(/class="token-limit-prefix-slot token-limit-prefix-slot--empty"/g) || []).length, 5);
   assert.match(html, /id="tokenCostLimitUSD"[\s\S]*?id="tokenMaxConcurrency"/);

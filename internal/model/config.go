@@ -450,6 +450,7 @@ type APIKey struct {
 	ChannelID int64  `json:"channel_id"`
 	KeyIndex  int    `json:"key_index"`
 	APIKey    string `json:"api_key"`
+	Alias     string `json:"alias,omitempty"`
 	Note      string `json:"note"`
 
 	KeyStrategy string `json:"key_strategy"` // "sequential" | "round_robin"

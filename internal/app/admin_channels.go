@@ -550,6 +550,7 @@ func (s *Server) createChannelFromRequest(ctx context.Context, req ChannelReques
 			ChannelID:   created.ID,
 			KeyIndex:    i,
 			APIKey:      entry.APIKey,
+			Alias:       entry.Alias,
 			Note:        entry.Note,
 			KeyStrategy: keyStrategy,
 			CreatedAt:   model.JSONTime{Time: now},
@@ -979,14 +980,19 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	}
 
 	notesByIndex := make(map[int]string)
+	aliasesByIndex := make(map[int]string)
 	if !keyChanged {
 		for i, oldKey := range oldKeys {
+			if oldKey.Alias != newKeys[i].Alias {
+				aliasesByIndex[oldKey.KeyIndex] = newKeys[i].Alias
+			}
 			if oldKey.Note != newKeys[i].Note {
 				notesByIndex[oldKey.KeyIndex] = newKeys[i].Note
 			}
 		}
 	}
 	noteChanged := len(notesByIndex) > 0
+	aliasChanged := len(aliasesByIndex) > 0
 
 	// [INFO] 修复 (2025-10-11): 检测策略变化
 	strategyChanged := false
@@ -1025,6 +1031,7 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 				ChannelID:   id,
 				KeyIndex:    i,
 				APIKey:      key.APIKey,
+				Alias:       key.Alias,
 				Note:        key.Note,
 				KeyStrategy: keyStrategy,
 				Disabled:    disabledByAPIKey[key.APIKey],
@@ -1045,6 +1052,11 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 		if noteChanged {
 			if err := s.store.UpdateAPIKeyNotes(c.Request.Context(), id, notesByIndex); err != nil {
 				log.Printf("[WARN] 批量更新API Key备注失败 (channel=%d): %v", id, err)
+			}
+		}
+		if aliasChanged {
+			if err := s.store.UpdateAPIKeyAliases(c.Request.Context(), id, aliasesByIndex); err != nil {
+				log.Printf("[WARN] 批量更新API Key别名失败 (channel=%d): %v", id, err)
 			}
 		}
 	}

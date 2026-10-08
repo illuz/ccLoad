@@ -49,6 +49,7 @@ type Store interface {
 	CreateAPIKeysBatch(ctx context.Context, keys []*model.APIKey) error
 	UpdateAPIKeysStrategy(ctx context.Context, channelID int64, strategy string) error
 	UpdateAPIKeyNotes(ctx context.Context, channelID int64, notesByIndex map[int]string) error
+	UpdateAPIKeyAliases(ctx context.Context, channelID int64, aliasesByIndex map[int]string) error
 	SetAPIKeyDisabled(ctx context.Context, channelID int64, keyIndex int, disabled bool) error
 	DeleteAPIKey(ctx context.Context, channelID int64, keyIndex int) error
 	CompactKeyIndices(ctx context.Context, channelID int64, removedIndex int) error
@@ -127,9 +128,11 @@ type Store interface {
 	GetBillingGroupChannels(ctx context.Context, groupID int64) ([]int64, error)
 	SetBillingGroupChannels(ctx context.Context, groupID int64, channelIDs []int64) error
 	AdjustAuthTokenBalance(ctx context.Context, tokenID, deltaMicroUSD int64, txType, note string) (*model.BalanceTransaction, error)
-	ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error)
+	ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug, modelName string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error)
 	ListAuthTokenBalanceTransactions(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error)
+	ListAuthTokenBalanceAdjustments(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error)
 	GetAuthTokenBillingGroupUsage(ctx context.Context, tokenID int64, since, until time.Time) ([]model.BillingGroupUsage, error)
+	AggregateAuthTokenBalanceUsage(ctx context.Context, tokenID, billingGroupID int64, since, until time.Time, bucket time.Duration) ([]model.BalanceUsageBucket, error)
 
 	// === System Settings ===
 	GetSetting(ctx context.Context, key string) (*model.SystemSetting, error)

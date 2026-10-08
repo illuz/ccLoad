@@ -1503,8 +1503,8 @@ func TestHandleChannelAPIKeyNotesCreateReadAndUpdate(t *testing.T) {
 		Name: "key-notes",
 		URL:  "https://api.example.com",
 		APIKeys: []ChannelAPIKeyRequest{
-			{APIKey: "sk-primary", Note: "primary"},
-			{APIKey: "sk-backup", Note: "backup"},
+			{APIKey: "sk-primary", Alias: "Primary", Note: "primary"},
+			{APIKey: "sk-backup", Alias: "Backup", Note: "backup"},
 		},
 		Priority: 10,
 		Models:   []model.ModelEntry{{Model: "model-1"}},
@@ -1528,8 +1528,8 @@ func TestHandleChannelAPIKeyNotesCreateReadAndUpdate(t *testing.T) {
 		t.Fatalf("get keys status=%d body=%s", readW.Code, readW.Body.String())
 	}
 	readResp := mustParseAPIResponse[[]*model.APIKey](t, readW.Body.Bytes())
-	if len(readResp.Data) != 2 || readResp.Data[0].Note != "primary" || readResp.Data[1].Note != "backup" {
-		t.Fatalf("created key notes = %#v, want primary/backup", readResp.Data)
+	if len(readResp.Data) != 2 || readResp.Data[0].Alias != "Primary" || readResp.Data[1].Alias != "Backup" || readResp.Data[0].Note != "primary" || readResp.Data[1].Note != "backup" {
+		t.Fatalf("created key metadata = %#v, want aliases Primary/Backup and notes primary/backup", readResp.Data)
 	}
 
 	cooldownUntil := time.Now().Add(15 * time.Minute).Truncate(time.Second)
@@ -1541,8 +1541,8 @@ func TestHandleChannelAPIKeyNotesCreateReadAndUpdate(t *testing.T) {
 		Name: "key-notes",
 		URL:  "https://api.example.com",
 		APIKeys: []ChannelAPIKeyRequest{
-			{APIKey: "sk-primary", Note: "primary-renamed"},
-			{APIKey: "sk-backup", Note: "backup-renamed"},
+			{APIKey: "sk-primary", Alias: "Primary Renamed", Note: "primary-renamed"},
+			{APIKey: "sk-backup", Alias: "Backup Renamed", Note: "backup-renamed"},
 		},
 		Priority: 10,
 		Models:   []model.ModelEntry{{Model: "model-1"}},
@@ -1562,11 +1562,11 @@ func TestHandleChannelAPIKeyNotesCreateReadAndUpdate(t *testing.T) {
 	if len(keys) != 2 {
 		t.Fatalf("len(keys)=%d, want 2", len(keys))
 	}
-	if keys[0].APIKey != "sk-primary" || keys[0].Note != "primary-renamed" {
-		t.Fatalf("keys[0]=%+v, want sk-primary with updated note", keys[0])
+	if keys[0].APIKey != "sk-primary" || keys[0].Alias != "Primary Renamed" || keys[0].Note != "primary-renamed" {
+		t.Fatalf("keys[0]=%+v, want sk-primary with updated alias and note", keys[0])
 	}
-	if keys[1].APIKey != "sk-backup" || keys[1].Note != "backup-renamed" {
-		t.Fatalf("keys[1]=%+v, want sk-backup with updated note", keys[1])
+	if keys[1].APIKey != "sk-backup" || keys[1].Alias != "Backup Renamed" || keys[1].Note != "backup-renamed" {
+		t.Fatalf("keys[1]=%+v, want sk-backup with updated alias and note", keys[1])
 	}
 	if keys[1].CooldownUntil != cooldownUntil.Unix() {
 		t.Fatalf("key cooldown after note-only update=%d, want %d", keys[1].CooldownUntil, cooldownUntil.Unix())

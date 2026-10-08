@@ -181,6 +181,9 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureAPIKeysNote(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate api_keys note: %w", err)
 			}
+			if err := ensureAPIKeysAlias(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate api_keys alias: %w", err)
+			}
 		}
 
 		if tb.Name() == "channel_models" {
@@ -247,6 +250,18 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			}
 			if err := validateAuthTokensMaxConcurrency(ctx, db); err != nil {
 				return fmt.Errorf("validate auth_tokens max_concurrency: %w", err)
+			}
+		}
+
+		if tb.Name() == "billing_groups" {
+			if err := ensureBillingGroupsColumns(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate billing_groups channel_keys: %w", err)
+			}
+		}
+
+		if tb.Name() == "auth_token_balance_transactions" {
+			if err := ensureAuthTokenBalanceTransactionColumns(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate auth_token_balance_transactions model: %w", err)
 			}
 		}
 

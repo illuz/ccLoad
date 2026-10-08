@@ -4290,11 +4290,21 @@
       }
 
       .inline-url-table .mobile-inline-row .inline-url-col-url .modal-inline-input,
-      .inline-key-table .mobile-inline-row .inline-key-col-key .modal-inline-input,
+      .inline-key-table .mobile-inline-row .inline-key-col-key .inline-key-input,
       .redirect-model-table .mobile-inline-row .redirect-col-target .modal-inline-input {
         display: block;
         width: 100% !important;
         min-width: 0;
+      }
+
+      .inline-key-table .mobile-inline-row .inline-key-fields {
+        flex-wrap: wrap;
+      }
+
+      .inline-key-table .mobile-inline-row .inline-key-fields .inline-key-alias-input {
+        flex: 1 1 120px;
+        width: 120px !important;
+        min-width: 72px;
       }
 
       .redirect-model-table .mobile-inline-row .redirect-col-model > div {

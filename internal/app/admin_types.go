@@ -48,13 +48,15 @@ type ChannelRequest struct {
 	ProxyURL                    string                    `json:"proxy_url,omitempty"` // 渠道级代理（http/https/socks5/socks5h）
 }
 
-// ChannelAPIKeyRequest describes one submitted API key and its admin-only note.
+// ChannelAPIKeyRequest describes one submitted API key and its admin metadata.
 type ChannelAPIKeyRequest struct {
 	APIKey string `json:"api_key"`
+	Alias  string `json:"alias,omitempty"`
 	Note   string `json:"note,omitempty"`
 }
 
 const maxAPIKeyNoteLength = 512
+const maxAPIKeyAliasLength = 191
 
 func (cr *ChannelRequest) normalizeAPIKeys() []ChannelAPIKeyRequest {
 	if len(cr.APIKeys) > 0 {
@@ -66,6 +68,7 @@ func (cr *ChannelRequest) normalizeAPIKeys() []ChannelAPIKeyRequest {
 			}
 			keys = append(keys, ChannelAPIKeyRequest{
 				APIKey: apiKey,
+				Alias:  strings.TrimSpace(item.Alias),
 				Note:   strings.TrimSpace(item.Note),
 			})
 		}
@@ -176,6 +179,12 @@ func (cr *ChannelRequest) Validate() error {
 		}
 		if len(key.Note) > maxAPIKeyNoteLength {
 			return fmt.Errorf("api_keys[%d].note is too long (max %d bytes)", i, maxAPIKeyNoteLength)
+		}
+		if len(key.Alias) > maxAPIKeyAliasLength {
+			return fmt.Errorf("api_keys[%d].alias is too long (max %d bytes)", i, maxAPIKeyAliasLength)
+		}
+		if strings.ContainsAny(key.Alias, "\x00\r\n") {
+			return fmt.Errorf("api_keys[%d].alias contains illegal characters", i)
 		}
 		if strings.Contains(key.Note, "\x00") {
 			return fmt.Errorf("api_keys[%d].note contains illegal characters", i)

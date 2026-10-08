@@ -459,6 +459,18 @@ func (h *HybridStore) UpdateAPIKeyNotes(ctx context.Context, channelID int64, no
 	return nil
 }
 
+func (h *HybridStore) UpdateAPIKeyAliases(ctx context.Context, channelID int64, aliasesByIndex map[int]string) error {
+	if err := h.mysql.UpdateAPIKeyAliases(ctx, channelID, aliasesByIndex); err != nil {
+		return err
+	}
+
+	h.syncToSQLite("UpdateAPIKeyAliases", func() error {
+		return h.sqlite.UpdateAPIKeyAliases(ctx, channelID, aliasesByIndex)
+	})
+
+	return nil
+}
+
 func (h *HybridStore) DeleteAPIKey(ctx context.Context, channelID int64, keyIndex int) error {
 	if err := h.mysql.DeleteAPIKey(ctx, channelID, keyIndex); err != nil {
 		return err
@@ -961,14 +973,14 @@ func (h *HybridStore) AdjustAuthTokenBalance(ctx context.Context, tokenID, delta
 	return entry, nil
 }
 
-func (h *HybridStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error) {
-	entry, err := h.mysql.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
+func (h *HybridStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug, modelName string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error) {
+	entry, err := h.mysql.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, modelName, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
 	if err != nil {
 		return nil, err
 	}
 	if entry != nil {
 		h.syncToSQLite("ChargeAuthTokenBalance", func() error {
-			_, err := h.sqlite.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
+			_, err := h.sqlite.ChargeAuthTokenBalance(ctx, tokenHash, groupID, groupSlug, modelName, multiplier, requestID, standardCostMicroUSD, deltaMicroUSD, totalTokens)
 			return err
 		})
 	}
@@ -979,8 +991,16 @@ func (h *HybridStore) ListAuthTokenBalanceTransactions(ctx context.Context, toke
 	return h.sqlite.ListAuthTokenBalanceTransactions(ctx, tokenID, limit, offset)
 }
 
+func (h *HybridStore) ListAuthTokenBalanceAdjustments(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error) {
+	return h.sqlite.ListAuthTokenBalanceAdjustments(ctx, tokenID, limit, offset)
+}
+
 func (h *HybridStore) GetAuthTokenBillingGroupUsage(ctx context.Context, tokenID int64, since, until time.Time) ([]model.BillingGroupUsage, error) {
 	return h.sqlite.GetAuthTokenBillingGroupUsage(ctx, tokenID, since, until)
+}
+
+func (h *HybridStore) AggregateAuthTokenBalanceUsage(ctx context.Context, tokenID, billingGroupID int64, since, until time.Time, bucket time.Duration) ([]model.BalanceUsageBucket, error) {
+	return h.sqlite.AggregateAuthTokenBalanceUsage(ctx, tokenID, billingGroupID, since, until, bucket)
 }
 
 // === System Settings ===

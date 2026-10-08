@@ -149,10 +149,33 @@ func filterBillingGroupChannels(cands []*model.Config, group *model.BillingGroup
 			continue
 		}
 		if _, ok := allowed[cfg.ID]; ok {
+			if group.ChannelKeys != nil {
+				keys, configured := group.ChannelKeys[cfg.ID]
+				if !configured || len(keys) == 0 {
+					continue
+				}
+			}
 			filtered = append(filtered, cfg)
 		}
 	}
 	return filtered
+}
+
+func billingGroupKeyIndexes(group *model.BillingGroup) map[int64]map[int]struct{} {
+	if group == nil || group.ChannelKeys == nil {
+		return nil
+	}
+	result := make(map[int64]map[int]struct{}, len(group.ChannelKeys))
+	for channelID, indexes := range group.ChannelKeys {
+		set := make(map[int]struct{}, len(indexes))
+		for _, index := range indexes {
+			if index >= 0 {
+				set[index] = struct{}{}
+			}
+		}
+		result[channelID] = set
+	}
+	return result
 }
 
 func billingGroupAvailability(s *Server, ctx context.Context, group *model.BillingGroup) {
@@ -164,6 +187,7 @@ func billingGroupAvailability(s *Server, ctx context.Context, group *model.Billi
 	var successWeighted float64
 	var samples int64
 	now := time.Now()
+	allowedKeys := billingGroupKeyIndexes(group)
 	for _, id := range group.ChannelIDs {
 		cfg, err := s.store.GetConfig(ctx, id)
 		if err != nil || cfg == nil {
@@ -172,8 +196,9 @@ func billingGroupAvailability(s *Server, ctx context.Context, group *model.Billi
 		if cfg.Enabled && !cfg.IsCoolingDown(now) {
 			keys, keyErr := s.store.GetAPIKeys(ctx, id)
 			if keyErr == nil {
+				allowedSet, configured := allowedKeys[id]
 				for _, key := range keys {
-					if key != nil && !key.Disabled && !key.IsCoolingDown(now) {
+					if key != nil && (allowedKeys == nil || (configured && hasBillingGroupKey(allowedSet, key.KeyIndex))) && !key.Disabled && !key.IsCoolingDown(now) {
 						available++
 						break
 					}
@@ -193,6 +218,11 @@ func billingGroupAvailability(s *Server, ctx context.Context, group *model.Billi
 	} else {
 		group.SuccessRate = 1
 	}
+}
+
+func hasBillingGroupKey(keys map[int]struct{}, keyIndex int) bool {
+	_, ok := keys[keyIndex]
+	return ok
 }
 
 func applyBillingGroupUsage(groups []*model.BillingGroup, usage []model.BillingGroupUsage) {

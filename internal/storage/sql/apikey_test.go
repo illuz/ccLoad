@@ -116,6 +116,41 @@ func TestAPIKey_NotesPersistAndUpdate(t *testing.T) {
 	}
 }
 
+func TestAPIKey_AliasesPersistAndUpdate(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t, "aliases.db")
+	ctx := context.Background()
+	channelID := createTestChannel(t, ctx, store, "aliases-test-channel")
+
+	keys := []*model.APIKey{
+		{ChannelID: channelID, KeyIndex: 0, APIKey: "sk-key-0", Alias: "primary", KeyStrategy: model.KeyStrategySequential},
+		{ChannelID: channelID, KeyIndex: 1, APIKey: "sk-key-1", Alias: "backup", KeyStrategy: model.KeyStrategySequential},
+	}
+	if err := store.CreateAPIKeysBatch(ctx, keys); err != nil {
+		t.Fatalf("create api keys batch: %v", err)
+	}
+
+	got, err := store.GetAPIKey(ctx, channelID, 1)
+	if err != nil {
+		t.Fatalf("get api key: %v", err)
+	}
+	if got.Alias != "backup" {
+		t.Fatalf("alias after create = %q, want %q", got.Alias, "backup")
+	}
+
+	if err := store.UpdateAPIKeyAliases(ctx, channelID, map[int]string{0: "main", 1: ""}); err != nil {
+		t.Fatalf("update api key aliases: %v", err)
+	}
+	allKeys, err := store.GetAPIKeys(ctx, channelID)
+	if err != nil {
+		t.Fatalf("get api keys: %v", err)
+	}
+	if allKeys[0].Alias != "main" || allKeys[1].Alias != "" {
+		t.Fatalf("aliases after update = [%q, %q], want [%q, %q]", allKeys[0].Alias, allKeys[1].Alias, "main", "")
+	}
+}
+
 func TestAPIKey_Delete(t *testing.T) {
 	t.Parallel()
 

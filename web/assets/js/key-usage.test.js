@@ -12,6 +12,8 @@ test('公开 Key 页面展示今日实时汇总、模型占比和趋势图', () 
   assert.match(html, /id="modelTokenChart"/);
   assert.match(html, /id="modelCostChart"/);
   assert.match(html, /id="usageChart"/);
+  assert.match(html, /id="billingGroupSelect"/);
+  assert.match(html, />全部<\/option>/);
   assert.match(html, /echarts\.min\.js/);
   assert.doesNotMatch(html, /historyRange|historyMetrics|totalMetrics|历史统计|累计总量|历史区间/);
 
@@ -20,7 +22,14 @@ test('公开 Key 页面展示今日实时汇总、模型占比和趋势图', () 
   assert.match(script, /费用上限/);
   assert.match(script, /usage_percentage/);
   assert.doesNotMatch(script, /总费用上限|无限制/);
-  assert.doesNotMatch(script, /成功率|输入 Token|输出 Token|缓存读取|缓存写入|最近一分钟 RPM/);
+  assert.doesNotMatch(script, /可用渠道|成功率|输入 Token|输出 Token|缓存读取|缓存写入|最近一分钟 RPM/);
+  assert.match(script, /label: balanceEnabled \? '真实费用' : '实际费用'/);
+  assert.match(script, /filter\(\(tx\) => tx\.type !== 'consumption'\)/);
+  assert.match(script, /billing_group_id/);
+  assert.match(script, /group\.description/);
+  assert.match(script, /className = 'public-usage-group-slug'/);
+  assert.match(script, /copyUsageKey\(`\$\{baseKey\}~\$\{group\.slug\}`/);
+  assert.match(styles, /\.public-usage-group-description/);
 });
 
 test('模型 Token 和费用占比使用响应式饼图', () => {

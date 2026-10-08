@@ -12,10 +12,13 @@ function parseKeys(input) {
 
 function normalizeInlineKeyRow(row) {
   if (row && typeof row === 'object') {
-    return {
+    const normalized = {
       api_key: String(row.api_key || '').trim(),
       note: String(row.note || '').trim()
     };
+    const alias = String(row.alias || '').trim();
+    if (alias) normalized.alias = alias;
+    return normalized;
   }
   return {
     api_key: String(row || '').trim(),
@@ -23,8 +26,8 @@ function normalizeInlineKeyRow(row) {
   };
 }
 
-function makeInlineKeyRow(apiKey = '', note = '') {
-  return normalizeInlineKeyRow({ api_key: apiKey, note });
+function makeInlineKeyRow(apiKey = '', note = '', alias = '') {
+  return normalizeInlineKeyRow({ api_key: apiKey, note, alias });
 }
 
 function normalizeInlineKeyTableData() {
@@ -72,7 +75,7 @@ function updateInlineKeyHiddenInput() {
 function setInlineKeyTableDataFromAPI(apiKeys) {
   inlineKeyTableData = (apiKeys || []).map(item => {
     if (item && typeof item === 'object') {
-      return makeInlineKeyRow(item.api_key || '', item.note || '');
+      return makeInlineKeyRow(item.api_key || '', item.note || '', item.alias || '');
     }
     return makeInlineKeyRow(item || '', '');
   });
@@ -186,14 +189,17 @@ function createKeyRow(index) {
     index: index,
     displayIndex: index + 1,
     key: keyRow.api_key || '',
+    alias: keyRow.alias || '',
     note: keyRow.note || '',
     inputType: inlineKeyVisible ? 'text' : 'password',
     cooldownHtml: buildCooldownHtml(index),
     actionsHtml: buildActionsHtml(index),
     mobileLabelKey: window.t('channels.modal.apiKey'),
     mobileLabelNote: window.t('channels.modal.keyNote'),
+    mobileLabelAlias: window.t('channels.modal.keyAlias'),
     mobileLabelStatus: window.t('common.status'),
     mobileLabelActions: window.t('common.actions'),
+    aliasPlaceholder: window.t('channels.keyAliasPlaceholder'),
     notePlaceholder: window.t('channels.keyNotePlaceholder')
   };
 
@@ -390,12 +396,18 @@ function initKeyTableEventDelegation() {
     if (noteInput) {
       const index = parseInt(noteInput.dataset.index);
       updateInlineKeyNote(index, noteInput.value);
+      return;
+    }
+    const aliasInput = e.target.closest('.inline-key-alias-input');
+    if (aliasInput) {
+      const index = parseInt(aliasInput.dataset.index);
+      updateInlineKeyAlias(index, aliasInput.value);
     }
   });
 
   // 处理输入框焦点样式
   tbody.addEventListener('focusin', (e) => {
-    const input = e.target.closest('.inline-key-input, .inline-key-note-input');
+    const input = e.target.closest('.inline-key-input, .inline-key-alias-input, .inline-key-note-input');
     if (input) {
       input.style.borderColor = 'var(--primary-500)';
       input.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)';
@@ -405,7 +417,7 @@ function initKeyTableEventDelegation() {
   });
 
   tbody.addEventListener('focusout', (e) => {
-    const input = e.target.closest('.inline-key-input, .inline-key-note-input');
+    const input = e.target.closest('.inline-key-input, .inline-key-alias-input, .inline-key-note-input');
     if (input) {
       input.style.borderColor = 'var(--neutral-300)';
       input.style.boxShadow = 'none';
@@ -583,6 +595,16 @@ function updateInlineKeyNote(index, value) {
   if (row.note === nextValue) return;
 
   row.note = nextValue;
+  inlineKeyTableData[index] = row;
+  markChannelFormDirty();
+}
+
+function updateInlineKeyAlias(index, value) {
+  const nextValue = value.trim();
+  const row = normalizeInlineKeyRow(inlineKeyTableData[index]);
+  if (row.alias === nextValue) return;
+
+  row.alias = nextValue;
   inlineKeyTableData[index] = row;
   markChannelFormDirty();
 }

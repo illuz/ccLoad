@@ -25,6 +25,22 @@ func TestSplitBillingGroupVariant(t *testing.T) {
 	}
 }
 
+func TestFilterBillingGroupChannelsHonorsSelectedKeys(t *testing.T) {
+	group := &model.BillingGroup{
+		ChannelIDs:  []int64{1, 2},
+		ChannelKeys: map[int64][]int{1: {2}},
+	}
+	channels := []*model.Config{{ID: 1}, {ID: 2}, {ID: 3}}
+	filtered := filterBillingGroupChannels(channels, group)
+	if len(filtered) != 1 || filtered[0].ID != 1 {
+		t.Fatalf("filtered channels=%v, want only channel 1", filtered)
+	}
+	indexes := billingGroupKeyIndexes(group)
+	if _, ok := indexes[1][2]; !ok {
+		t.Fatalf("selected key index missing: %#v", indexes)
+	}
+}
+
 func TestBillingGroupVariantAuthenticatesAsBaseToken(t *testing.T) {
 	srv := newInMemoryServer(t)
 	plain := "sk-variant"
@@ -106,7 +122,7 @@ func TestTokenStatsSettlementChargesBillingGroupMultiplier(t *testing.T) {
 	}
 	srv.applyTokenStatsUpdate(tokenStatsUpdate{
 		tokenHash: token.Token, isSuccess: true, isBillable: true, costUSD: 2,
-		billingGroupID: group.ID, billingGroupSlug: group.Slug, billingMultiplier: group.Multiplier,
+		billingGroupID: group.ID, billingGroupSlug: group.Slug, modelName: "gpt-test", billingMultiplier: group.Multiplier,
 		requestID: "req-settle", balanceEnabled: true, promptTokens: 100, completionTokens: 20,
 	})
 	got, err := srv.store.GetAuthToken(ctx, token.ID)
@@ -120,7 +136,7 @@ func TestTokenStatsSettlementChargesBillingGroupMultiplier(t *testing.T) {
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("transactions=%#v err=%v", entries, err)
 	}
-	if entries[0].BillingGroupID != group.ID || entries[0].TotalTokens != 120 || entries[0].DeltaMicroUSD != -util.USDToMicroUSD(0.2) {
+	if entries[0].BillingGroupID != group.ID || entries[0].Model != "gpt-test" || entries[0].TotalTokens != 120 || entries[0].DeltaMicroUSD != -util.USDToMicroUSD(0.2) {
 		t.Fatalf("unexpected transaction: %#v", entries[0])
 	}
 }

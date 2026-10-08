@@ -162,29 +162,30 @@ type proxyRequestContext struct {
 	translatedBody          []byte
 	header                  http.Header
 	isStreaming             bool
-	tokenHash               string               // Token哈希值（用于统计）
-	tokenKey                string               // 客户端传入的原始 Token Key（用于 Debug 文件目录）
-	tokenID                 int64                // Token ID（用于日志记录，0表示未使用token）
-	billingGroupID          int64                // 客户计费分组 ID（0 表示未选择）
-	billingGroupSlug        string               // 客户计费分组标识
-	billingMultiplier       float64              // 客户计费倍率
-	balanceEnabled          bool                 // 是否启用客户余额模式
-	codexGuardEnabled       bool                 // 当前访问令牌是否启用 Codex reasoning guard
-	codexGuardRetries       int                  // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
-	codexGuardTraceID       string               // 本次客户端请求的 Codex Guard 重试追踪 ID
-	codexGuardHitAttempts   int                  // 本次客户端请求内实际命中 Guard 的 attempt 数
-	codexGuardLastDuration  float64              // 最近一次 Guard attempt 实际耗时（秒）
-	codexGuardReducedBudget bool                 // 本次 Guard 链路中是否因大响应/慢响应降低重试预算
-	codexGuardExhausted     bool                 // 本次 Guard 链路是否已确认不再继续重试
-	clientIP                string               // 客户端IP地址（用于日志记录）
-	activeReqID             int64                // 活跃请求ID（用于更新渠道信息）
-	observer                *ForwardObserver     // 转发观测回调（可选）
-	startTime               time.Time            // 请求开始时间（用于统计）
-	channelStartTime        time.Time            // 当前渠道尝试开始时间（每次切换渠道时重置）
-	attemptStartTime        time.Time            // 渠道内单次 Key/URL 尝试开始时间
-	attemptNumber           int                  // 本请求内实际上游尝试序号（从1开始）
-	baseURL                 string               // 当前尝试使用的上游URL（多URL场景）
-	debugData               *model.DebugLogEntry // Debug日志数据（debug开启时填充）
+	tokenHash               string                     // Token哈希值（用于统计）
+	tokenKey                string                     // 客户端传入的原始 Token Key（用于 Debug 文件目录）
+	tokenID                 int64                      // Token ID（用于日志记录，0表示未使用token）
+	billingGroupID          int64                      // 客户计费分组 ID（0 表示未选择）
+	billingGroupSlug        string                     // 客户计费分组标识
+	billingMultiplier       float64                    // 客户计费倍率
+	billingGroupKeyIndexes  map[int64]map[int]struct{} // 客户计费分组允许的渠道 Key 索引
+	balanceEnabled          bool                       // 是否启用客户余额模式
+	codexGuardEnabled       bool                       // 当前访问令牌是否启用 Codex reasoning guard
+	codexGuardRetries       int                        // 本次客户端请求内已安排的 Codex Guard 重试次数（不含首次请求）
+	codexGuardTraceID       string                     // 本次客户端请求的 Codex Guard 重试追踪 ID
+	codexGuardHitAttempts   int                        // 本次客户端请求内实际命中 Guard 的 attempt 数
+	codexGuardLastDuration  float64                    // 最近一次 Guard attempt 实际耗时（秒）
+	codexGuardReducedBudget bool                       // 本次 Guard 链路中是否因大响应/慢响应降低重试预算
+	codexGuardExhausted     bool                       // 本次 Guard 链路是否已确认不再继续重试
+	clientIP                string                     // 客户端IP地址（用于日志记录）
+	activeReqID             int64                      // 活跃请求ID（用于更新渠道信息）
+	observer                *ForwardObserver           // 转发观测回调（可选）
+	startTime               time.Time                  // 请求开始时间（用于统计）
+	channelStartTime        time.Time                  // 当前渠道尝试开始时间（每次切换渠道时重置）
+	attemptStartTime        time.Time                  // 渠道内单次 Key/URL 尝试开始时间
+	attemptNumber           int                        // 本请求内实际上游尝试序号（从1开始）
+	baseURL                 string                     // 当前尝试使用的上游URL（多URL场景）
+	debugData               *model.DebugLogEntry       // Debug日志数据（debug开启时填充）
 	thinkingEffort          string
 	timing                  *proxyTimingTrace
 	firstClientByteMu       sync.RWMutex

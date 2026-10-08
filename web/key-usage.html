@@ -40,7 +40,15 @@
     <section class="public-usage-section" aria-labelledby="todayTitle">
       <div class="public-usage-section-heading">
         <h2 id="todayTitle">今日实时</h2>
-        <span class="public-usage-live">实时</span>
+        <div class="public-usage-heading-actions">
+          <label id="billingGroupFilter" class="public-usage-group-filter" for="billingGroupSelect" hidden>
+            <span>计费分组</span>
+            <select id="billingGroupSelect">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <span class="public-usage-live">实时</span>
+        </div>
       </div>
       <dl id="todayMetrics" class="public-usage-metrics"></dl>
     </section>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,12 +16,13 @@ import (
 )
 
 type billingGroupRequest struct {
-	Name        string   `json:"name" binding:"required"`
-	Slug        string   `json:"slug" binding:"required"`
-	Description string   `json:"description"`
-	Multiplier  *float64 `json:"multiplier"`
-	Enabled     *bool    `json:"enabled"`
-	ChannelIDs  []int64  `json:"channel_ids"`
+	Name        string          `json:"name" binding:"required"`
+	Slug        string          `json:"slug" binding:"required"`
+	Description string          `json:"description"`
+	Multiplier  *float64        `json:"multiplier"`
+	Enabled     *bool           `json:"enabled"`
+	ChannelIDs  []int64         `json:"channel_ids"`
+	ChannelKeys map[int64][]int `json:"channel_keys"`
 }
 
 func (s *Server) HandleListBillingGroups(c *gin.Context) {
@@ -51,7 +53,12 @@ func (s *Server) HandleCreateBillingGroup(c *gin.Context) {
 	if req.Multiplier != nil {
 		multiplier = *req.Multiplier
 	}
-	group := &model.BillingGroup{Name: req.Name, Slug: req.Slug, Description: req.Description, Multiplier: multiplier, Enabled: enabled, ChannelIDs: req.ChannelIDs}
+	channelIDs := req.ChannelIDs
+	if req.ChannelKeys != nil {
+		req.ChannelKeys = normalizeBillingGroupChannelKeys(req.ChannelKeys)
+		channelIDs = billingGroupChannelIDsFromKeys(req.ChannelKeys)
+	}
+	group := &model.BillingGroup{Name: req.Name, Slug: req.Slug, Description: req.Description, Multiplier: multiplier, Enabled: enabled, ChannelIDs: channelIDs, ChannelKeys: req.ChannelKeys}
 	if err := group.Validate(); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, err.Error())
 		return
@@ -62,7 +69,7 @@ func (s *Server) HandleCreateBillingGroup(c *gin.Context) {
 		RespondError(c, http.StatusConflict, err)
 		return
 	}
-	if err := s.store.SetBillingGroupChannels(ctx, group.ID, req.ChannelIDs); err != nil {
+	if err := s.store.SetBillingGroupChannels(ctx, group.ID, channelIDs); err != nil {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
@@ -88,6 +95,15 @@ func (s *Server) HandleUpdateBillingGroup(c *gin.Context) {
 		return
 	}
 	group.Name, group.Slug, group.Description = req.Name, req.Slug, req.Description
+	if req.ChannelKeys != nil {
+		req.ChannelKeys = normalizeBillingGroupChannelKeys(req.ChannelKeys)
+		group.ChannelIDs = billingGroupChannelIDsFromKeys(req.ChannelKeys)
+		group.ChannelKeys = req.ChannelKeys
+	} else {
+		// Legacy channel_ids requests intentionally replace the old selection
+		// and therefore clear any previously stored key-level restriction.
+		group.ChannelKeys = nil
+	}
 	if req.Multiplier != nil {
 		group.Multiplier = *req.Multiplier
 	}
@@ -102,12 +118,70 @@ func (s *Server) HandleUpdateBillingGroup(c *gin.Context) {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	if err := s.store.SetBillingGroupChannels(ctx, id, req.ChannelIDs); err != nil {
+	channelIDs := req.ChannelIDs
+	if req.ChannelKeys != nil {
+		req.ChannelKeys = normalizeBillingGroupChannelKeys(req.ChannelKeys)
+		channelIDs = billingGroupChannelIDsFromKeys(req.ChannelKeys)
+	}
+	if err := s.store.SetBillingGroupChannels(ctx, id, channelIDs); err != nil {
 		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	group.ChannelIDs = req.ChannelIDs
+	group.ChannelIDs = channelIDs
 	RespondJSON(c, http.StatusOK, group)
+}
+
+func billingGroupChannelIDsFromKeys(channelKeys map[int64][]int) []int64 {
+	ids := make([]int64, 0, len(channelKeys))
+	for channelID, keyIndexes := range channelKeys {
+		if channelID <= 0 || len(keyIndexes) == 0 {
+			continue
+		}
+		seen := make(map[int]struct{}, len(keyIndexes))
+		valid := false
+		for _, keyIndex := range keyIndexes {
+			if keyIndex < 0 {
+				continue
+			}
+			if _, ok := seen[keyIndex]; ok {
+				continue
+			}
+			seen[keyIndex] = struct{}{}
+			valid = true
+		}
+		if valid {
+			ids = append(ids, channelID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func normalizeBillingGroupChannelKeys(channelKeys map[int64][]int) map[int64][]int {
+	if channelKeys == nil {
+		return nil
+	}
+	result := make(map[int64][]int, len(channelKeys))
+	for channelID, indexes := range channelKeys {
+		if channelID <= 0 {
+			continue
+		}
+		seen := make(map[int]struct{}, len(indexes))
+		for _, index := range indexes {
+			if index < 0 {
+				continue
+			}
+			if _, ok := seen[index]; ok {
+				continue
+			}
+			seen[index] = struct{}{}
+			result[channelID] = append(result[channelID], index)
+		}
+		if len(result[channelID]) > 1 {
+			slices.Sort(result[channelID])
+		}
+	}
+	return result
 }
 
 func (s *Server) HandleDeleteBillingGroup(c *gin.Context) {

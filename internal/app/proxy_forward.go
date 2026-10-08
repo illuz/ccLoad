@@ -2438,6 +2438,18 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API keys: %w", err)
 	}
+	if reqCtx != nil && reqCtx.billingGroupKeyIndexes != nil {
+		allowed := reqCtx.billingGroupKeyIndexes[cfg.ID]
+		filtered := make([]*model.APIKey, 0, len(apiKeys))
+		for _, apiKey := range apiKeys {
+			if apiKey != nil {
+				if _, ok := allowed[apiKey.KeyIndex]; ok {
+					filtered = append(filtered, apiKey)
+				}
+			}
+		}
+		apiKeys = filtered
+	}
 
 	// 计算实际重试次数
 	actualKeyCount := len(apiKeys)

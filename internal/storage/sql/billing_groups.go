@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,16 +17,26 @@ func scanBillingGroup(scanner interface{ Scan(...any) error }) (*model.BillingGr
 	g := &model.BillingGroup{}
 	var createdAt, updatedAt int64
 	var enabled int
-	if err := scanner.Scan(&g.ID, &g.Name, &g.Slug, &g.Description, &g.Multiplier, &enabled, &createdAt, &updatedAt); err != nil {
+	var channelKeys sql.NullString
+	if err := scanner.Scan(&g.ID, &g.Name, &g.Slug, &g.Description, &g.Multiplier, &enabled, &channelKeys, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	g.Enabled = enabled != 0
 	g.CreatedAt = time.UnixMilli(createdAt)
 	g.UpdatedAt = time.UnixMilli(updatedAt)
+	g.ChannelKeys = make(map[int64][]int)
+	if channelKeys.Valid && strings.TrimSpace(channelKeys.String) != "" {
+		if err := json.Unmarshal([]byte(channelKeys.String), &g.ChannelKeys); err != nil {
+			return nil, fmt.Errorf("decode billing group channel keys: %w", err)
+		}
+	}
+	if len(g.ChannelKeys) == 0 {
+		g.ChannelKeys = nil
+	}
 	return g, nil
 }
 
-const billingGroupColumns = `id, name, slug, description, multiplier, enabled, created_at, updated_at`
+const billingGroupColumns = `id, name, slug, description, multiplier, enabled, channel_keys, created_at, updated_at`
 
 func (s *SQLStore) CreateBillingGroup(ctx context.Context, group *model.BillingGroup) error {
 	if err := group.Validate(); err != nil {
@@ -38,10 +49,14 @@ func (s *SQLStore) CreateBillingGroup(ctx context.Context, group *model.BillingG
 	if group.UpdatedAt.IsZero() {
 		group.UpdatedAt = now
 	}
-	q := `INSERT INTO billing_groups (name, slug, description, multiplier, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	args := []any{group.Name, group.Slug, group.Description, group.Multiplier, boolToInt(group.Enabled), group.CreatedAt.UnixMilli(), group.UpdatedAt.UnixMilli()}
+	channelKeys, err := marshalBillingGroupChannelKeys(group.ChannelKeys)
+	if err != nil {
+		return err
+	}
+	q := `INSERT INTO billing_groups (name, slug, description, multiplier, enabled, channel_keys, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	args := []any{group.Name, group.Slug, group.Description, group.Multiplier, boolToInt(group.Enabled), channelKeys, group.CreatedAt.UnixMilli(), group.UpdatedAt.UnixMilli()}
 	if group.ID > 0 {
-		q = `INSERT INTO billing_groups (id, name, slug, description, multiplier, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		q = `INSERT INTO billing_groups (id, name, slug, description, multiplier, enabled, channel_keys, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		args = append([]any{group.ID}, args...)
 	}
 	result, err := s.db.ExecContext(ctx, q, args...)
@@ -171,7 +186,11 @@ func (s *SQLStore) UpdateBillingGroup(ctx context.Context, group *model.BillingG
 		return err
 	}
 	group.UpdatedAt = time.Now()
-	result, err := s.db.ExecContext(ctx, `UPDATE billing_groups SET name = ?, slug = ?, description = ?, multiplier = ?, enabled = ?, updated_at = ? WHERE id = ?`, group.Name, group.Slug, group.Description, group.Multiplier, boolToInt(group.Enabled), group.UpdatedAt.UnixMilli(), group.ID)
+	channelKeys, err := marshalBillingGroupChannelKeys(group.ChannelKeys)
+	if err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE billing_groups SET name = ?, slug = ?, description = ?, multiplier = ?, enabled = ?, channel_keys = ?, updated_at = ? WHERE id = ?`, group.Name, group.Slug, group.Description, group.Multiplier, boolToInt(group.Enabled), channelKeys, group.UpdatedAt.UnixMilli(), group.ID)
 	if err != nil {
 		return fmt.Errorf("update billing group: %w", err)
 	}
@@ -179,6 +198,17 @@ func (s *SQLStore) UpdateBillingGroup(ctx context.Context, group *model.BillingG
 		return errors.New("billing group not found")
 	}
 	return nil
+}
+
+func marshalBillingGroupChannelKeys(channelKeys map[int64][]int) (string, error) {
+	if len(channelKeys) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(channelKeys)
+	if err != nil {
+		return "", fmt.Errorf("encode billing group channel keys: %w", err)
+	}
+	return string(data), nil
 }
 
 func (s *SQLStore) DeleteBillingGroup(ctx context.Context, id int64) error {
@@ -258,8 +288,8 @@ func (s *SQLStore) AdjustAuthTokenBalance(ctx context.Context, tokenID, deltaMic
 
 // ChargeAuthTokenBalance 原子扣减余额并写入消费流水。余额不足时仍允许扣成负数，
 // 由请求开始时的余额检查阻止后续新请求，兼容在途请求最终结算。
-func (s *SQLStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error) {
-	if tokenHash == "" || deltaMicroUSD <= 0 {
+func (s *SQLStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string, groupID int64, groupSlug, modelName string, multiplier float64, requestID string, standardCostMicroUSD, deltaMicroUSD, totalTokens int64) (*model.BalanceTransaction, error) {
+	if tokenHash == "" || deltaMicroUSD < 0 {
 		return nil, nil
 	}
 	var entry *model.BalanceTransaction
@@ -285,12 +315,12 @@ func (s *SQLStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string,
 			return err
 		}
 		now := time.Now()
-		result, err := tx.ExecContext(ctx, `INSERT INTO auth_token_balance_transactions (auth_token_id, billing_group_id, billing_group_slug, type, delta_microusd, balance_before_microusd, balance_after_microusd, standard_cost_microusd, total_tokens, multiplier, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tokenID, groupID, strings.TrimSpace(groupSlug), model.BalanceTransactionConsumption, -deltaMicroUSD, before, after, standardCostMicroUSD, totalTokens, multiplier, strings.TrimSpace(requestID), now.UnixMilli())
+		result, err := tx.ExecContext(ctx, `INSERT INTO auth_token_balance_transactions (auth_token_id, billing_group_id, billing_group_slug, model, type, delta_microusd, balance_before_microusd, balance_after_microusd, standard_cost_microusd, total_tokens, multiplier, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tokenID, groupID, strings.TrimSpace(groupSlug), strings.TrimSpace(modelName), model.BalanceTransactionConsumption, -deltaMicroUSD, before, after, standardCostMicroUSD, totalTokens, multiplier, strings.TrimSpace(requestID), now.UnixMilli())
 		if err != nil {
 			return err
 		}
 		id, _ := result.LastInsertId()
-		entry = &model.BalanceTransaction{ID: id, AuthTokenID: tokenID, BillingGroupID: groupID, BillingGroupSlug: groupSlug, Type: model.BalanceTransactionConsumption, DeltaMicroUSD: -deltaMicroUSD, BalanceBeforeMicroUSD: before, BalanceAfterMicroUSD: after, StandardCostMicroUSD: standardCostMicroUSD, TotalTokens: totalTokens, Multiplier: multiplier, RequestID: requestID, CreatedAt: now}
+		entry = &model.BalanceTransaction{ID: id, AuthTokenID: tokenID, BillingGroupID: groupID, BillingGroupSlug: groupSlug, Model: strings.TrimSpace(modelName), Type: model.BalanceTransactionConsumption, DeltaMicroUSD: -deltaMicroUSD, BalanceBeforeMicroUSD: before, BalanceAfterMicroUSD: after, StandardCostMicroUSD: standardCostMicroUSD, TotalTokens: totalTokens, Multiplier: multiplier, RequestID: requestID, CreatedAt: now}
 		return nil
 	})
 	if err != nil {
@@ -300,13 +330,29 @@ func (s *SQLStore) ChargeAuthTokenBalance(ctx context.Context, tokenHash string,
 }
 
 func (s *SQLStore) ListAuthTokenBalanceTransactions(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error) {
+	return s.listAuthTokenBalanceTransactions(ctx, tokenID, limit, offset, false)
+}
+
+func (s *SQLStore) ListAuthTokenBalanceAdjustments(ctx context.Context, tokenID int64, limit, offset int) ([]*model.BalanceTransaction, error) {
+	return s.listAuthTokenBalanceTransactions(ctx, tokenID, limit, offset, true)
+}
+
+func (s *SQLStore) listAuthTokenBalanceTransactions(ctx context.Context, tokenID int64, limit, offset int, adjustmentsOnly bool) ([]*model.BalanceTransaction, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, auth_token_id, billing_group_id, billing_group_slug, type, delta_microusd, balance_before_microusd, balance_after_microusd, standard_cost_microusd, total_tokens, multiplier, request_id, note, created_at FROM auth_token_balance_transactions WHERE auth_token_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, tokenID, limit, offset)
+	query := `SELECT id, auth_token_id, billing_group_id, billing_group_slug, model, type, delta_microusd, balance_before_microusd, balance_after_microusd, standard_cost_microusd, total_tokens, multiplier, request_id, note, created_at FROM auth_token_balance_transactions WHERE auth_token_id = ?`
+	args := []any{tokenID}
+	if adjustmentsOnly {
+		query += ` AND type <> ? AND delta_microusd > 0`
+		args = append(args, model.BalanceTransactionConsumption)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -315,11 +361,43 @@ func (s *SQLStore) ListAuthTokenBalanceTransactions(ctx context.Context, tokenID
 	for rows.Next() {
 		entry := &model.BalanceTransaction{}
 		var createdAt int64
-		if err := rows.Scan(&entry.ID, &entry.AuthTokenID, &entry.BillingGroupID, &entry.BillingGroupSlug, &entry.Type, &entry.DeltaMicroUSD, &entry.BalanceBeforeMicroUSD, &entry.BalanceAfterMicroUSD, &entry.StandardCostMicroUSD, &entry.TotalTokens, &entry.Multiplier, &entry.RequestID, &entry.Note, &createdAt); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.AuthTokenID, &entry.BillingGroupID, &entry.BillingGroupSlug, &entry.Model, &entry.Type, &entry.DeltaMicroUSD, &entry.BalanceBeforeMicroUSD, &entry.BalanceAfterMicroUSD, &entry.StandardCostMicroUSD, &entry.TotalTokens, &entry.Multiplier, &entry.RequestID, &entry.Note, &createdAt); err != nil {
 			return nil, err
 		}
 		entry.CreatedAt = time.UnixMilli(createdAt)
 		result = append(result, entry)
+	}
+	return result, rows.Err()
+}
+
+func (s *SQLStore) AggregateAuthTokenBalanceUsage(ctx context.Context, tokenID, billingGroupID int64, since, until time.Time, bucket time.Duration) ([]model.BalanceUsageBucket, error) {
+	bucketMillis := bucket.Milliseconds()
+	if bucketMillis <= 0 {
+		bucketMillis = (30 * time.Minute).Milliseconds()
+	}
+	sinceMillis := since.UnixMilli()
+	query := `SELECT FLOOR((created_at - ?) / ?) * ? + ? AS bucket_start, model, COUNT(DISTINCT request_id), COALESCE(SUM(total_tokens), 0), COALESCE(SUM(-delta_microusd), 0) FROM auth_token_balance_transactions WHERE auth_token_id = ? AND type = ? AND created_at >= ? AND created_at <= ?`
+	args := []any{sinceMillis, bucketMillis, bucketMillis, sinceMillis, tokenID, model.BalanceTransactionConsumption, sinceMillis, until.UnixMilli()}
+	if billingGroupID > 0 {
+		query += ` AND billing_group_id = ?`
+		args = append(args, billingGroupID)
+	}
+	query += ` GROUP BY bucket_start, model ORDER BY bucket_start ASC, model ASC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]model.BalanceUsageBucket, 0)
+	for rows.Next() {
+		var item model.BalanceUsageBucket
+		var bucketStart float64
+		if err := rows.Scan(&bucketStart, &item.Model, &item.RequestCount, &item.TotalTokens, &item.ChargedMicroUSD); err != nil {
+			return nil, err
+		}
+		item.Timestamp = time.UnixMilli(int64(bucketStart))
+		result = append(result, item)
 	}
 	return result, rows.Err()
 }

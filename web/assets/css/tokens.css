@@ -249,6 +249,22 @@
     .token-create-token-btn {
       flex: 0 0 auto;
     }
+    .token-balance-field .form-row-inline__label {
+      flex-basis: 96px;
+      min-width: 96px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+    .token-billing-group-field {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .token-billing-group-field .form-row-inline__label {
+      flex: 0 0 auto;
+      min-width: 0;
+      white-space: normal;
+    }
     .form-row-inline:has(> .token-limit-control) {
       align-items: flex-start;
     }
@@ -489,6 +505,57 @@
     }
     .token-limit-hint--inline {
       flex: 0 0 auto;
+    }
+
+    .billing-channel-section {
+      margin: 0 0 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      background: var(--surface-bg-muted);
+    }
+    .billing-group-channel-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: min(52vh, 520px);
+      overflow-y: auto;
+      padding: 2px;
+    }
+    .billing-channel-section:last-child {
+      margin-bottom: 0;
+    }
+    .billing-channel-section__header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--neutral-700);
+      font-size: 13px;
+    }
+    .billing-channel-section__header span {
+      color: var(--neutral-500);
+      font-size: 11px;
+    }
+    .billing-channel-section__keys {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 6px 10px;
+    }
+    .billing-channel-key-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: var(--neutral-700);
+      font-size: 12px;
+    }
+    .billing-channel-key-option span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .tokens-col-last-used {
       color: var(--neutral-600);
@@ -1070,6 +1137,12 @@
       white-space: normal;
       overflow-wrap: anywhere;
     }
+    #editModal .token-edit-section--quota .token-limit-input-line {
+      grid-template-columns: 14px minmax(0, 1fr);
+    }
+    #editModal .token-edit-section--quota .token-limit-input-line .token-limit-hint {
+      grid-column: 2;
+    }
     .token-edit-section-header {
       display: flex;
       align-items: flex-start;
@@ -1105,6 +1178,28 @@
     .token-edit-field .field-grow {
       flex: 1 1 auto;
       min-width: 0;
+    }
+    #editModal .token-edit-field--balance .form-label {
+      flex-basis: 88px;
+      min-width: 88px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+    #editModal .token-edit-field--monthly-cost .form-label {
+      flex-basis: 72px;
+      min-width: 72px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+    #editModal .token-edit-field--billing-group {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #editModal .token-edit-field--billing-group .form-label {
+      flex: 0 0 auto;
+      min-width: 0;
+      white-space: normal;
     }
     .token-edit-field--daily-override {
       gap: 0;

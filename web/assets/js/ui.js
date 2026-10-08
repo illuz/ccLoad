@@ -128,6 +128,7 @@
     { key: 'index', labelKey: 'nav.overview', href: '/web/index.html', icon: iconHome },
     { key: 'channels', labelKey: 'nav.channels', href: '/web/channels.html', icon: iconSettings },
     { key: 'tokens', labelKey: 'nav.tokens', href: '/web/tokens.html', icon: iconKey },
+    { key: 'billing-groups', labelKey: 'nav.billingGroups', href: '/web/billing-groups.html', icon: iconBilling },
     { key: 'stats', labelKey: 'nav.stats', href: '/web/stats.html', icon: iconBars },
     { key: 'trend', labelKey: 'nav.trend', href: '/web/trend.html', icon: iconTrend },
     { key: 'logs', labelKey: 'nav.logs', href: '/web/logs.html', icon: iconAlert },
@@ -170,6 +171,9 @@
   }
   function iconKey() {
     return svg(`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>`);
+  }
+  function iconBilling() {
+    return svg(`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8M8 11h3M8 15h8M14 11h2"/>`);
   }
   function iconTest() {
     return svg(`<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>`);
@@ -797,7 +801,7 @@
     return true;
   }
 
-  const dashboardPageKeys = ['index', 'channels', 'tokens', 'stats', 'trend', 'logs', 'model-test', 'settings'];
+  const dashboardPageKeys = ['index', 'channels', 'tokens', 'billing-groups', 'stats', 'trend', 'logs', 'model-test', 'settings'];
   const lifecycleRegistry = new Map();
   const lifecycleCleanup = [];
   let lifecycleCurrentPage = null;
@@ -1017,7 +1021,7 @@
   }
 
   function isDashboardPagePath(pathname) {
-    return /^\/web\/(?:index|channels|tokens|stats|trend|logs|model-test|settings)\.html$/.test(pathname);
+    return /^\/web\/(?:index|channels|tokens|billing-groups|stats|trend|logs|model-test|settings)\.html$/.test(pathname);
   }
 
   function getPageKeyFromURL(url) {

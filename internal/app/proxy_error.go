@@ -300,6 +300,7 @@ type tokenStatsUpdate struct {
 	costMultiplier      float64 // 渠道倍率（0=免费，<0 视为 1）
 	billingGroupID      int64
 	billingGroupSlug    string
+	modelName           string
 	billingMultiplier   float64
 	requestID           string
 	balanceEnabled      bool
@@ -362,14 +363,12 @@ func (s *Server) applyTokenStatsUpdate(upd tokenStatsUpdate) {
 		log.Printf("[ERROR] 更新令牌统计失败 hash=%s: %v", upd.tokenHash, err)
 		return
 	}
-	if upd.isBillable && upd.costUSD > 0 && upd.billingGroupID > 0 && upd.billingMultiplier > 0 {
+	if upd.isBillable && upd.billingGroupID > 0 && upd.billingMultiplier >= 0 {
 		standardMicro := util.USDToMicroUSD(upd.costUSD)
 		chargeMicro := util.USDToMicroUSD(upd.costUSD * upd.billingMultiplier)
-		if chargeMicro > 0 {
-			totalTokens := upd.promptTokens + upd.completionTokens + upd.cacheReadTokens + upd.cacheCreationTokens
-			if _, err := s.store.ChargeAuthTokenBalance(updateCtx, upd.tokenHash, upd.billingGroupID, upd.billingGroupSlug, upd.billingMultiplier, upd.requestID, standardMicro, chargeMicro, totalTokens); err != nil && !strings.Contains(err.Error(), "token not found") {
-				log.Printf("[ERROR] 更新令牌余额失败 hash=%s: %v", upd.tokenHash, err)
-			}
+		totalTokens := upd.promptTokens + upd.completionTokens + upd.cacheReadTokens + upd.cacheCreationTokens
+		if _, err := s.store.ChargeAuthTokenBalance(updateCtx, upd.tokenHash, upd.billingGroupID, upd.billingGroupSlug, upd.modelName, upd.billingMultiplier, upd.requestID, standardMicro, chargeMicro, totalTokens); err != nil && !strings.Contains(err.Error(), "token not found") {
+			log.Printf("[ERROR] 更新令牌余额失败 hash=%s: %v", upd.tokenHash, err)
 		}
 	}
 }
@@ -421,6 +420,10 @@ func (s *Server) updateTokenStatsAsyncWithBilling(tokenHash string, cfg *model.C
 		// 注意：费用缓存更新已移至 applyTokenStatsUpdate，并先于 DB 落盘以避免限额 fail-open。
 	}
 
+	modelName := strings.TrimSpace(actualModel)
+	if modelName == "" {
+		modelName = strings.TrimSpace(requestModel)
+	}
 	upd := tokenStatsUpdate{
 		tokenHash:           tokenHash,
 		isSuccess:           isSuccess,
@@ -436,6 +439,7 @@ func (s *Server) updateTokenStatsAsyncWithBilling(tokenHash string, cfg *model.C
 		costMultiplier:      costMultiplier,
 		billingGroupID:      billingGroupID,
 		billingGroupSlug:    billingGroupSlug,
+		modelName:           modelName,
 		billingMultiplier:   billingMultiplier,
 		requestID:           requestID,
 		balanceEnabled:      balanceEnabled,

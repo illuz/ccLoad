@@ -1241,8 +1241,13 @@
         </div>
       </td>
       <td class="inline-key-col-key" style="padding: 4px 8px;" data-mobile-label="{{mobileLabelKey}}">
-        <input type="{{inputType}}" value="{{key}}" class="inline-key-input modal-inline-input" data-index="{{index}}"
-          style="width: 100%; padding: 4px 7px; border: 1px solid var(--neutral-300); border-radius: 6px; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 13px; transition: all 0.2s;">
+        <div class="inline-key-fields" style="display: flex; align-items: center; gap: 4px; min-width: 0; width: 100%;">
+          <input type="{{inputType}}" value="{{key}}" class="inline-key-input modal-inline-input" data-index="{{index}}"
+            style="flex: 1 1 auto; width: 0; min-width: 0; padding: 4px 7px; border: 1px solid var(--neutral-300); border-radius: 6px; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 13px; transition: all 0.2s;">
+          <input type="text" value="{{alias}}" class="inline-key-alias-input modal-inline-input" data-index="{{index}}"
+            placeholder="{{aliasPlaceholder}}" aria-label="{{mobileLabelAlias}}" maxlength="191"
+            style="flex: 0 1 120px; width: 120px; min-width: 72px; padding: 4px 7px; border: 1px solid var(--neutral-300); border-radius: 6px; font-size: 12px; transition: all 0.2s;">
+        </div>
       </td>
       <td class="inline-key-col-note" style="padding: 4px 8px;" data-mobile-label="{{mobileLabelNote}}">
         <input type="text" value="{{note}}" class="inline-key-note-input modal-inline-input" data-index="{{index}}"

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/web/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/web/favicon.ico">
+  <link rel="apple-touch-icon" href="/web/apple-touch-icon.png">
+  <link rel="manifest" href="/web/manifest.json">
+  <meta name="theme-color" content="#3b82f6">
+  <title data-i18n="billingGroups.title">计费分组 - Claude Code & Codex Proxy</title>
+  <script src="/web/assets/js/theme-init.js?v=__VERSION__"></script>
+  <link rel="stylesheet" href="/web/assets/css/styles.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/assets/css/billing-groups.css?v=__VERSION__">
+  <link rel="stylesheet" href="/web/theme.css?v=__VERSION__">
+  <script defer src="/web/assets/locales/zh-CN.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/locales/en.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/i18n.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/ui.js?v=__VERSION__"></script>
+  <script defer src="/web/assets/js/billing-groups.js?v=__VERSION__"></script>
+</head>
+<body class="page-billing-groups">
+  <div class="app-container">
+    <main class="main-content">
+      <div class="content-area billing-groups-page">
+        <header class="billing-groups-page-header">
+          <div>
+            <h1 data-i18n="billingGroups.heading">计费分组</h1>
+            <p data-i18n="billingGroups.subtitle">按分组设置计费倍率，并指定可用渠道 Key。</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="refresh-billing-groups" data-i18n-title="common.refresh" title="刷新">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M20 11a8 8 0 0 0-14.8-4L3 10"></path><path d="M3 4v6h6"></path>
+              <path d="M4 13a8 8 0 0 0 14.8 4L21 14"></path><path d="M21 20v-6h-6"></path>
+            </svg>
+            <span data-i18n="common.refresh">刷新</span>
+          </button>
+        </header>
+
+        <section class="billing-groups-workspace" aria-label="计费分组管理">
+          <article class="glass-card billing-groups-editor">
+            <div class="billing-groups-panel-header">
+              <div>
+                <h2 id="billingGroupFormTitle" data-i18n="billingGroups.newGroup">新建计费分组</h2>
+                <p data-i18n="billingGroups.formHint">标识用于请求后缀，例如：原始 Key~标识。</p>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="reset-billing-group-form" data-i18n="billingGroups.newGroup">新建</button>
+            </div>
+            <form id="billingGroupForm" novalidate>
+              <input type="hidden" id="billingGroupID" value="0">
+              <div class="billing-groups-form-grid">
+                <label class="form-group">
+                  <span class="form-label" data-i18n="common.name">名称</span>
+                  <input id="billingGroupName" class="form-input" type="text" required autocomplete="off">
+                </label>
+                <label class="form-group">
+                  <span class="form-label" data-i18n="billingGroups.slug">标识</span>
+                  <input id="billingGroupSlug" class="form-input" type="text" required autocomplete="off" data-i18n-placeholder="billingGroups.slugPlaceholder" placeholder="例如 gpt0.1">
+                </label>
+                <label class="form-group billing-groups-form-grid__multiplier">
+                  <span class="form-label" data-i18n="billingGroups.multiplier">计费倍率</span>
+                  <input id="billingGroupMultiplier" class="form-input" type="number" min="0" step="0.0001" value="1" required>
+                </label>
+                <label class="form-group billing-groups-form-grid__description">
+                  <span class="form-label" data-i18n="billingGroups.description">备注</span>
+                  <input id="billingGroupDescription" class="form-input" type="text" autocomplete="off">
+                </label>
+              </div>
+              <label class="billing-groups-enabled">
+                <input id="billingGroupEnabled" class="control-checkbox" type="checkbox" checked>
+                <span data-i18n="billingGroups.enabled">启用分组</span>
+              </label>
+
+              <div class="billing-groups-channel-header">
+                <div>
+                  <h3 data-i18n="billingGroups.channels">渠道 Key</h3>
+                  <span id="billingGroupSelectionSummary" class="billing-groups-selection-summary"></span>
+                </div>
+                <input id="billingGroupKeySearch" class="form-input billing-groups-key-search" type="search" data-input-action="filter-billing-group-keys" data-i18n-placeholder="billingGroups.searchKeys" placeholder="搜索渠道或 Key">
+              </div>
+              <div id="billingGroupChannelOptions" class="billing-groups-channel-options" aria-live="polite"></div>
+
+              <div class="billing-groups-form-actions">
+                <button type="button" class="btn btn-primary" data-action="save-billing-group" data-i18n="common.save">保存</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="glass-card billing-groups-list-panel">
+            <div class="billing-groups-panel-header">
+              <div>
+                <h2 data-i18n="billingGroups.listTitle">已配置分组</h2>
+                <p data-i18n="billingGroups.listHint">点击分组编辑渠道 Key 和计费设置。</p>
+              </div>
+              <span id="billingGroupsCount" class="billing-groups-count">0</span>
+            </div>
+            <div id="billingGroupList" class="billing-groups-list" aria-live="polite"></div>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -87,6 +87,21 @@ test('日志页令牌编辑器同步并保存 Codex Guard 开关', () => {
   assert.match(tokenEditorScript, /codex_guard_enabled:\s*codexGuardEnabled,/);
 });
 
+test('日志页令牌编辑器同步并保存余额模式、默认计费分组和月限额', () => {
+  for (const controlID of ['editBalanceEnabled', 'editBalanceUSD', 'editDefaultBillingGroup', 'editMonthlyCostLimitUSD']) {
+    assert.match(tokenEditorScript, new RegExp(`['"]${controlID}['"]`));
+  }
+  assert.match(tokenEditorScript, /loadBillingGroups\(\)/);
+  assert.match(tokenEditorScript, /editBalanceEnabledInput\.checked = !!token\.balance_enabled;/);
+  assert.match(tokenEditorScript, /editBalanceInput\.value = String\(Number\(token\.balance_usd\) \|\| 0\);/);
+  assert.match(tokenEditorScript, /refreshBillingGroupOptions\(token\.default_billing_group_id \|\| 0\);/);
+  assert.match(tokenEditorScript, /editMonthlyCostLimitInput\.value = String\(editRawMonthlyCostLimitUSD\);/);
+  assert.match(tokenEditorScript, /balance_enabled:\s*balanceEnabled,/);
+  assert.match(tokenEditorScript, /balance_usd:\s*balanceUSD,/);
+  assert.match(tokenEditorScript, /default_billing_group_id:\s*defaultBillingGroupID,/);
+  assert.match(tokenEditorScript, /monthly_cost_limit_usd:\s*monthlyCostLimitUSD,/);
+});
+
 test('日志页令牌编辑器同步并互斥保存当日限额倍率', () => {
   assert.match(tokenEditorScript, /editDailyLimitTripleInput\.checked = !!token\.daily_limit_triple_enabled;/);
   assert.match(tokenEditorScript, /function enforceDailyLimitMultiplierExclusivity\(changedInput\)/);
