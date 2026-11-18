@@ -300,6 +300,35 @@ func TestCalculateCost_GPT56TieredPricing(t *testing.T) {
 	}
 }
 
+func TestCalculateCost_GPT62TieredPricing(t *testing.T) {
+	RestoreEmbeddedModelCatalog()
+	t.Cleanup(RestoreEmbeddedModelCatalog)
+
+	testCases := []struct {
+		name         string
+		model        string
+		inputTokens  int
+		outputTokens int
+		cacheRead    int
+		expected     float64
+	}{
+		{name: "astra base", model: "gpt-6.2-astra", inputTokens: 100_000, outputTokens: 1_000_000, cacheRead: 100_000, expected: 40.84},
+		{name: "astra high context", model: "gpt-6.2-astra", inputTokens: 273_000, outputTokens: 1_000_000, expected: 64.368},
+		{name: "astro compatibility alias", model: "gpt-6.2-astro", inputTokens: 100_000, outputTokens: 1_000_000, cacheRead: 100_000, expected: 40.84},
+		{name: "sol base", model: "gpt-6.2-sol", inputTokens: 100_000, outputTokens: 1_000_000, cacheRead: 100_000, expected: 10.21},
+		{name: "sol high context", model: "gpt-6.2-sol", inputTokens: 273_000, outputTokens: 1_000_000, expected: 16.092},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cost := CalculateCostDetailed(tc.model, tc.inputTokens, tc.outputTokens, tc.cacheRead, 0, 0)
+			if !floatEquals(cost, tc.expected, 0.000001) {
+				t.Fatalf("cost = %.6f, expected %.6f", cost, tc.expected)
+			}
+		})
+	}
+}
+
 func TestCalculateCost_GPT56CacheWrite(t *testing.T) {
 	cost := CalculateCostDetailed("gpt-5.6-luna", 0, 0, 0, 1000, 0)
 	expected := 1000 * 0.20 * cacheWrite5mMultiplier / 1_000_000

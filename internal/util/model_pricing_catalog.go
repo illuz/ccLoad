@@ -157,6 +157,22 @@ var basePricing = map[string]ModelPricing{
 	"claude-haiku":  {InputPrice: 1.00, OutputPrice: 5.00},
 
 	// ========== OpenAI GPT-5系列 ==========
+	"gpt-6.2-astra": {
+		InputPrice: 8.00, OutputPrice: 40.00, CacheReadPrice: 0.40, HasCacheReadPrice: true,
+		TokenPricingTiers: []TokenPricingTier{
+			{MaxInputTokens: 272_000, InputPrice: 8.00, OutputPrice: 40.00, CacheReadPrice: 0.40, HasCacheReadPrice: true},
+			{InputPrice: 16.00, OutputPrice: 60.00, CacheReadPrice: 0.80, HasCacheReadPrice: true},
+		},
+		CacheReadCountsTowardTier: true,
+	},
+	"gpt-6.2-sol": {
+		InputPrice: 2.00, OutputPrice: 10.00, CacheReadPrice: 0.10, HasCacheReadPrice: true,
+		TokenPricingTiers: []TokenPricingTier{
+			{MaxInputTokens: 272_000, InputPrice: 2.00, OutputPrice: 10.00, CacheReadPrice: 0.10, HasCacheReadPrice: true},
+			{InputPrice: 4.00, OutputPrice: 15.00, CacheReadPrice: 0.20, HasCacheReadPrice: true},
+		},
+		CacheReadCountsTowardTier: true,
+	},
 	"gpt-6.1-sol": {
 		InputPrice: 2.00, OutputPrice: 10.00, CacheReadPrice: 0.10, HasCacheReadPrice: true,
 		TokenPricingTiers: []TokenPricingTier{
@@ -661,6 +677,7 @@ var modelAliases = map[string]string{
 	"claude-3-haiku-latest":      "claude-3-haiku",
 
 	// OpenAI GPT别名
+	"gpt-6.2-astro":              "gpt-6.2-astra",
 	"gpt-5.1":                    "gpt-5",
 	"gpt-5.1-chat-latest":        "gpt-5",
 	"gpt-5-chat-latest":          "gpt-5",
